@@ -1,0 +1,46 @@
+[general]
+log_level = "INFO"
+update_rate_hz = 10
+
+[i2c]
+bus = 1
+ina226_address = 0x40
+
+[i2c.ina226]
+shunt_resistor_ohms = 0.01
+averaging_mode = 4
+bus_voltage_conversion_time_us = 1100
+shunt_voltage_conversion_time_us = 1100
+
+[motors.azimuth]
+rpwm_pin = 5
+lpwm_pin = 6
+max_duty = 80
+ramp_rate = 10
+
+[motors.elevation]
+rpwm_pin = 20
+lpwm_pin = 21
+max_duty = 60
+ramp_rate = 8
+
+[safety]
+overcurrent_threshold_a = 5.0
+overcurrent_holdoff_s = 0.5
+azimuth_min_deg = 0.0
+azimuth_max_deg = 360.0
+elevation_min_deg = 5.0
+elevation_max_deg = 85.0
+
+[sdr]
+device_index = 0
+center_freq_hz = 1420405000
+sample_rate_hz = 2048000
+gain = "auto"
+fft_size = 1024
+integration_count = 8
+
+[server]
+host = "0.0.0.0"
+port = 8000
+cors_origins = ["*"]
