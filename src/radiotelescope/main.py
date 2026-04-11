@@ -8,6 +8,8 @@ import lgpio
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from radiotelescope.api import routes_motion, routes_status, ws
 from radiotelescope.config import load_config
@@ -88,6 +90,15 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
     app.include_router(routes_motion.router)
     app.include_router(routes_status.router)
     app.include_router(ws.router)
+
+    # Dev web UI — static files served from package
+    static_dir = Path(__file__).parent / "static"
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(static_dir / "index.html")
+
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     return app
 

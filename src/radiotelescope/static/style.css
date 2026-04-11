@@ -1,0 +1,261 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --border: #0f3460;
+    --text: #e0e0e0;
+    --text-dim: #8888a0;
+    --green: #00c853;
+    --red: #ff1744;
+    --amber: #ffab00;
+    --mono: "Consolas", "Monaco", "Courier New", monospace;
+}
+
+body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.4;
+    padding: 12px;
+    min-height: 100vh;
+}
+
+/* --- Layout --- */
+.dashboard {
+    display: grid;
+    grid-template-areas:
+        "header header"
+        "motors telemetry"
+        "motors safety"
+        "spectrum spectrum"
+        "log log";
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto auto 1fr;
+    gap: 12px;
+    max-width: 960px;
+    margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+    .dashboard {
+        grid-template-areas:
+            "header"
+            "motors"
+            "telemetry"
+            "safety"
+            "spectrum"
+            "log";
+        grid-template-columns: 1fr;
+    }
+}
+
+/* --- Panels --- */
+.panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.panel h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+}
+
+.header   { grid-area: header; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.motors   { grid-area: motors; }
+.telemetry{ grid-area: telemetry; }
+.safety   { grid-area: safety; }
+.spectrum { grid-area: spectrum; min-height: 180px; display: flex; flex-direction: column; }
+.log      { grid-area: log; }
+
+/* --- Header --- */
+.header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.conn-status {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--red);
+    flex-shrink: 0;
+}
+.conn-status.connected { background: var(--green); }
+
+.header .uptime { color: var(--text-dim); font-size: 12px; }
+
+.btn-stop-all {
+    margin-left: auto;
+    background: var(--red);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 1px;
+}
+.btn-stop-all:hover { opacity: 0.85; }
+
+/* --- Motor Control --- */
+.axis-group { margin-bottom: 16px; }
+.axis-group:last-child { margin-bottom: 0; }
+
+.axis-group h3 {
+    font-size: 13px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.axis-group .status-tag {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--border);
+    color: var(--text-dim);
+}
+.axis-group .status-tag.moving {
+    background: var(--amber);
+    color: #1a1a2e;
+}
+
+.motor-buttons {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.motor-buttons button {
+    flex: 1;
+    padding: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+}
+.motor-buttons button:hover { border-color: var(--text-dim); }
+.motor-buttons button.btn-axis-stop { border-color: var(--red); color: var(--red); }
+.motor-buttons button.btn-axis-stop:hover { background: var(--red); color: #fff; }
+
+.speed-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.speed-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--green);
+}
+
+.speed-row .speed-val {
+    width: 32px;
+    text-align: right;
+}
+
+.motor-readout {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+}
+
+/* --- Telemetry --- */
+.telem-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    font-size: 13px;
+}
+
+.telem-grid .label { color: var(--text-dim); }
+.telem-grid .value { text-align: right; }
+
+/* --- Safety --- */
+.safety-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.safety-badge.ok { background: var(--green); color: #1a1a2e; }
+.safety-badge.tripped { background: var(--red); color: #fff; }
+
+.safety-info {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+}
+
+.btn-reset {
+    background: var(--border);
+    color: var(--text);
+    border: 1px solid var(--text-dim);
+    border-radius: 4px;
+    padding: 5px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+}
+.btn-reset:hover { background: var(--text-dim); color: var(--bg); }
+
+/* --- Spectrum placeholder --- */
+.spectrum-placeholder {
+    flex: 1;
+    border: 2px dashed var(--border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    min-height: 120px;
+}
+
+/* --- Event Log --- */
+.log-output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 11px;
+    height: 160px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-dim);
+}
+
+/* --- Footer --- */
+.footer {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-top: 8px;
+}
+
+.footer kbd {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11px;
+}
