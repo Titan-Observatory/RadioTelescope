@@ -16,13 +16,13 @@ shunt_voltage_conversion_time_us = 1100
 rpwm_pin = 5
 lpwm_pin = 6
 max_duty = 80
-ramp_rate = 10
+ramp_time_s = 3.0
 
 [motors.elevation]
 rpwm_pin = 20
 lpwm_pin = 21
 max_duty = 60
-ramp_rate = 8
+ramp_time_s = 3.0
 
 [safety]
 overcurrent_threshold_a = 5.0

@@ -24,7 +24,7 @@ class MotorConfig(BaseModel):
     rpwm_pin: int
     lpwm_pin: int
     max_duty: int = 100
-    ramp_rate: int = 10
+    ramp_time_s: float = 3.0
 
 
 class MotorsConfig(BaseModel):

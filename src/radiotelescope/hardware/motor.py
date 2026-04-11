@@ -60,17 +60,21 @@ class IBT2Motor:
         self._direction = "stopped"
 
     async def ramp_stop(self) -> None:
-        """Gradually reduce duty to zero to manage momentum before stopping.
+        """Gradually reduce duty to zero over a fixed duration to manage momentum.
 
-        Decrements by ``_RAMP_STEP`` % at a rate set by ``config.ramp_rate``
-        (duty-% per second). Direction is preserved until duty reaches zero.
+        Always takes ``config.ramp_time_s`` seconds regardless of starting duty.
+        Direction is preserved until duty reaches zero.
         """
-        interval = _RAMP_STEP / self._cfg.ramp_rate  # seconds per step
         current = self._duty
+        if current == 0:
+            return
+
+        steps = max(1, current // _RAMP_STEP)
+        interval = self._cfg.ramp_time_s / steps  # seconds per step
 
         logger.info(
-            "Motor GPIO%d/%d: ramping down from %d%% at %d%%/s",
-            self._rpwm, self._lpwm, current, self._cfg.ramp_rate,
+            "Motor GPIO%d/%d: ramping down from %d%% over %.1fs",
+            self._rpwm, self._lpwm, current, self._cfg.ramp_time_s,
         )
 
         while current > 0:
