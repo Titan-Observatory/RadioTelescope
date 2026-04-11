@@ -16,7 +16,7 @@ async def _move_async(args):
     motor = IBT2Motor(motor_cfg, handle)
     try:
         print(f"Moving {args.axis} {args.direction} @ {args.speed}%")
-        motor.set_speed(args.speed, args.direction)
+        await motor.set_speed(args.speed, args.direction)
         await asyncio.sleep(args.duration)
         print("Ramping down...")
         await motor.ramp_stop()

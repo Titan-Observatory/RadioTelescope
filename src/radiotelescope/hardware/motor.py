@@ -35,22 +35,44 @@ class IBT2Motor:
         lgpio.gpio_claim_output(handle, self._lpwm)
         self.stop()
 
-    def set_speed(self, duty: int, direction: str) -> None:
+    async def set_speed(self, duty: int, direction: str) -> None:
+        """Ramp up to target duty over ramp_time_s seconds.
+
+        Cannot be bypassed — the only public API for commanding motion.
+        Direction changes trigger a hard stop before ramping in the new direction
+        to prevent H-bridge shoot-through.
+        """
         clamped = max(0, min(duty, self._cfg.max_duty))
 
-        if direction == "forward":
-            lgpio.tx_pwm(self._handle, self._lpwm, PWM_FREQUENCY, 0)
-            lgpio.tx_pwm(self._handle, self._rpwm, PWM_FREQUENCY, clamped)
-        elif direction == "reverse":
-            lgpio.tx_pwm(self._handle, self._rpwm, PWM_FREQUENCY, 0)
-            lgpio.tx_pwm(self._handle, self._lpwm, PWM_FREQUENCY, clamped)
-        else:
-            self.stop()
+        if direction not in ("forward", "reverse"):
+            await self.ramp_stop()
             return
 
-        self._duty = clamped
+        if self._direction not in ("stopped", direction):
+            # Direction reversal: hard stop before switching sides
+            self.stop()
+
+        if clamped == 0:
+            await self.ramp_stop()
+            return
+
         self._direction = direction
-        logger.info("Motor GPIO%d/%d: %s @ %d%%", self._rpwm, self._lpwm, direction, clamped)
+        start = self._duty
+        steps = max(1, (clamped - start) // _RAMP_STEP) if clamped > start else 1
+        interval = self._cfg.ramp_time_s / steps
+
+        logger.info(
+            "Motor GPIO%d/%d: ramping up to %s @ %d%% over %.1fs",
+            self._rpwm, self._lpwm, direction, clamped, self._cfg.ramp_time_s,
+        )
+
+        current = start
+        while current < clamped:
+            current = min(clamped, current + _RAMP_STEP)
+            self._apply_duty(current)
+            self._duty = current
+            if current < clamped:
+                await asyncio.sleep(interval)
 
     def stop(self) -> None:
         """Immediate hard stop. Use for emergencies and cleanup only."""

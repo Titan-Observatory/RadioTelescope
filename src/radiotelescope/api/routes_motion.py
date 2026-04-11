@@ -15,7 +15,7 @@ def _motion(request: Request):
 @router.post("/move", response_model=MotorState)
 async def move(cmd: MoveCommand, request: Request):
     try:
-        return _motion(request).move(cmd)
+        return await _motion(request).move(cmd)
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

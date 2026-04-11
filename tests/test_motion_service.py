@@ -21,8 +21,8 @@ def motion_service(mock_motor, test_config, mock_handle):
     return MotionService(motors, safety)
 
 
-def test_move_forward(motion_service: MotionService):
-    state = motion_service.move(MoveCommand(axis="azimuth", speed=50, direction="forward"))
+async def test_move_forward(motion_service: MotionService):
+    state = await motion_service.move(MoveCommand(axis="azimuth", speed=50, direction="forward"))
     assert state.is_moving
     assert state.direction == "forward"
 
@@ -34,7 +34,7 @@ async def test_stop_all(motion_service: MotionService):
     assert not result["elevation"].is_moving
 
 
-def test_move_rejected_when_tripped(mock_motor, test_config, mock_handle):
+async def test_move_rejected_when_tripped(mock_motor, test_config, mock_handle):
     from radiotelescope.hardware.motor import IBT2Motor
 
     motors = {
@@ -46,4 +46,4 @@ def test_move_rejected_when_tripped(mock_motor, test_config, mock_handle):
     svc = MotionService(motors, safety)
 
     with pytest.raises(RuntimeError, match="overcurrent"):
-        svc.move(MoveCommand(axis="azimuth", speed=50, direction="forward"))
+        await svc.move(MoveCommand(axis="azimuth", speed=50, direction="forward"))
