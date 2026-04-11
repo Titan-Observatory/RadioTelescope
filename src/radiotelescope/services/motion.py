@@ -22,7 +22,7 @@ class MotionService:
 
     async def move(self, cmd: MoveCommand) -> MotorState:
         if self._safety.status.overcurrent_tripped:
-            raise RuntimeError("Cannot move — overcurrent trip active. Reset safety first.")
+            raise RuntimeError("Cannot move because an overcurrent trip is active. Reset safety first.")
 
         if not self._safety.check_limits(cmd.axis):
             raise ValueError(f"Move rejected by safety limits for axis {cmd.axis}")

@@ -106,16 +106,26 @@
 
         // Sensor
         if (ts.sensor) {
-            el.voltage.textContent = ts.sensor.bus_voltage_v.toFixed(2);
-            el.shuntMv.textContent = ts.sensor.shunt_voltage_mv.toFixed(2);
-            el.current.textContent = ts.sensor.current_a.toFixed(3);
-            el.power.textContent   = ts.sensor.power_w.toFixed(2);
+            if (ts.sensor.available) {
+                el.voltage.textContent = ts.sensor.bus_voltage_v.toFixed(2);
+                el.shuntMv.textContent = ts.sensor.shunt_voltage_mv.toFixed(2);
+                el.current.textContent = ts.sensor.current_a.toFixed(3);
+                el.power.textContent = ts.sensor.power_w.toFixed(2);
+            } else {
+                el.voltage.textContent = "--";
+                el.shuntMv.textContent = "--";
+                el.current.textContent = "--";
+                el.power.textContent = "--";
+            }
         }
 
         // Safety
         if (ts.safety) {
             if (ts.safety.overcurrent_tripped) {
                 el.safetyBadge.textContent = "TRIPPED";
+                el.safetyBadge.className = "safety-badge tripped";
+            } else if (ts.sensor && !ts.sensor.available) {
+                el.safetyBadge.textContent = "DEGRADED";
                 el.safetyBadge.className = "safety-badge tripped";
             } else {
                 el.safetyBadge.textContent = "OK";

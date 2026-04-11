@@ -22,6 +22,7 @@ def _make_monitor(holdoff: float = 0.0) -> SafetyMonitor:
         overcurrent_holdoff_s=holdoff,
     )
     ina = MagicMock()
+    ina.available = True
     return SafetyMonitor(cfg, ina)
 
 
@@ -63,3 +64,20 @@ def test_reset():
     assert mon.status.overcurrent_tripped
     mon.reset()
     assert not mon.status.overcurrent_tripped
+
+
+def test_sensor_unavailable_marks_monitor_degraded_without_tripping():
+    mon = _make_monitor()
+    reading = SensorReading(available=False, timestamp=time.time())
+
+    assert mon.check_current(reading) is True
+    assert mon.current_monitor_available is False
+
+
+def test_sensor_recovery_restores_current_monitoring():
+    mon = _make_monitor()
+
+    mon.check_current(SensorReading(available=False, timestamp=time.time()))
+
+    assert mon.check_current(_reading(3.0)) is True
+    assert mon.current_monitor_available is True

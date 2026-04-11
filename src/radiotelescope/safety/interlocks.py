@@ -25,6 +25,7 @@ class SafetyMonitor:
         self._overcurrent_since: float | None = None
         self._tripped = False
         self._last_trip_time: float | None = None
+        self._current_monitor_available = getattr(ina226, "available", True)
 
     @property
     def status(self) -> SafetyStatus:
@@ -33,11 +34,26 @@ class SafetyMonitor:
             last_trip_timestamp=self._last_trip_time,
         )
 
+    @property
+    def current_monitor_available(self) -> bool:
+        return self._current_monitor_available
+
     def check_current(self, reading: SensorReading) -> bool:
         """Return True if current is within safe limits.
 
         Uses a holdoff timer to debounce transient spikes.
         """
+        if not reading.available:
+            if self._current_monitor_available:
+                logger.error("INA226 current monitor unavailable; overcurrent protection is degraded until it recovers")
+            self._current_monitor_available = False
+            self._overcurrent_since = None
+            return True
+
+        if not self._current_monitor_available:
+            logger.info("INA226 current monitor recovered")
+        self._current_monitor_available = True
+
         if abs(reading.current_a) > self._cfg.overcurrent_threshold_a:
             now = time.time()
             if self._overcurrent_since is None:

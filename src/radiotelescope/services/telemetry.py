@@ -60,7 +60,7 @@ class TelemetryService:
         while True:
             reading = await asyncio.to_thread(self._ina226.read)
 
-            if not self._safety.check_current(reading):
+            if not self._safety.check_current(reading) and any(motor.is_moving for motor in motors):
                 self._safety.emergency_stop(motors)
 
             state = TelescopeState(

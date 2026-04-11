@@ -13,7 +13,7 @@ dependencies = [
     "pydantic>=2.0",
     "lgpio>=0.2",
     "smbus2>=0.4",
-    "pyrtlsdr>=0.3",
+    "pyrtlsdr==0.3.0",
     "numpy>=1.26",
 ]
 

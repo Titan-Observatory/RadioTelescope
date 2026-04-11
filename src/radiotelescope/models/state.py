@@ -18,6 +18,7 @@ class SensorReading(BaseModel):
     current_a: float = 0.0
     power_w: float = 0.0
     timestamp: float = 0.0
+    available: bool = True  # False when hardware is absent or faulted
 
 
 class SafetyStatus(BaseModel):

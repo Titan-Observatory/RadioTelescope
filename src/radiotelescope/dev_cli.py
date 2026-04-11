@@ -31,11 +31,16 @@ def cmd_move(args):
 def cmd_read(args):
     cfg = load_config(args.config)
     sensor = INA226(cfg.i2c)
-    for _ in range(args.count):
-        r = sensor.read()
-        print(f"{r.bus_voltage_v:.3f}V  {r.current_a:.3f}A  {r.power_w:.3f}W")
-        time.sleep(0.5)
-    sensor.close()
+    try:
+        for _ in range(args.count):
+            r = sensor.read()
+            if r.available:
+                print(f"{r.bus_voltage_v:.3f}V  {r.current_a:.3f}A  {r.power_w:.3f}W")
+            else:
+                print("INA226 unavailable")
+            time.sleep(0.5)
+    finally:
+        sensor.close()
 
 def main():
     p = argparse.ArgumentParser()

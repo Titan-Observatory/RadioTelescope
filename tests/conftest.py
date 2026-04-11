@@ -86,6 +86,7 @@ def mock_motor(test_config: AppConfig, mock_handle: int):
 @pytest.fixture
 def mock_ina226() -> MagicMock:
     sensor = MagicMock()
+    sensor.available = True
     sensor.read.return_value = SensorReading(
         bus_voltage_v=12.0,
         shunt_voltage_mv=0.5,
