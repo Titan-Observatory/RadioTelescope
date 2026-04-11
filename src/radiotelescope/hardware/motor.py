@@ -9,7 +9,7 @@ from radiotelescope.config import MotorConfig
 
 logger = logging.getLogger(__name__)
 
-PWM_FREQUENCY = 20_000  # 20 kHz — inaudible, good for BTS7960
+PWM_FREQUENCY = 1_000  # 1 kHz — within lgpio software PWM limits
 _RAMP_STEP = 5          # duty % per step
 
 
