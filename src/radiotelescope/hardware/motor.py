@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import logging
 
-import pigpio
+import lgpio
 
 from radiotelescope.config import MotorConfig
 
 logger = logging.getLogger(__name__)
 
-PWM_FREQUENCY = 20_000
-PWM_RANGE = 255
+PWM_FREQUENCY = 20_000  # 20 kHz — inaudible, good for BTS7960
 
 
 class IBT2Motor:
@@ -19,30 +18,27 @@ class IBT2Motor:
     hardwired high.  Duty is clamped to ``config.max_duty``.
     """
 
-    def __init__(self, config: MotorConfig, pi: pigpio.pi) -> None:
+    def __init__(self, config: MotorConfig, handle: int) -> None:
         self._cfg = config
-        self._pi = pi
+        self._handle = handle
         self._rpwm = config.rpwm_pin
         self._lpwm = config.lpwm_pin
         self._duty = 0
         self._direction = "stopped"
 
-        self._pi.set_PWM_frequency(self._rpwm, PWM_FREQUENCY)
-        self._pi.set_PWM_frequency(self._lpwm, PWM_FREQUENCY)
-        self._pi.set_PWM_range(self._rpwm, PWM_RANGE)
-        self._pi.set_PWM_range(self._lpwm, PWM_RANGE)
+        lgpio.gpio_claim_output(handle, self._rpwm)
+        lgpio.gpio_claim_output(handle, self._lpwm)
         self.stop()
 
     def set_speed(self, duty: int, direction: str) -> None:
         clamped = max(0, min(duty, self._cfg.max_duty))
-        hw_duty = int(PWM_RANGE * clamped / 100)
 
         if direction == "forward":
-            self._pi.set_PWM_dutycycle(self._lpwm, 0)
-            self._pi.set_PWM_dutycycle(self._rpwm, hw_duty)
+            lgpio.tx_pwm(self._handle, self._lpwm, 0, 0)
+            lgpio.tx_pwm(self._handle, self._rpwm, PWM_FREQUENCY, clamped)
         elif direction == "reverse":
-            self._pi.set_PWM_dutycycle(self._rpwm, 0)
-            self._pi.set_PWM_dutycycle(self._lpwm, hw_duty)
+            lgpio.tx_pwm(self._handle, self._rpwm, 0, 0)
+            lgpio.tx_pwm(self._handle, self._lpwm, PWM_FREQUENCY, clamped)
         else:
             self.stop()
             return
@@ -52,8 +48,8 @@ class IBT2Motor:
         logger.info("Motor GPIO%d/%d: %s @ %d%%", self._rpwm, self._lpwm, direction, clamped)
 
     def stop(self) -> None:
-        self._pi.set_PWM_dutycycle(self._rpwm, 0)
-        self._pi.set_PWM_dutycycle(self._lpwm, 0)
+        lgpio.tx_pwm(self._handle, self._rpwm, 0, 0)
+        lgpio.tx_pwm(self._handle, self._lpwm, 0, 0)
         self._duty = 0
         self._direction = "stopped"
 
@@ -71,5 +67,5 @@ class IBT2Motor:
 
     def cleanup(self) -> None:
         self.stop()
-        self._pi.set_mode(self._rpwm, pigpio.INPUT)
-        self._pi.set_mode(self._lpwm, pigpio.INPUT)
+        lgpio.gpio_free(self._handle, self._rpwm)
+        lgpio.gpio_free(self._handle, self._lpwm)

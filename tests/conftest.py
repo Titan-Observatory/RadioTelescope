@@ -67,17 +67,20 @@ def test_config(test_config_path: Path) -> AppConfig:
 
 
 @pytest.fixture
-def mock_pi() -> MagicMock:
-    pi = MagicMock()
-    pi.connected = True
-    return pi
+def mock_handle(monkeypatch) -> int:
+    """Patch lgpio so no real GPIO calls are made in tests."""
+    import lgpio as _lgpio
+    monkeypatch.setattr(_lgpio, "gpio_claim_output", lambda h, pin: None)
+    monkeypatch.setattr(_lgpio, "tx_pwm", lambda h, pin, freq, duty: None)
+    monkeypatch.setattr(_lgpio, "gpio_free", lambda h, pin: None)
+    return 0  # fake handle integer
 
 
 @pytest.fixture
-def mock_motor(test_config: AppConfig, mock_pi: MagicMock):
+def mock_motor(test_config: AppConfig, mock_handle: int):
     from radiotelescope.hardware.motor import IBT2Motor
 
-    return IBT2Motor(test_config.motors.azimuth, mock_pi)
+    return IBT2Motor(test_config.motors.azimuth, mock_handle)
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import pigpio
+import lgpio
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,13 +27,11 @@ async def lifespan(app: FastAPI):
     cfg = app.state.config
 
     # Hardware
-    pi = pigpio.pi()
-    if not pi.connected:
-        raise RuntimeError("Cannot connect to pigpio daemon — is pigpiod running?")
+    handle = lgpio.gpiochip_open(0)
 
     motors = {
-        "azimuth": IBT2Motor(cfg.motors.azimuth, pi),
-        "elevation": IBT2Motor(cfg.motors.elevation, pi),
+        "azimuth": IBT2Motor(cfg.motors.azimuth, handle),
+        "elevation": IBT2Motor(cfg.motors.elevation, handle),
     }
     ina226 = INA226(cfg.i2c)
     sdr = SDRReceiver(cfg.sdr)
@@ -65,7 +63,7 @@ async def lifespan(app: FastAPI):
     for m in motors.values():
         m.cleanup()
     ina226.close()
-    pi.stop()
+    lgpio.gpiochip_close(handle)
     logger.info("Telescope controller shut down")
 
 

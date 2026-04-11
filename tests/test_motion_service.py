@@ -8,12 +8,12 @@ from radiotelescope.services.motion import MotionService
 
 
 @pytest.fixture
-def motion_service(mock_motor, test_config, mock_pi):
+def motion_service(mock_motor, test_config, mock_handle):
     from radiotelescope.hardware.motor import IBT2Motor
 
     motors = {
         "azimuth": mock_motor,
-        "elevation": IBT2Motor(test_config.motors.elevation, mock_pi),
+        "elevation": IBT2Motor(test_config.motors.elevation, mock_handle),
     }
     safety = MagicMock()
     safety.status = SafetyStatus(overcurrent_tripped=False)
@@ -34,12 +34,12 @@ def test_stop_all(motion_service: MotionService):
     assert not result["elevation"].is_moving
 
 
-def test_move_rejected_when_tripped(mock_motor, test_config, mock_pi):
+def test_move_rejected_when_tripped(mock_motor, test_config, mock_handle):
     from radiotelescope.hardware.motor import IBT2Motor
 
     motors = {
         "azimuth": mock_motor,
-        "elevation": IBT2Motor(test_config.motors.elevation, mock_pi),
+        "elevation": IBT2Motor(test_config.motors.elevation, mock_handle),
     }
     safety = MagicMock()
     safety.status = SafetyStatus(overcurrent_tripped=True)

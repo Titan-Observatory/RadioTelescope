@@ -2,16 +2,17 @@
 """Minimal dev CLI for hardware testing without starting the full server."""
 import argparse
 import time
-import pigpio
+import lgpio
 from radiotelescope.config import load_config
 from radiotelescope.hardware.motor import IBT2Motor
 from radiotelescope.hardware.current_sensor import INA226
 
+
 def cmd_move(args):
     cfg = load_config(args.config)
-    pi = pigpio.pi()
+    handle = lgpio.gpiochip_open(0)
     motor_cfg = getattr(cfg.motors, args.axis)
-    motor = IBT2Motor(motor_cfg, pi)
+    motor = IBT2Motor(motor_cfg, handle)
     try:
         print(f"Moving {args.axis} {args.direction} @ {args.speed}%")
         motor.set_speed(args.speed, args.direction)
@@ -19,7 +20,7 @@ def cmd_move(args):
     finally:
         motor.stop()
         motor.cleanup()
-        pi.stop()
+        lgpio.gpiochip_close(handle)
 
 def cmd_read(args):
     cfg = load_config(args.config)
