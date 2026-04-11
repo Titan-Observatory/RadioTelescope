@@ -12,13 +12,13 @@ averaging_mode = 4
 bus_voltage_conversion_time_us = 1100
 shunt_voltage_conversion_time_us = 1100
 
-[motors.azimuth]
+[motors.elevation]
 rpwm_pin = 5
 lpwm_pin = 6
 max_duty = 80
 ramp_time_s = 3.0
 
-[motors.elevation]
+[motors.azimuth]
 rpwm_pin = 20
 lpwm_pin = 21
 max_duty = 60
