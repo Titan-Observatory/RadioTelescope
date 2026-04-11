@@ -22,7 +22,7 @@ async def move(cmd: MoveCommand, request: Request):
 
 @router.post("/stop", response_model=dict[str, MotorState])
 async def stop(cmd: StopCommand, request: Request):
-    return _motion(request).stop(cmd)
+    return await _motion(request).stop(cmd)
 
 
 @router.get("/position", response_model=dict[str, MotorState])

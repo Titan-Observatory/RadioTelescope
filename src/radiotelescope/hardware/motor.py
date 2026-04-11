@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import lgpio
@@ -9,6 +10,7 @@ from radiotelescope.config import MotorConfig
 logger = logging.getLogger(__name__)
 
 PWM_FREQUENCY = 20_000  # 20 kHz — inaudible, good for BTS7960
+_RAMP_STEP = 5          # duty % per step
 
 
 class IBT2Motor:
@@ -16,6 +18,9 @@ class IBT2Motor:
 
     RPWM drives forward, LPWM drives reverse.  Enable pins are assumed
     hardwired high.  Duty is clamped to ``config.max_duty``.
+
+    Use ``stop()`` for immediate shutdown (emergencies, cleanup).
+    Use ``ramp_stop()`` for normal commanded stops to manage momentum.
     """
 
     def __init__(self, config: MotorConfig, handle: int) -> None:
@@ -34,10 +39,10 @@ class IBT2Motor:
         clamped = max(0, min(duty, self._cfg.max_duty))
 
         if direction == "forward":
-            lgpio.tx_pwm(self._handle, self._lpwm, 0, 0)
+            lgpio.tx_pwm(self._handle, self._lpwm, PWM_FREQUENCY, 0)
             lgpio.tx_pwm(self._handle, self._rpwm, PWM_FREQUENCY, clamped)
         elif direction == "reverse":
-            lgpio.tx_pwm(self._handle, self._rpwm, 0, 0)
+            lgpio.tx_pwm(self._handle, self._rpwm, PWM_FREQUENCY, 0)
             lgpio.tx_pwm(self._handle, self._lpwm, PWM_FREQUENCY, clamped)
         else:
             self.stop()
@@ -48,10 +53,40 @@ class IBT2Motor:
         logger.info("Motor GPIO%d/%d: %s @ %d%%", self._rpwm, self._lpwm, direction, clamped)
 
     def stop(self) -> None:
-        lgpio.tx_pwm(self._handle, self._rpwm, 0, 0)
-        lgpio.tx_pwm(self._handle, self._lpwm, 0, 0)
+        """Immediate hard stop. Use for emergencies and cleanup only."""
+        lgpio.tx_pwm(self._handle, self._rpwm, PWM_FREQUENCY, 0)
+        lgpio.tx_pwm(self._handle, self._lpwm, PWM_FREQUENCY, 0)
         self._duty = 0
         self._direction = "stopped"
+
+    async def ramp_stop(self) -> None:
+        """Gradually reduce duty to zero to manage momentum before stopping.
+
+        Decrements by ``_RAMP_STEP`` % at a rate set by ``config.ramp_rate``
+        (duty-% per second). Direction is preserved until duty reaches zero.
+        """
+        interval = _RAMP_STEP / self._cfg.ramp_rate  # seconds per step
+        current = self._duty
+
+        logger.info(
+            "Motor GPIO%d/%d: ramping down from %d%% at %d%%/s",
+            self._rpwm, self._lpwm, current, self._cfg.ramp_rate,
+        )
+
+        while current > 0:
+            current = max(0, current - _RAMP_STEP)
+            self._apply_duty(current)
+            if current > 0:
+                await asyncio.sleep(interval)
+
+        self._duty = 0
+        self._direction = "stopped"
+
+    def _apply_duty(self, duty: int) -> None:
+        if self._direction == "forward":
+            lgpio.tx_pwm(self._handle, self._rpwm, PWM_FREQUENCY, duty)
+        elif self._direction == "reverse":
+            lgpio.tx_pwm(self._handle, self._lpwm, PWM_FREQUENCY, duty)
 
     @property
     def duty(self) -> int:

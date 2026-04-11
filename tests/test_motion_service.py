@@ -27,9 +27,9 @@ def test_move_forward(motion_service: MotionService):
     assert state.direction == "forward"
 
 
-def test_stop_all(motion_service: MotionService):
+async def test_stop_all(motion_service: MotionService):
     motion_service.move(MoveCommand(axis="azimuth", speed=50, direction="forward"))
-    result = motion_service.stop(StopCommand())
+    result = await motion_service.stop(StopCommand())
     assert not result["azimuth"].is_moving
     assert not result["elevation"].is_moving
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from radiotelescope.hardware.motor import IBT2Motor
@@ -30,13 +31,10 @@ class MotionService:
         motor.set_speed(cmd.speed, cmd.direction)
         return self._motor_state(cmd.axis, motor)
 
-    def stop(self, cmd: StopCommand) -> dict[str, MotorState]:
+    async def stop(self, cmd: StopCommand) -> dict[str, MotorState]:
         axes = [cmd.axis] if cmd.axis else list(self._motors.keys())
-        result = {}
-        for axis in axes:
-            self._motors[axis].stop()
-            result[axis] = self._motor_state(axis, self._motors[axis])
-        return result
+        await asyncio.gather(*[self._motors[axis].ramp_stop() for axis in axes])
+        return {axis: self._motor_state(axis, self._motors[axis]) for axis in axes}
 
     def get_state(self) -> dict[str, MotorState]:
         return {

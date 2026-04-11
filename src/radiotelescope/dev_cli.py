@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Minimal dev CLI for hardware testing without starting the full server."""
 import argparse
+import asyncio
 import time
 import lgpio
 from radiotelescope.config import load_config
@@ -8,7 +9,7 @@ from radiotelescope.hardware.motor import IBT2Motor
 from radiotelescope.hardware.current_sensor import INA226
 
 
-def cmd_move(args):
+async def _move_async(args):
     cfg = load_config(args.config)
     handle = lgpio.gpiochip_open(0)
     motor_cfg = getattr(cfg.motors, args.axis)
@@ -16,11 +17,16 @@ def cmd_move(args):
     try:
         print(f"Moving {args.axis} {args.direction} @ {args.speed}%")
         motor.set_speed(args.speed, args.direction)
-        time.sleep(args.duration)
+        await asyncio.sleep(args.duration)
+        print("Ramping down...")
+        await motor.ramp_stop()
     finally:
-        motor.stop()
         motor.cleanup()
         lgpio.gpiochip_close(handle)
+
+
+def cmd_move(args):
+    asyncio.run(_move_async(args))
 
 def cmd_read(args):
     cfg = load_config(args.config)
