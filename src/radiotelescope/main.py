@@ -12,9 +12,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from radiotelescope.api import routes_motion, routes_status, ws
-from radiotelescope.config import load_config
+from radiotelescope.config import AppConfig, load_config
 from radiotelescope.hardware.current_sensor import INA226
 from radiotelescope.hardware.motor import IBT2Motor
+from radiotelescope.hardware.position_sensor import MockPositionSensor, PositionSensor
 from radiotelescope.hardware.sdr import SDRReceiver
 from radiotelescope.safety.interlocks import SafetyMonitor
 from radiotelescope.services.motion import MotionService
@@ -22,6 +23,14 @@ from radiotelescope.services.spectrum import SpectrumService
 from radiotelescope.services.telemetry import TelemetryService
 
 logger = logging.getLogger("radiotelescope")
+
+
+def _create_position_sensor(cfg: AppConfig) -> PositionSensor:
+    ps = cfg.position_sensor
+    if ps.type == "mcp3008":
+        from radiotelescope.hardware.mcp3008 import MCP3008PositionSensor
+        return MCP3008PositionSensor(ps)
+    return MockPositionSensor()
 
 
 @asynccontextmanager
@@ -37,13 +46,16 @@ async def lifespan(app: FastAPI):
     }
     ina226 = INA226(cfg.i2c)
     sdr = SDRReceiver(cfg.sdr)
+    position_sensor = _create_position_sensor(cfg)
 
     # Safety
     safety = SafetyMonitor(cfg.safety, ina226)
 
     # Services
     motion = MotionService(motors, safety)
-    telemetry = TelemetryService(ina226, safety, motion, cfg.general.update_rate_hz)
+    telemetry = TelemetryService(
+        ina226, safety, motion, cfg.general.update_rate_hz, position_sensor
+    )
     spectrum = SpectrumService(sdr, cfg.sdr)
 
     # Store on app.state for route access
@@ -65,6 +77,7 @@ async def lifespan(app: FastAPI):
     for m in motors.values():
         m.cleanup()
     ina226.close()
+    position_sensor.close()
     lgpio.gpiochip_close(handle)
     logger.info("Telescope controller shut down")
 

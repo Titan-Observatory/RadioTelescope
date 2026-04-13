@@ -46,6 +46,14 @@ center_freq_hz = 1420405000
 [server]
 host = "127.0.0.1"
 port = 8000
+
+[observer]
+latitude = 51.5
+longitude = -0.1
+elevation_m = 0.0
+
+[position_sensor]
+type = "mock"
 """
 
 
@@ -95,3 +103,10 @@ def mock_ina226() -> MagicMock:
         timestamp=0.0,
     )
     return sensor
+
+
+@pytest.fixture
+def mock_position_sensor():
+    from radiotelescope.hardware.position_sensor import MockPositionSensor
+
+    return MockPositionSensor(az=180.0, el=45.0)

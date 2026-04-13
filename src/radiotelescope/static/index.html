@@ -5,9 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Radio Telescope Controller</title>
     <link rel="stylesheet" href="/static/style.css">
+    <!-- Aladin Lite v3 — HiPS sky viewer -->
+    <link rel="stylesheet" href="https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.min.css">
 </head>
 <body>
 <div class="dashboard">
+
+    <!-- Sky Map -->
+    <div class="panel skymap">
+        <div class="skymap-toolbar">
+            <h2>Sky Map <span class="skymap-survey-label">HI4PI 21cm</span></h2>
+            <div class="skymap-coords">
+                <span class="skymap-coord-group">
+                    <span class="label">Pointing</span>
+                    <span id="point-az">Az: --</span>
+                    <span id="point-el">El: --</span>
+                    <span class="skymap-sep">|</span>
+                    <span id="point-ra">RA: --</span>
+                    <span id="point-dec">Dec: --</span>
+                </span>
+                <span class="skymap-coord-group">
+                    <span class="label">Cursor</span>
+                    <span id="cursor-az">Az: --</span>
+                    <span id="cursor-el">El: --</span>
+                </span>
+            </div>
+            <button class="btn-center-pointing" id="btn-center-pointing" title="Pan map to current pointing">Center</button>
+        </div>
+        <div id="aladin-div"></div>
+    </div>
 
     <!-- Header -->
     <div class="panel header">
@@ -112,6 +138,7 @@
     <kbd>Esc</kbd> Stop all motors
 </div>
 
+<script src="https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js" charset="utf-8"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

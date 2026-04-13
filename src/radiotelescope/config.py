@@ -7,6 +7,34 @@ from typing import Union
 from pydantic import BaseModel, Field
 
 
+class ObserverConfig(BaseModel):
+    latitude: float = 51.5       # degrees north
+    longitude: float = -0.1      # degrees east
+    elevation_m: float = 0.0     # metres above sea level
+
+
+class PositionAxisConfig(BaseModel):
+    adc_channel: int = 0
+    min_adc: int = 0
+    max_adc: int = 1023
+    min_deg: float = 0.0
+    max_deg: float = 360.0
+
+
+class PositionSensorConfig(BaseModel):
+    type: str = "mock"           # "mock" | "mcp3008"
+    # MCP3008 SPI settings (ignored when type="mock")
+    spi_device: int = 0          # /dev/spidev<spi_device>.*
+    spi_channel: int = 0         # CE pin (0=CE0, 1=CE1)
+    baud: int = 1_350_000
+    azimuth: PositionAxisConfig = Field(default_factory=PositionAxisConfig)
+    elevation: PositionAxisConfig = Field(
+        default_factory=lambda: PositionAxisConfig(
+            adc_channel=1, min_deg=5.0, max_deg=85.0
+        )
+    )
+
+
 class INA226Config(BaseModel):
     shunt_resistor_ohms: float = 0.01
     averaging_mode: int = 4
@@ -68,6 +96,8 @@ class AppConfig(BaseModel):
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     sdr: SDRConfig = Field(default_factory=SDRConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    observer: ObserverConfig = Field(default_factory=ObserverConfig)
+    position_sensor: PositionSensorConfig = Field(default_factory=PositionSensorConfig)
 
 
 def load_config(path: Path | str = "config.toml") -> AppConfig:

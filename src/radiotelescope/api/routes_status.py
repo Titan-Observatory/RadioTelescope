@@ -17,6 +17,16 @@ async def health(request: Request):
     return {"status": "ok"}
 
 
+@router.get("/observer")
+async def observer(request: Request):
+    cfg = request.app.state.config.observer
+    return {
+        "latitude": cfg.latitude,
+        "longitude": cfg.longitude,
+        "elevation_m": cfg.elevation_m,
+    }
+
+
 @router.post("/safety/reset")
 async def safety_reset(request: Request):
     request.app.state.safety_monitor.reset()

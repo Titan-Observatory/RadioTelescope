@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MotorState(BaseModel):
@@ -26,8 +26,15 @@ class SafetyStatus(BaseModel):
     last_trip_timestamp: float | None = None
 
 
+class PositionReading(BaseModel):
+    azimuth_deg: float = 0.0
+    elevation_deg: float = 0.0
+    available: bool = False
+
+
 class TelescopeState(BaseModel):
     motors: dict[str, MotorState]
     sensor: SensorReading
     safety: SafetyStatus
+    position: PositionReading = Field(default_factory=PositionReading)
     uptime_s: float = 0.0

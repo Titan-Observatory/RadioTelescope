@@ -44,3 +44,34 @@ integration_count = 8
 host = "0.0.0.0"
 port = 8000
 cors_origins = ["*"]
+
+# Observer location — used to convert Az/El ↔ RA/Dec in the sky map.
+# Update to your actual site coordinates.
+[observer]
+latitude   = 51.5       # degrees north (negative for south)
+longitude  = -0.1       # degrees east  (negative for west)
+elevation_m = 0.0       # metres above sea level
+
+# Position feedback from potentiometers via MCP3008 ADC over SPI.
+# Set type = "mcp3008" once the hardware is wired up.
+# Min/max ADC values should be measured by rotating each axis to its physical limits
+# and recording the raw ADC counts with type = "mock" (or a diagnostic script).
+[position_sensor]
+type        = "mock"    # "mock" | "mcp3008"
+spi_device  = 0         # /dev/spidev0.*
+spi_channel = 0         # CE0
+baud        = 1350000
+
+[position_sensor.azimuth]
+adc_channel = 0
+min_adc     = 0
+max_adc     = 1023
+min_deg     = 0.0
+max_deg     = 360.0
+
+[position_sensor.elevation]
+adc_channel = 1
+min_adc     = 0
+max_adc     = 1023
+min_deg     = 5.0
+max_deg     = 85.0

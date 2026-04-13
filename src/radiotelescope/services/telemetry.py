@@ -5,7 +5,8 @@ import logging
 import time
 
 from radiotelescope.hardware.current_sensor import INA226
-from radiotelescope.models.state import TelescopeState
+from radiotelescope.hardware.position_sensor import PositionSensor
+from radiotelescope.models.state import PositionReading, TelescopeState
 from radiotelescope.safety.interlocks import SafetyMonitor
 from radiotelescope.services.motion import MotionService
 
@@ -19,11 +20,13 @@ class TelemetryService:
         safety: SafetyMonitor,
         motion: MotionService,
         update_rate_hz: int = 10,
+        position_sensor: PositionSensor | None = None,
     ) -> None:
         self._ina226 = ina226
         self._safety = safety
         self._motion = motion
         self._rate = update_rate_hz
+        self._position_sensor = position_sensor
         self._subscribers: list[asyncio.Queue[TelescopeState]] = []
         self._task: asyncio.Task | None = None
         self._start_time = time.time()
@@ -63,10 +66,16 @@ class TelemetryService:
             if not self._safety.check_current(reading) and any(motor.is_moving for motor in motors):
                 self._safety.emergency_stop(motors)
 
+            if self._position_sensor is not None:
+                position = await asyncio.to_thread(self._position_sensor.read)
+            else:
+                position = PositionReading()
+
             state = TelescopeState(
                 motors=self._motion.get_state(),
                 sensor=reading,
                 safety=self._safety.status,
+                position=position,
                 uptime_s=round(time.time() - self._start_time, 1),
             )
 
@@ -84,9 +93,11 @@ class TelemetryService:
 
     def latest_state(self) -> TelescopeState:
         reading = self._ina226.read()
+        position = self._position_sensor.read() if self._position_sensor is not None else PositionReading()
         return TelescopeState(
             motors=self._motion.get_state(),
             sensor=reading,
             safety=self._safety.status,
+            position=position,
             uptime_s=round(time.time() - self._start_time, 1),
         )

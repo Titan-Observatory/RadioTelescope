@@ -26,13 +26,14 @@ body {
 .dashboard {
     display: grid;
     grid-template-areas:
-        "header header"
-        "motors telemetry"
-        "motors safety"
+        "skymap  skymap"
+        "header  header"
+        "motors  telemetry"
+        "motors  safety"
         "spectrum spectrum"
-        "log log";
+        "log     log";
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto auto auto 1fr;
+    grid-template-rows: auto auto auto auto auto 1fr;
     gap: 12px;
     max-width: 960px;
     margin: 0 auto;
@@ -41,6 +42,7 @@ body {
 @media (max-width: 768px) {
     .dashboard {
         grid-template-areas:
+            "skymap"
             "header"
             "motors"
             "telemetry"
@@ -67,6 +69,7 @@ body {
     margin-bottom: 10px;
 }
 
+.skymap   { grid-area: skymap; display: flex; flex-direction: column; padding: 10px; }
 .header   { grid-area: header; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .motors   { grid-area: motors; }
 .telemetry{ grid-area: telemetry; }
@@ -228,6 +231,85 @@ body {
     color: var(--text-dim);
     font-size: 13px;
     min-height: 120px;
+}
+
+/* --- Sky Map --- */
+.skymap-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.skymap-toolbar h2 {
+    margin-bottom: 0;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.skymap-survey-label {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: #1a3a5c;
+    color: #6ab0ff;
+    letter-spacing: 0;
+    text-transform: none;
+    font-weight: normal;
+}
+
+.skymap-coords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 12px;
+    flex: 1;
+}
+
+.skymap-coord-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.skymap-coord-group .label {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.skymap-coord-group span:not(.label):not(.skymap-sep) {
+    color: var(--text);
+}
+
+.skymap-sep { color: var(--border); }
+
+.btn-center-pointing {
+    background: var(--border);
+    color: var(--text);
+    border: 1px solid var(--text-dim);
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+.btn-center-pointing:hover { background: var(--text-dim); color: var(--bg); }
+
+#aladin-div {
+    flex: 1;
+    min-height: 480px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #000;
 }
 
 /* --- Event Log --- */
