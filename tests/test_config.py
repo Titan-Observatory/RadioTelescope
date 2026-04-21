@@ -11,7 +11,7 @@ def test_load_config(test_config: AppConfig):
 
 
 def test_motor_config_defaults(test_config: AppConfig):
-    assert test_config.motors.azimuth.ramp_rate == 10  # default
+    assert test_config.motors.azimuth.ramp_time_s == 3.0  # default
     assert test_config.motors.azimuth.max_duty == 80
 
 

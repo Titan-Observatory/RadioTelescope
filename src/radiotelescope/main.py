@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 
     await telemetry.start()
     await session.start()
-    await spectrum.start()
+    # Spectrum starts on demand via POST /api/sdr/start (SDR may not be plugged in at boot)
 
     logger.info("Telescope controller started")
     yield
