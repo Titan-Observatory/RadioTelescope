@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from radiotelescope.api import routes_motion, routes_sdr, routes_status, ws
+from radiotelescope.api import routes_config, routes_motion, routes_sdr, routes_status, ws
 from radiotelescope.config import load_config
 from radiotelescope.hardware.current_sensor import INA226
 from radiotelescope.hardware.motor import IBT2Motor
@@ -94,6 +94,7 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
     app.include_router(routes_motion.router)
     app.include_router(routes_status.router)
     app.include_router(routes_sdr.router)
+    app.include_router(routes_config.router)
     app.include_router(ws.router)
 
     # Dev web UI — static files served from package
