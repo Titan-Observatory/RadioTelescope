@@ -1,117 +1,139 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Radio Telescope Controller</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hydrogen Line Radio Telescope</title>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-<div class="dashboard">
-
-    <!-- Header -->
-    <div class="panel header">
-        <h1>Radio Telescope</h1>
-        <span id="conn-led" class="conn-status" title="WebSocket disconnected"></span>
-        <span class="uptime">Uptime: <span id="uptime">--:--:--</span></span>
-        <button class="btn-stop-all" id="stop-all">STOP ALL</button>
+  <header class="app-header">
+    <div class="header-left">
+      <span class="app-title">Hydrogen Line Radio Telescope</span>
+      <span class="ws-dot" id="ws-dot" title="WebSocket disconnected"></span>
     </div>
+    <div class="header-right">
+      <span class="session-badge" id="session-badge">Not in control</span>
+      <button class="btn btn-danger btn-stop-all" id="btn-stop-all" title="Emergency stop (Esc)">&#9632; STOP ALL</button>
+    </div>
+  </header>
 
-    <!-- Motor Control -->
-    <div class="panel motors">
-        <h2>Motor Control</h2>
+  <main class="app-main">
 
-        <div class="axis-group" data-axis="azimuth">
-            <h3>Azimuth <span id="azimuth-tag" class="status-tag">IDLE</span></h3>
-            <div class="motor-buttons">
-                <button onclick="moveAxis('azimuth','reverse')">&#9664; Rev</button>
-                <button class="btn-axis-stop" onclick="stopAxis('azimuth')">Stop</button>
-                <button onclick="moveAxis('azimuth','forward')">Fwd &#9654;</button>
-            </div>
-            <div class="speed-row">
-                <span>Speed:</span>
-                <input type="range" id="speed-azimuth" min="0" max="100" value="30">
-                <span class="speed-val" id="speed-azimuth-val">30</span>
-            </div>
-            <div class="motor-readout">
-                Duty: <span id="azimuth-duty">0</span>% &middot;
-                Dir: <span id="azimuth-direction">stopped</span>
-            </div>
+    <!-- SPECTRUM -->
+    <section class="card spectrum-card">
+      <div class="card-header">
+        <span class="card-title">H I 1420.405 MHz &mdash; Live Spectrum</span>
+        <div class="spectrum-legend">
+          <span class="legend-item legend-instant">Instant</span>
+          <span class="legend-item legend-rolling">Rolling avg</span>
         </div>
-
-        <div class="axis-group" data-axis="elevation">
-            <h3>Elevation <span id="elevation-tag" class="status-tag">IDLE</span></h3>
-            <div class="motor-buttons">
-                <button onclick="moveAxis('elevation','reverse')">&#9664; Rev</button>
-                <button class="btn-axis-stop" onclick="stopAxis('elevation')">Stop</button>
-                <button onclick="moveAxis('elevation','forward')">Fwd &#9654;</button>
-            </div>
-            <div class="speed-row">
-                <span>Speed:</span>
-                <input type="range" id="speed-elevation" min="0" max="100" value="30">
-                <span class="speed-val" id="speed-elevation-val">30</span>
-            </div>
-            <div class="motor-readout">
-                Duty: <span id="elevation-duty">0</span>% &middot;
-                Dir: <span id="elevation-direction">stopped</span>
-            </div>
+      </div>
+      <div class="canvas-wrap" id="canvas-wrap">
+        <canvas id="spectrum-canvas"></canvas>
+        <div class="spectrum-placeholder" id="spectrum-placeholder">
+          <span>SDR not running &mdash; click Start Observing below</span>
         </div>
-    </div>
-
-    <!-- Telemetry -->
-    <div class="panel telemetry">
-        <h2>Telemetry</h2>
-        <div class="telem-grid">
-            <span class="label">Bus voltage</span>
-            <span class="value"><span id="voltage">--</span> V</span>
-            <span class="label">Shunt voltage</span>
-            <span class="value"><span id="shunt-mv">--</span> mV</span>
-            <span class="label">Current</span>
-            <span class="value"><span id="current">--</span> A</span>
-            <span class="label">Power</span>
-            <span class="value"><span id="power">--</span> W</span>
+      </div>
+      <div class="integration-row">
+        <span class="integration-label">
+          Integration:&nbsp;<span id="int-elapsed">0.0</span>&thinsp;s
+          / <span id="int-window">30</span>&thinsp;s
+          &nbsp;<span class="int-frames">(<span id="int-frames">0</span> frames)</span>
+        </span>
+        <div class="integration-track">
+          <div class="integration-fill" id="int-fill"></div>
         </div>
-    </div>
+        <button class="btn btn-sm btn-outline" id="btn-reset-int">Reset</button>
+      </div>
+    </section>
 
-    <!-- Safety -->
-    <div class="panel safety">
-        <h2>Safety</h2>
-        <span id="safety-badge" class="safety-badge ok">OK</span>
-        <div class="safety-info">Last trip: <span id="last-trip">never</span></div>
-        <button class="btn-reset" id="btn-safety-reset">Reset Safety</button>
-    </div>
-
-    <!-- Spectrum Placeholder -->
-    <div class="panel spectrum">
-        <h2>SDR Spectrum</h2>
-        <!--
-            TODO: Future implementation
-            - Connect to /ws/spectrum WebSocket
-            - Decode base64 float32 FFT magnitudes
-            - Render waterfall / line chart on <canvas>
-            - Add SDR controls (requires new API endpoints):
-              POST /api/sdr/start   - start spectrum streaming
-              POST /api/sdr/stop    - stop spectrum streaming
-              POST /api/sdr/tune    - tune frequency/gain/sample rate
-              GET  /api/sdr/status  - current SDR config & state
-        -->
-        <div class="spectrum-placeholder">
-            SDR Spectrum &mdash; not yet implemented
+    <!-- POINTING -->
+    <section class="card pointing-card">
+      <div class="card-header">
+        <span class="card-title">Telescope Slew</span>
+        <div class="sdr-controls">
+          <button class="btn btn-primary" id="btn-sdr-start">&#9654; Start Observing</button>
+          <button class="btn btn-outline" id="btn-sdr-stop">&#9632; Stop SDR</button>
         </div>
-    </div>
+      </div>
+      <div class="pointing-grid">
+        <div class="axis-group">
+          <div class="axis-label">Azimuth</div>
+          <div class="arrow-pair-h">
+            <button class="btn btn-arrow" data-axis="azimuth" data-dir="reverse">&#9664; W</button>
+            <button class="btn btn-arrow" data-axis="azimuth" data-dir="forward">E &#9654;</button>
+          </div>
+          <div class="motor-state-badge" id="motor-azimuth">stopped</div>
+        </div>
+        <div class="axis-divider"></div>
+        <div class="axis-group">
+          <div class="axis-label">Elevation</div>
+          <div class="arrow-pair-v">
+            <button class="btn btn-arrow" data-axis="elevation" data-dir="forward">&#9650; Up</button>
+            <button class="btn btn-arrow" data-axis="elevation" data-dir="reverse">&#9660; Down</button>
+          </div>
+          <div class="motor-state-badge" id="motor-elevation">stopped</div>
+        </div>
+      </div>
+    </section>
 
-    <!-- Event Log -->
-    <div class="panel log">
-        <h2>Event Log</h2>
-        <div id="event-log" class="log-output"></div>
-    </div>
+    <!-- ADVANCED -->
+    <details class="card advanced-card" id="advanced-details">
+      <summary class="card-header advanced-summary">
+        <span class="card-title">Advanced</span>
+        <span class="adv-chevron">&#9660;</span>
+      </summary>
+      <div class="advanced-body">
+        <div class="telemetry-grid">
+          <div class="telem-cell">
+            <div class="telem-label">Voltage</div>
+            <div class="telem-value"><span id="telem-voltage">--</span> <span class="telem-unit">V</span></div>
+          </div>
+          <div class="telem-cell">
+            <div class="telem-label">Current</div>
+            <div class="telem-value"><span id="telem-current">--</span> <span class="telem-unit">A</span></div>
+          </div>
+          <div class="telem-cell">
+            <div class="telem-label">Power</div>
+            <div class="telem-value"><span id="telem-power">--</span> <span class="telem-unit">W</span></div>
+          </div>
+          <div class="telem-cell">
+            <div class="telem-label">Uptime</div>
+            <div class="telem-value" id="telem-uptime">--</div>
+          </div>
+        </div>
+        <div class="adv-controls-row">
+          <div class="safety-group">
+            <span class="safety-badge" id="safety-badge">OK</span>
+            <button class="btn btn-sm btn-outline" id="btn-safety-reset">Reset Safety</button>
+          </div>
+          <div class="adv-setting">
+            <label class="adv-label" for="sel-int-window">Integration window</label>
+            <select class="adv-select" id="sel-int-window">
+              <option value="10">10 s</option>
+              <option value="30" selected>30 s</option>
+              <option value="60">60 s</option>
+              <option value="120">120 s</option>
+              <option value="300">300 s</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </details>
 
-</div>
+  </main>
 
-<div class="footer">
-    <kbd>Esc</kbd> Stop all motors
-</div>
+  <footer class="status-bar">
+    <span id="status-ws">WebSocket: connecting&hellip;</span>
+    <span class="status-sep">&middot;</span>
+    <span id="status-frame">No spectrum data</span>
+    <span class="status-sep">&middot;</span>
+    <span id="status-session">Session: none</span>
+  </footer>
 
-<script src="/static/app.js"></script>
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="/static/app.js"></script>
 </body>
 </html>

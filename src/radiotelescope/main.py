@@ -11,13 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from radiotelescope.api import routes_motion, routes_status, ws
+from radiotelescope.api import routes_motion, routes_sdr, routes_status, ws
 from radiotelescope.config import load_config
 from radiotelescope.hardware.current_sensor import INA226
 from radiotelescope.hardware.motor import IBT2Motor
 from radiotelescope.hardware.sdr import SDRReceiver
 from radiotelescope.safety.interlocks import SafetyMonitor
 from radiotelescope.services.motion import MotionService
+from radiotelescope.services.session import SessionService
 from radiotelescope.services.spectrum import SpectrumService
 from radiotelescope.services.telemetry import TelemetryService
 
@@ -45,21 +46,24 @@ async def lifespan(app: FastAPI):
     motion = MotionService(motors, safety)
     telemetry = TelemetryService(ina226, safety, motion, cfg.general.update_rate_hz)
     spectrum = SpectrumService(sdr, cfg.sdr)
+    session = SessionService()
 
     # Store on app.state for route access
     app.state.safety_monitor = safety
     app.state.motion_service = motion
     app.state.telemetry_service = telemetry
     app.state.spectrum_service = spectrum
+    app.state.session_service = session
 
     await telemetry.start()
-    # Spectrum starts on demand or can be auto-started here:
-    # await spectrum.start()
+    await session.start()
+    await spectrum.start()
 
     logger.info("Telescope controller started")
     yield
 
     # Shutdown
+    await session.stop()
     await spectrum.stop()
     await telemetry.stop()
     for m in motors.values():
@@ -89,6 +93,7 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
 
     app.include_router(routes_motion.router)
     app.include_router(routes_status.router)
+    app.include_router(routes_sdr.router)
     app.include_router(ws.router)
 
     # Dev web UI — static files served from package

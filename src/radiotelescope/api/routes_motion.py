@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from radiotelescope.models.commands import MoveCommand, StopCommand
 from radiotelescope.models.state import MotorState
+from radiotelescope.services.session import require_session
 
 router = APIRouter(prefix="/api", tags=["motion"])
 
@@ -12,7 +13,7 @@ def _motion(request: Request):
     return request.app.state.motion_service
 
 
-@router.post("/move", response_model=MotorState)
+@router.post("/move", response_model=MotorState, dependencies=[Depends(require_session)])
 async def move(cmd: MoveCommand, request: Request):
     try:
         return await _motion(request).move(cmd)
@@ -20,7 +21,7 @@ async def move(cmd: MoveCommand, request: Request):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.post("/stop", response_model=dict[str, MotorState])
+@router.post("/stop", response_model=dict[str, MotorState], dependencies=[Depends(require_session)])
 async def stop(cmd: StopCommand, request: Request):
     return await _motion(request).stop(cmd)
 

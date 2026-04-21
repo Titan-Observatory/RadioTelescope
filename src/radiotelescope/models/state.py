@@ -31,3 +31,20 @@ class TelescopeState(BaseModel):
     sensor: SensorReading
     safety: SafetyStatus
     uptime_s: float = 0.0
+
+
+class SessionStatus(BaseModel):
+    active: bool = False
+    client_id: str | None = None
+    claimed_at: float | None = None
+    expires_at: float | None = None
+
+
+class SDRStatus(BaseModel):
+    running: bool = False
+    center_freq_hz: int = 0
+    sample_rate_hz: int = 0
+    gain: float | str = 0
+    fft_size: int = 0
+    integration_count: int = 0
+    rolling_window_s: float = 0.0
