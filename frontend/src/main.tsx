@@ -7,12 +7,11 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { api, ApiError } from './api';
-import type { CommandInfo, CommandResult, RoboClawTelemetry } from './types';
+import type { CommandInfo, RoboClawTelemetry } from './types';
 
 function App() {
   const [telemetry, setTelemetry] = useState<RoboClawTelemetry | null>(null);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
-  const [history, setHistory] = useState<CommandResult[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,8 +35,7 @@ function App() {
     }
     setNotice(null);
     try {
-      const result = await api.execute(command.id, args);
-      setHistory((items) => [result, ...items].slice(0, 6));
+      await api.execute(command.id, args);
       setTelemetry(await api.status());
     } catch (err) {
       setNotice(errorMessage(err));
@@ -47,8 +45,7 @@ function App() {
   const stopAll = async () => {
     setNotice(null);
     try {
-      const result = await api.stop();
-      setHistory((items) => [...Object.values(result), ...items].slice(0, 6));
+      await api.stop();
       setTelemetry(await api.status());
     } catch (err) {
       setNotice(errorMessage(err));
@@ -58,8 +55,7 @@ function App() {
   const gotoAltAz = async (altitudeDeg: number, azimuthDeg: number, speedQpps: number, accelQpps2: number) => {
     setNotice(null);
     try {
-      const result = await api.gotoAltAz(altitudeDeg, azimuthDeg, speedQpps, accelQpps2);
-      setHistory((items) => [result, ...items].slice(0, 6));
+      await api.gotoAltAz(altitudeDeg, azimuthDeg, speedQpps, accelQpps2);
       setTelemetry(await api.status());
     } catch (err) {
       setNotice(errorMessage(err));
@@ -86,9 +82,6 @@ function App() {
         </section>
         <section className="panel telemetry-panel">
           <TelemetryDashboard telemetry={telemetry} />
-        </section>
-        <section className="panel history-panel">
-          <CommandHistory items={history} />
         </section>
         <section className="panel terminal-panel">
           <HostTerminal />
@@ -153,7 +146,7 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz }: {
         negative={() => runCommand('backward_m2', { speed })}
         positive={() => runCommand('forward_m2', { speed })}
       />
-      <div className="speed-row">
+      <div className="speed-control">
         <label>
           <span>Slew</span>
           <strong>{slewSpeed}%</strong>
@@ -284,24 +277,6 @@ function DenseReadout({ title, rows }: { title?: string; rows: [string, string][
         ))}
       </dl>
     </div>
-  );
-}
-
-function CommandHistory({ items }: { items: CommandResult[] }) {
-  return (
-    <>
-      <h2>Recent Commands</h2>
-      {items.length === 0 ? <p className="muted">No commands yet.</p> : (
-        <ol className="compact-history">
-          {items.map((item, index) => (
-            <li key={`${item.command_id}-${index}`}>
-              <strong>{item.command_id}</strong>
-              <span>{item.ok ? 'ok' : item.error ?? 'failed'}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </>
   );
 }
 

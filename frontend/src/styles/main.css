@@ -120,7 +120,7 @@ input {
   grid-template-columns: minmax(360px, 1.15fr) minmax(280px, 0.85fr);
   grid-template-areas:
     "controls telemetry"
-    "tune history"
+    "tune telemetry"
     "terminal terminal";
   gap: 12px;
   padding: 12px;
@@ -137,7 +137,6 @@ input {
 .controls-panel { grid-area: controls; }
 .tune-panel { grid-area: tune; }
 .telemetry-panel { grid-area: telemetry; }
-.history-panel { grid-area: history; }
 .terminal-panel { grid-area: terminal; }
 
 .panel h2 {
@@ -148,7 +147,7 @@ input {
 
 .controls-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(220px, 1fr)) 82px;
   gap: 10px;
 }
 
@@ -188,37 +187,49 @@ input {
   font-weight: 700;
 }
 
-.speed-row {
-  grid-column: 1 / -1;
+.speed-control {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 120px;
-  align-items: end;
-  gap: 10px;
-  border-top: 1px solid #27313a;
-  padding-top: 10px;
+  grid-row: span 2;
+  gap: 8px;
+  align-content: stretch;
 }
 
-.speed-row label {
+.speed-control label {
   display: grid;
-  grid-template-columns: 52px 54px minmax(120px, 1fr);
-  align-items: center;
-  gap: 10px;
+  grid-template-rows: auto auto minmax(96px, 1fr);
+  justify-items: center;
+  gap: 6px;
+  min-height: 178px;
+  border: 1px solid #27313a;
+  border-radius: 6px;
+  background: #11171c;
+  padding: 8px 6px;
 }
 
-.speed-row label span,
+.speed-control label span,
 .compact-form label span,
 .target-form label span {
   color: #9eaab5;
   font-size: 12px;
 }
 
-.speed-row strong {
-  font-size: 18px;
+.speed-control strong {
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
 
-.speed-row input[type="range"] {
+.speed-control input[type="range"] {
+  width: 112px;
+  height: 28px;
   padding: 0;
+  align-self: center;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.speed-control .stop-button {
+  min-height: 34px;
+  padding-inline: 6px;
 }
 
 .target-form {
@@ -296,35 +307,6 @@ input {
   gap: 4px;
 }
 
-.compact-history {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.compact-history li {
-  display: grid;
-  grid-template-columns: minmax(120px, 1fr) max-content;
-  gap: 10px;
-  border: 1px solid #27313a;
-  border-radius: 6px;
-  padding: 7px 8px;
-  background: #11171c;
-  font-size: 12px;
-}
-
-.compact-history strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.compact-history span {
-  color: #72e0ad;
-}
-
 .muted {
   margin: 0;
   color: #9eaab5;
@@ -356,7 +338,6 @@ input {
       "controls"
       "tune"
       "telemetry"
-      "history"
       "terminal";
   }
 }
@@ -375,9 +356,17 @@ input {
   .telemetry-dense,
   .compact-form,
   .target-form,
-  .speed-row,
-  .speed-row label {
+  .speed-control,
+  .speed-control label {
     grid-template-columns: 1fr;
+  }
+
+  .controls-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .speed-control {
+    grid-row: auto;
   }
 
   .axis-actions button {
