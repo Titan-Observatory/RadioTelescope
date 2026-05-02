@@ -31,6 +31,21 @@ class MotorSnapshot(BaseModel):
     position_error: int | None = None
 
 
+class HostStats(BaseModel):
+    cpu_temp_c: float | None = None
+    load_1m: float | None = None
+    load_5m: float | None = None
+    load_15m: float | None = None
+    cpu_count: int | None = None
+    memory_total_mb: float | None = None
+    memory_available_mb: float | None = None
+    memory_used_percent: float | None = None
+    disk_total_gb: float | None = None
+    disk_free_gb: float | None = None
+    disk_used_percent: float | None = None
+    uptime_s: float | None = None
+
+
 class RoboClawTelemetry(BaseModel):
     connection: ConnectionStatus
     timestamp: float
@@ -44,6 +59,7 @@ class RoboClawTelemetry(BaseModel):
     buffer_depths: dict[str, int | None] = Field(default_factory=dict)
     encoder_modes: dict[str, int | None] = Field(default_factory=dict)
     motors: dict[str, MotorSnapshot] = Field(default_factory=dict)
+    host: HostStats = Field(default_factory=HostStats)
     last_error: str | None = None
 
 

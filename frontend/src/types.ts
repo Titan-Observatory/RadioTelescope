@@ -23,6 +23,21 @@ export interface MotorSnapshot {
   position_error: number | null;
 }
 
+export interface HostStats {
+  cpu_temp_c: number | null;
+  load_1m: number | null;
+  load_5m: number | null;
+  load_15m: number | null;
+  cpu_count: number | null;
+  memory_total_mb: number | null;
+  memory_available_mb: number | null;
+  memory_used_percent: number | null;
+  disk_total_gb: number | null;
+  disk_free_gb: number | null;
+  disk_used_percent: number | null;
+  uptime_s: number | null;
+}
+
 export interface RoboClawTelemetry {
   connection: ConnectionStatus;
   timestamp: number;
@@ -36,6 +51,7 @@ export interface RoboClawTelemetry {
   buffer_depths: Record<string, number | null>;
   encoder_modes: Record<string, number | null>;
   motors: Record<string, MotorSnapshot>;
+  host: HostStats;
   last_error: string | null;
 }
 

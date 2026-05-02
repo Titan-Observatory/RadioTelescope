@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from radiotelescope.config import RoboClawConfig
+from radiotelescope.hardware.host_stats import read_host_stats
 from radiotelescope.models.state import CommandArg, CommandInfo, CommandResult, ConnectionStatus, RoboClawTelemetry
 
 logger = logging.getLogger(__name__)
@@ -526,6 +527,7 @@ def build_snapshot(client: RoboClawClient, connection: ConnectionStatus) -> Robo
                 "position_error": position_errors.get("m2_error"),
             },
         },
+        host=read_host_stats(),
         last_error="; ".join(errors) if errors else None,
     )
 

@@ -27,6 +27,7 @@ update_rate_hz = 5
 host = "127.0.0.1"
 port = 8000
 cors_origins = ["*"]
+allowed_clients = ["testclient"]
 """,
         encoding="utf-8",
     )

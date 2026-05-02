@@ -218,6 +218,13 @@ function TelemetryDashboard({ telemetry }: { telemetry: RoboClawTelemetry | null
           ['T2', celsius(telemetry?.temperature_2_c)],
           ['Flags', telemetry?.status_flags.length ? telemetry.status_flags.join(', ') : 'None'],
         ]} />
+        <DenseReadout title="Pi" rows={[
+          ['CPU temp', celsius(telemetry?.host.cpu_temp_c)],
+          ['Load', load(telemetry)],
+          ['Memory', percent(telemetry?.host.memory_used_percent)],
+          ['Disk', disk(telemetry)],
+          ['Uptime', duration(telemetry?.host.uptime_s)],
+        ]} />
         <DenseReadout title="M1 Detail" rows={[
           ['Avg', qpps(telemetry?.motors.m1?.average_speed_qpps)],
           ['Raw', qpps(telemetry?.motors.m1?.raw_speed_qpps)],
@@ -335,6 +342,34 @@ function celsius(input: number | null | undefined): string {
 
 function qpps(input: number | null | undefined): string {
   return input == null ? '-' : `${input}`;
+}
+
+function percent(input: number | null | undefined): string {
+  return input == null ? '-' : `${input.toFixed(1)}%`;
+}
+
+function load(telemetry: RoboClawTelemetry | null): string {
+  const host = telemetry?.host;
+  if (!host || host.load_1m == null) return '-';
+  const cores = host.cpu_count ? ` / ${host.cpu_count}c` : '';
+  return `${host.load_1m.toFixed(2)}${cores}`;
+}
+
+function disk(telemetry: RoboClawTelemetry | null): string {
+  const host = telemetry?.host;
+  if (!host || host.disk_used_percent == null || host.disk_free_gb == null) return '-';
+  return `${host.disk_used_percent.toFixed(1)}% / ${host.disk_free_gb.toFixed(1)} GB free`;
+}
+
+function duration(input: number | null | undefined): string {
+  if (input == null) return '-';
+  const totalMinutes = Math.floor(input / 60);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
 function errorMessage(err: unknown): string {

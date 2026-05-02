@@ -43,3 +43,34 @@ def test_api_status_contains_telemetry(simulated_config_path):
     assert response.status_code == 200
     assert body["firmware"]
     assert "m1" in body["motors"]
+
+
+def test_api_allows_configured_client(simulated_config_path):
+    simulated_config_path.write_text(
+        simulated_config_path.read_text(encoding="utf-8").replace(
+            'allowed_clients = ["testclient"]',
+            'allowed_clients = ["10.0.27.1", "10.0.27.2"]',
+        ),
+        encoding="utf-8",
+    )
+
+    with TestClient(create_app(simulated_config_path), client=("10.0.27.1", 50000)) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 200
+
+
+def test_api_rejects_unconfigured_client(simulated_config_path):
+    simulated_config_path.write_text(
+        simulated_config_path.read_text(encoding="utf-8").replace(
+            'allowed_clients = ["testclient"]',
+            'allowed_clients = ["10.0.27.1", "10.0.27.2"]',
+        ),
+        encoding="utf-8",
+    )
+
+    with TestClient(create_app(simulated_config_path), client=("10.0.27.3", 50000)) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 403
+    assert response.text == "Client IP not allowed"
