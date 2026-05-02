@@ -24,6 +24,16 @@ class TerminalConfig(BaseModel):
     shell: str | None = None
 
 
+class MountConfig(BaseModel):
+    az_counts_per_degree: float = Field(default=1000.0, gt=0)
+    alt_counts_per_degree: float = Field(default=1000.0, gt=0)
+    az_zero_count: int = 0
+    alt_zero_count: int = 0
+    goto_speed_qpps: int = Field(default=10_000, ge=0)
+    goto_accel_qpps2: int = Field(default=25_000, ge=0)
+    goto_decel_qpps2: int = Field(default=25_000, ge=0)
+
+
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
@@ -40,6 +50,7 @@ class AppConfig(BaseModel):
     roboclaw: RoboClawConfig = Field(default_factory=RoboClawConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     terminal: TerminalConfig = Field(default_factory=TerminalConfig)
+    mount: MountConfig = Field(default_factory=MountConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 
 

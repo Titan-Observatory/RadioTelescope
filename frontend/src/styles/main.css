@@ -206,7 +206,8 @@ input {
 }
 
 .speed-row label span,
-.compact-form label span {
+.compact-form label span,
+.target-form label span {
   color: #9eaab5;
   font-size: 12px;
 }
@@ -218,6 +219,21 @@ input {
 
 .speed-row input[type="range"] {
   padding: 0;
+}
+
+.target-form {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr)) auto;
+  gap: 8px;
+  align-items: end;
+  border-top: 1px solid #27313a;
+  padding-top: 10px;
+}
+
+.target-form label {
+  display: grid;
+  gap: 4px;
 }
 
 .dense-readout {
@@ -358,6 +374,7 @@ input {
   .controls-grid,
   .telemetry-dense,
   .compact-form,
+  .target-form,
   .speed-row,
   .speed-row label {
     grid-template-columns: 1fr;

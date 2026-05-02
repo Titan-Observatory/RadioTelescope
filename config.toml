@@ -16,6 +16,16 @@ enabled = true
 # shell = "powershell.exe" # Windows
 # shell = "/bin/bash"      # Linux/Raspberry Pi
 
+[mount]
+# M1 is azimuth, M2 is altitude. Tune these after measuring encoder counts.
+az_counts_per_degree = 1000.0
+alt_counts_per_degree = 1000.0
+az_zero_count = 0
+alt_zero_count = 0
+goto_speed_qpps = 10000
+goto_accel_qpps2 = 25000
+goto_decel_qpps2 = 25000
+
 [server]
 host = "0.0.0.0"
 port = 8000

@@ -23,6 +23,15 @@ connect_mode = "simulated"
 [telemetry]
 update_rate_hz = 5
 
+[mount]
+az_counts_per_degree = 10.0
+alt_counts_per_degree = 20.0
+az_zero_count = 100
+alt_zero_count = 200
+goto_speed_qpps = 3000
+goto_accel_qpps2 = 4000
+goto_decel_qpps2 = 5000
+
 [server]
 host = "127.0.0.1"
 port = 8000

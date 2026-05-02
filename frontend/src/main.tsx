@@ -1,7 +1,7 @@
 import './styles/main.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { AlertTriangle, RotateCcw, Save, Square } from 'lucide-react';
+import { AlertTriangle, Navigation, RotateCcw, Save, Square } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -55,6 +55,17 @@ function App() {
     }
   };
 
+  const gotoAltAz = async (altitudeDeg: number, azimuthDeg: number, speedQpps: number, accelQpps2: number) => {
+    setNotice(null);
+    try {
+      const result = await api.gotoAltAz(altitudeDeg, azimuthDeg, speedQpps, accelQpps2);
+      setHistory((items) => [result, ...items].slice(0, 6));
+      setTelemetry(await api.status());
+    } catch (err) {
+      setNotice(errorMessage(err));
+    }
+  };
+
   return (
     <div className="app-shell">
       <TopBar telemetry={telemetry} stopAll={stopAll} />
@@ -68,7 +79,7 @@ function App() {
 
       <main className="dashboard">
         <section className="panel controls-panel">
-          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} />
+          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} />
         </section>
         <section className="panel tune-panel">
           <LiveTuning runCommand={runCommand} />
@@ -106,13 +117,24 @@ function TopBar({ telemetry, stopAll }: { telemetry: RoboClawTelemetry | null; s
   );
 }
 
-function TelescopeControls({ telemetry, runCommand, stopAll }: {
+function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz }: {
   telemetry: RoboClawTelemetry | null;
   runCommand: (commandId: string, args: Record<string, number | boolean>) => Promise<void>;
   stopAll: () => Promise<void>;
+  gotoAltAz: (altitudeDeg: number, azimuthDeg: number, speedQpps: number, accelQpps2: number) => Promise<void>;
 }) {
   const [slewSpeed, setSlewSpeed] = useState(40);
+  const [targetAz, setTargetAz] = useState(0);
+  const [targetAlt, setTargetAlt] = useState(45);
+  const [targetSpeed, setTargetSpeed] = useState(10_000);
+  const [targetAccel, setTargetAccel] = useState(25_000);
   const speed = Math.round(slewSpeed * 127 / 100);
+
+  const submitTarget = async (event: FormEvent) => {
+    event.preventDefault();
+    await gotoAltAz(targetAlt, targetAz, targetSpeed, targetAccel);
+  };
+
   return (
     <div className="controls-grid">
       <AxisControl
@@ -139,6 +161,13 @@ function TelescopeControls({ telemetry, runCommand, stopAll }: {
         </label>
         <button className="stop-button" onClick={() => void stopAll()}><Square size={16} /> Stop All</button>
       </div>
+      <form className="target-form" onSubmit={submitTarget}>
+        <label><span>Azimuth</span><input type="number" min={0} max={360} step={0.01} value={targetAz} onChange={(e) => setTargetAz(Number(e.target.value))} /></label>
+        <label><span>Altitude</span><input type="number" min={0} max={90} step={0.01} value={targetAlt} onChange={(e) => setTargetAlt(Number(e.target.value))} /></label>
+        <label><span>Speed</span><input type="number" min={0} max={4_294_967_295} value={targetSpeed} onChange={(e) => setTargetSpeed(Number(e.target.value))} /></label>
+        <label><span>Accel</span><input type="number" min={0} max={4_294_967_295} value={targetAccel} onChange={(e) => setTargetAccel(Number(e.target.value))} /></label>
+        <button type="submit"><Navigation size={15} /> Go To</button>
+      </form>
     </div>
   );
 }

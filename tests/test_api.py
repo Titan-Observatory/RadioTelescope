@@ -45,6 +45,30 @@ def test_api_status_contains_telemetry(simulated_config_path):
     assert "m1" in body["motors"]
 
 
+def test_api_accepts_alt_az_goto(simulated_config_path):
+    with TestClient(create_app(simulated_config_path)) as client:
+        response = client.post(
+            "/api/telescope/goto",
+            json={"altitude_deg": 30, "azimuth_deg": 45, "speed_qpps": 6000, "accel_qpps2": 7000},
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["ok"] is True
+    assert body["command_id"] == "speed_accel_decel_position_m1m2"
+    assert body["response"]["m1_position"] == 550
+    assert body["response"]["m2_position"] == 800
+    assert body["response"]["speed_qpps"] == 6000
+    assert body["response"]["accel_qpps2"] == 7000
+
+
+def test_api_rejects_out_of_range_alt_az(simulated_config_path):
+    with TestClient(create_app(simulated_config_path)) as client:
+        response = client.post("/api/telescope/goto", json={"altitude_deg": 91, "azimuth_deg": 45})
+
+    assert response.status_code == 422
+
+
 def test_api_allows_configured_client(simulated_config_path):
     simulated_config_path.write_text(
         simulated_config_path.read_text(encoding="utf-8").replace(

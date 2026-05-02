@@ -25,5 +25,13 @@ export const api = {
   commands: () => request<CommandInfo[]>('GET', '/api/roboclaw/commands'),
   execute: (commandId: string, args: Record<string, number | boolean>) =>
     request<CommandResult>('POST', `/api/roboclaw/commands/${commandId}`, { args }),
+  gotoAltAz: (altitudeDeg: number, azimuthDeg: number, speedQpps?: number, accelQpps2?: number) =>
+    request<CommandResult>('POST', '/api/telescope/goto', {
+      altitude_deg: altitudeDeg,
+      azimuth_deg: azimuthDeg,
+      speed_qpps: speedQpps,
+      accel_qpps2: accelQpps2,
+      decel_qpps2: accelQpps2,
+    }),
   stop: () => request<Record<string, CommandResult>>('POST', '/api/roboclaw/stop'),
 };

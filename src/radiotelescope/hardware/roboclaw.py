@@ -154,6 +154,9 @@ COMMANDS: dict[str, CommandSpec] = {
     "set_m2_position_pid": CommandSpec("set_m2_position_pid", "Set M2 Position PID", "PID", "Set M2 position PID constants.", 62, "config", (_arg("p", "u32", "P", 0, 4_294_967_295, 0), _arg("i", "u32", "I", 0, 4_294_967_295, 0), _arg("d", "u32", "D", 0, 4_294_967_295, 0), _arg("i_max", "u32", "I max", 0, 4_294_967_295, 0), _arg("deadzone", "u32", "Deadzone", 0, 4_294_967_295, 0), _arg("min", "s32", "Min", -2_147_483_648, 2_147_483_647, 0), _arg("max", "s32", "Max", -2_147_483_648, 2_147_483_647, 0)), dangerous=True),
     "read_m1_position_pid": CommandSpec("read_m1_position_pid", "Read M1 Position PID", "PID", "Read M1 position PID constants.", 63, "read", response=(_resp("p", "u32"), _resp("i", "u32"), _resp("d", "u32"), _resp("i_max", "u32"), _resp("deadzone", "u32"), _resp("min", "s32"), _resp("max", "s32"))),
     "read_m2_position_pid": CommandSpec("read_m2_position_pid", "Read M2 Position PID", "PID", "Read M2 position PID constants.", 64, "read", response=(_resp("p", "u32"), _resp("i", "u32"), _resp("d", "u32"), _resp("i_max", "u32"), _resp("deadzone", "u32"), _resp("min", "s32"), _resp("max", "s32"))),
+    "speed_accel_decel_position_m1": CommandSpec("speed_accel_decel_position_m1", "M1 Position", "Positioning", "Move M1 to absolute encoder position with speed, accel, and decel.", 65, "motion", (_arg("accel", "u32", "Acceleration", 0, 4_294_967_295, 0), _arg("speed", "u32", "Speed", 0, 4_294_967_295, 0), _arg("decel", "u32", "Deceleration", 0, 4_294_967_295, 0), _arg("position", "s32", "Position", -2_147_483_648, 2_147_483_647, 0), _arg("buffer", "u8", "Buffer", 0, 1, 0))),
+    "speed_accel_decel_position_m2": CommandSpec("speed_accel_decel_position_m2", "M2 Position", "Positioning", "Move M2 to absolute encoder position with speed, accel, and decel.", 66, "motion", (_arg("accel", "u32", "Acceleration", 0, 4_294_967_295, 0), _arg("speed", "u32", "Speed", 0, 4_294_967_295, 0), _arg("decel", "u32", "Deceleration", 0, 4_294_967_295, 0), _arg("position", "s32", "Position", -2_147_483_648, 2_147_483_647, 0), _arg("buffer", "u8", "Buffer", 0, 1, 0))),
+    "speed_accel_decel_position_m1m2": CommandSpec("speed_accel_decel_position_m1m2", "M1/M2 Position", "Positioning", "Move both motors to absolute encoder positions with speed, accel, and decel.", 67, "motion", (_arg("m1_accel", "u32", "M1 acceleration", 0, 4_294_967_295, 0), _arg("m1_speed", "u32", "M1 speed", 0, 4_294_967_295, 0), _arg("m1_decel", "u32", "M1 deceleration", 0, 4_294_967_295, 0), _arg("m1_position", "s32", "M1 position", -2_147_483_648, 2_147_483_647, 0), _arg("m2_accel", "u32", "M2 acceleration", 0, 4_294_967_295, 0), _arg("m2_speed", "u32", "M2 speed", 0, 4_294_967_295, 0), _arg("m2_decel", "u32", "M2 deceleration", 0, 4_294_967_295, 0), _arg("m2_position", "s32", "M2 position", -2_147_483_648, 2_147_483_647, 0), _arg("buffer", "u8", "Buffer", 0, 1, 0))),
     "set_m1_default_duty_accel": CommandSpec("set_m1_default_duty_accel", "Set M1 Default Duty Accel", "Configuration", "Set default duty acceleration for M1.", 68, "config", (_arg("accel", "u32", "Acceleration", 0, 4_294_967_295, 0),), dangerous=True),
     "set_m2_default_duty_accel": CommandSpec("set_m2_default_duty_accel", "Set M2 Default Duty Accel", "Configuration", "Set default duty acceleration for M2.", 69, "config", (_arg("accel", "u32", "Acceleration", 0, 4_294_967_295, 0),), dangerous=True),
     "set_pin_modes": CommandSpec("set_pin_modes", "Set S3/S4/S5 Modes", "Configuration", "Set S3, S4, and S5 modes.", 74, "config", (_arg("s3", "u8", "S3", 0, 255, 0), _arg("s4", "u8", "S4", 0, 255, 0), _arg("s5", "u8", "S5", 0, 255, 0)), dangerous=True),
@@ -400,6 +403,13 @@ class SimulatedRoboClaw:
         elif spec.id == "speed_m1m2":
             self._set_speed("m1", int(args["m1_speed"]))
             self._set_speed("m2", int(args["m2_speed"]))
+        elif spec.id == "speed_accel_decel_position_m1":
+            self._move_to_position("m1", int(args["position"]), int(args["speed"]))
+        elif spec.id == "speed_accel_decel_position_m2":
+            self._move_to_position("m2", int(args["position"]), int(args["speed"]))
+        elif spec.id == "speed_accel_decel_position_m1m2":
+            self._move_to_position("m1", int(args["m1_position"]), int(args["m1_speed"]))
+            self._move_to_position("m2", int(args["m2_position"]), int(args["m2_speed"]))
 
     def _set_duty(self, channel: Literal["m1", "m2"], duty: int) -> None:
         self._pwms[channel] = duty
@@ -410,6 +420,14 @@ class SimulatedRoboClaw:
         self._speeds[channel] = speed
         self._commands[channel] = speed
         self._pwms[channel] = max(-32767, min(32767, round(speed / 12700 * 32767)))
+
+    def _move_to_position(self, channel: Literal["m1", "m2"], position: int, speed: int) -> None:
+        current = self._encoders[channel]
+        direction = 1 if position >= current else -1
+        self._encoders[channel] = position
+        self._speeds[channel] = 0
+        self._commands[channel] = position
+        self._pwms[channel] = direction * max(0, min(32767, round(speed / 12700 * 32767)))
 
     def _simulated_response(self, spec: CommandSpec) -> dict[str, Any]:
         data: dict[str, Any] = {}

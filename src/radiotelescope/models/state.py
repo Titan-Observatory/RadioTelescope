@@ -87,6 +87,14 @@ class CommandRequest(BaseModel):
     args: dict[str, int | bool] = Field(default_factory=dict)
 
 
+class AltAzRequest(BaseModel):
+    altitude_deg: float = Field(ge=0, le=90)
+    azimuth_deg: float = Field(ge=0, le=360)
+    speed_qpps: int | None = Field(default=None, ge=0)
+    accel_qpps2: int | None = Field(default=None, ge=0)
+    decel_qpps2: int | None = Field(default=None, ge=0)
+
+
 class CommandResult(BaseModel):
     command_id: str
     ok: bool
