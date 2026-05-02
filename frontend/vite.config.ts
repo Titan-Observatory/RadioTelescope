@@ -1,15 +1,9 @@
 import { defineConfig } from 'vite';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const frontendRoot = fileURLToPath(new URL('.', import.meta.url));
-const staticDir = resolve(frontendRoot, '../src/radiotelescope/static');
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  base: '/static/',
+  plugins: [react()],
   build: {
-    outDir: staticDir,
-    emptyOutDir: true,
     sourcemap: true,
     target: 'es2022',
   },
@@ -18,7 +12,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': { target: 'http://localhost:8000', changeOrigin: true },
-      '/ws':  { target: 'ws://localhost:8000',   ws: true, changeOrigin: true },
+      '/ws': { target: 'ws://localhost:8000', ws: true, changeOrigin: true },
     },
   },
 });

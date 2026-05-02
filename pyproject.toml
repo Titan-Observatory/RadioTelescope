@@ -5,16 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "radiotelescope"
 version = "0.1.0"
-description = "Raspberry Pi radio telescope controller"
+description = "RoboClaw web controller"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pydantic>=2.0",
-    "lgpio>=0.2",
-    "smbus2>=0.4",
-    "pyrtlsdr==0.3.0",
-    "numpy>=1.26",
+    "pyserial>=3.5",
 ]
 
 [project.optional-dependencies]
@@ -29,9 +26,6 @@ radiotelescope = "radiotelescope.main:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-radiotelescope = ["static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -4,23 +4,16 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import lgpio
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from radiotelescope.api import routes_config, routes_motion, routes_sdr, routes_status, ws
+from radiotelescope.api import routes_roboclaw, routes_terminal
 from radiotelescope.config import load_config
-from radiotelescope.hardware.current_sensor import INA226
-from radiotelescope.hardware.motor import IBT2Motor
-from radiotelescope.hardware.sdr import SDRReceiver
-from radiotelescope.safety.interlocks import SafetyMonitor
-from radiotelescope.services.motion import MotionService
-from radiotelescope.services.session import SessionService
-from radiotelescope.services.spectrum import SpectrumService
-from radiotelescope.services.telemetry import TelemetryService
+from radiotelescope.hardware.roboclaw import make_client
+from radiotelescope.services.roboclaw import RoboClawService
 
 logger = logging.getLogger("radiotelescope")
 
@@ -28,49 +21,15 @@ logger = logging.getLogger("radiotelescope")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = app.state.config
+    client = make_client(cfg.roboclaw)
+    service = RoboClawService(client, cfg.telemetry.update_rate_hz)
+    app.state.roboclaw_service = service
 
-    # Hardware
-    handle = lgpio.gpiochip_open(0)
-
-    motors = {
-        "azimuth": IBT2Motor(cfg.motors.azimuth, handle),
-        "elevation": IBT2Motor(cfg.motors.elevation, handle),
-    }
-    ina226 = INA226(cfg.i2c)
-    sdr = SDRReceiver(cfg.sdr)
-
-    # Safety
-    safety = SafetyMonitor(cfg.safety, ina226)
-
-    # Services
-    motion = MotionService(motors, safety)
-    telemetry = TelemetryService(ina226, safety, motion, cfg.general.update_rate_hz)
-    spectrum = SpectrumService(sdr, cfg.sdr)
-    session = SessionService()
-
-    # Store on app.state for route access
-    app.state.safety_monitor = safety
-    app.state.motion_service = motion
-    app.state.telemetry_service = telemetry
-    app.state.spectrum_service = spectrum
-    app.state.session_service = session
-
-    await telemetry.start()
-    await session.start()
-    # Spectrum starts on demand via POST /api/sdr/start (SDR may not be plugged in at boot)
-
-    logger.info("Telescope controller started")
+    await service.start()
+    logger.info("RoboClaw controller started in %s mode", client.connection.mode)
     yield
-
-    # Shutdown
-    await session.stop()
-    await spectrum.stop()
-    await telemetry.stop()
-    for m in motors.values():
-        m.cleanup()
-    ina226.close()
-    lgpio.gpiochip_close(handle)
-    logger.info("Telescope controller shut down")
+    await service.stop()
+    logger.info("RoboClaw controller shut down")
 
 
 def create_app(config_path: str | Path = "config.toml") -> FastAPI:
@@ -81,7 +40,7 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
-    app = FastAPI(title="Radio Telescope Controller", lifespan=lifespan)
+    app = FastAPI(title="RoboClaw Controller", lifespan=lifespan)
     app.state.config = cfg
 
     app.add_middleware(
@@ -91,20 +50,16 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(routes_motion.router)
-    app.include_router(routes_status.router)
-    app.include_router(routes_sdr.router)
-    app.include_router(routes_config.router)
-    app.include_router(ws.router)
+    app.include_router(routes_roboclaw.router)
+    app.include_router(routes_terminal.router)
 
-    # Dev web UI — static files served from package
-    static_dir = Path(__file__).parent / "static"
+    frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if frontend_dist.exists():
+        app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
 
-    @app.get("/")
-    async def serve_index():
-        return FileResponse(static_dir / "index.html")
-
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+        @app.get("/")
+        async def serve_index():
+            return FileResponse(frontend_dist / "index.html")
 
     return app
 
@@ -112,7 +67,7 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
 def cli() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Radio Telescope Controller")
+    parser = argparse.ArgumentParser(description="RoboClaw Controller")
     parser.add_argument("-c", "--config", default="config.toml", help="Path to config.toml")
     args = parser.parse_args()
 

@@ -1,99 +1,67 @@
-// Types mirror radiotelescope Pydantic models (models/state.py, models/commands.py)
+export type ConnectionMode = 'serial' | 'simulated' | 'error';
+export type ArgType = 'u8' | 'u16' | 's16' | 'u32' | 's32' | 'bool';
 
-export type Axis = 'azimuth' | 'elevation';
-export type Direction = 'forward' | 'reverse';
-export type MotorDirection = Direction | 'stopped';
-export type Gain = number | 'auto';
-
-export interface MotorState {
-  axis: string;
-  duty: number;
-  direction: MotorDirection;
-  is_moving: boolean;
+export interface ConnectionStatus {
+  mode: ConnectionMode;
+  port: string;
+  baudrate: number;
+  address: number;
+  connected: boolean;
+  message: string | null;
 }
 
-export interface SensorReading {
-  bus_voltage_v: number;
-  shunt_voltage_mv: number;
-  current_a: number;
-  power_w: number;
+export interface MotorSnapshot {
+  command: number;
+  pwm: number | null;
+  current_a: number | null;
+  encoder: number | null;
+  encoder_status: number | null;
+  speed_qpps: number | null;
+  raw_speed_qpps: number | null;
+  average_speed_qpps: number | null;
+  speed_error_qpps: number | null;
+  position_error: number | null;
+}
+
+export interface RoboClawTelemetry {
+  connection: ConnectionStatus;
   timestamp: number;
-  available: boolean;
+  firmware: string | null;
+  main_battery_v: number | null;
+  logic_battery_v: number | null;
+  temperature_c: number | null;
+  temperature_2_c: number | null;
+  status: number | null;
+  status_flags: string[];
+  buffer_depths: Record<string, number | null>;
+  encoder_modes: Record<string, number | null>;
+  motors: Record<string, MotorSnapshot>;
+  last_error: string | null;
 }
 
-export interface SafetyStatus {
-  overcurrent_tripped: boolean;
-  last_trip_timestamp: number | null;
+export interface CommandArg {
+  name: string;
+  type: ArgType;
+  label: string;
+  min: number | null;
+  max: number | null;
+  default: number | boolean | null;
 }
 
-export interface TelescopeState {
-  motors: Record<string, MotorState>;
-  sensor: SensorReading;
-  safety: SafetyStatus;
-  uptime_s: number;
+export interface CommandInfo {
+  id: string;
+  name: string;
+  group: string;
+  description: string;
+  command: number;
+  kind: 'read' | 'write' | 'motion' | 'config';
+  dangerous: boolean;
+  args: CommandArg[];
 }
 
-export interface SpectrumFrame {
-  timestamp: number;
-  center_freq_hz: number;
-  bandwidth_hz: number;
-  magnitudes_b64: string;
-  rolling_b64: string;
-  integration_s: number;
-  frame_count: number;
-}
-
-export interface SDRStatus {
-  running: boolean;
-  center_freq_hz: number;
-  sample_rate_hz: number;
-  gain: Gain;
-  fft_size: number;
-  integration_count: number;
-  rolling_window_s: number;
-}
-
-export interface SessionStatus {
-  active: boolean;
-  client_id: string | null;
-  claimed_at: number | null;
-  expires_at: number | null;
-}
-
-export interface MotorAxisConfig {
-  max_duty: number;
-  ramp_time_s: number;
-}
-
-export interface SafetyConfig {
-  overcurrent_threshold_a: number;
-  overcurrent_holdoff_s: number;
-  azimuth_min_deg: number;
-  azimuth_max_deg: number;
-  elevation_min_deg: number;
-  elevation_max_deg: number;
-}
-
-export interface SDRConfig {
-  center_freq_hz: number;
-  sample_rate_hz: number;
-  gain: Gain;
-  fft_size: number;
-  integration_count: number;
-}
-
-export interface AppConfigDump {
-  safety: SafetyConfig;
-  sdr: SDRConfig;
-  motors: { azimuth: MotorAxisConfig; elevation: MotorAxisConfig };
-}
-
-export interface MoveCommand {
-  axis: Axis;
-  speed: number;
-  direction: Direction;
-}
-
-export interface StopCommand {
-  axis?: Axis;
+export interface CommandResult {
+  command_id: string;
+  ok: boolean;
+  response: Record<string, unknown>;
+  error: string | null;
 }

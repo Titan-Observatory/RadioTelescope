@@ -2,52 +2,26 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import Union
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
-class INA226Config(BaseModel):
-    shunt_resistor_ohms: float = 0.01
-    averaging_mode: int = 4
-    bus_voltage_conversion_time_us: int = 1100
-    shunt_voltage_conversion_time_us: int = 1100
+class RoboClawConfig(BaseModel):
+    port: str = "/dev/ttyACM0"
+    baudrate: int = Field(default=38400, gt=0)
+    address: int = Field(default=0x80, ge=0x80, le=0x87)
+    timeout_s: float = Field(default=0.25, gt=0)
+    connect_mode: Literal["auto", "serial", "simulated"] = "auto"
 
 
-class I2CConfig(BaseModel):
-    bus: int = 1
-    ina226_address: int = 0x40
-    ina226: INA226Config = Field(default_factory=INA226Config)
+class TelemetryConfig(BaseModel):
+    update_rate_hz: int = Field(default=5, ge=1, le=50)
 
 
-class MotorConfig(BaseModel):
-    rpwm_pin: int
-    lpwm_pin: int
-    max_duty: int = 100
-    ramp_time_s: float = 3.0
-
-
-class MotorsConfig(BaseModel):
-    azimuth: MotorConfig
-    elevation: MotorConfig
-
-
-class SafetyConfig(BaseModel):
-    overcurrent_threshold_a: float = 5.0
-    overcurrent_holdoff_s: float = 0.5
-    azimuth_min_deg: float = 0.0
-    azimuth_max_deg: float = 360.0
-    elevation_min_deg: float = 5.0
-    elevation_max_deg: float = 85.0
-
-
-class SDRConfig(BaseModel):
-    device_index: int = 0
-    center_freq_hz: int = 1_420_405_000
-    sample_rate_hz: int = 2_048_000
-    gain: Union[str, float] = "auto"
-    fft_size: int = 1024
-    integration_count: int = 8
+class TerminalConfig(BaseModel):
+    enabled: bool = True
+    shell: str | None = None
 
 
 class ServerConfig(BaseModel):
@@ -58,15 +32,13 @@ class ServerConfig(BaseModel):
 
 class GeneralConfig(BaseModel):
     log_level: str = "INFO"
-    update_rate_hz: int = 10
 
 
 class AppConfig(BaseModel):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
-    i2c: I2CConfig = Field(default_factory=I2CConfig)
-    motors: MotorsConfig
-    safety: SafetyConfig = Field(default_factory=SafetyConfig)
-    sdr: SDRConfig = Field(default_factory=SDRConfig)
+    roboclaw: RoboClawConfig = Field(default_factory=RoboClawConfig)
+    telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
+    terminal: TerminalConfig = Field(default_factory=TerminalConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 
 

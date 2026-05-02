@@ -1,20 +1,10 @@
-from radiotelescope.config import AppConfig
+from radiotelescope.config import load_config
 
 
-def test_load_config(test_config: AppConfig):
-    assert test_config.motors.azimuth.rpwm_pin == 5
-    assert test_config.motors.elevation.rpwm_pin == 20
-    assert test_config.i2c.ina226_address == 0x40
-    assert test_config.safety.overcurrent_threshold_a == 5.0
-    assert test_config.sdr.center_freq_hz == 1_420_405_000
-    assert test_config.general.update_rate_hz == 10
+def test_load_config_defaults_to_simulated_when_requested(simulated_config_path):
+    cfg = load_config(simulated_config_path)
 
-
-def test_motor_config_defaults(test_config: AppConfig):
-    assert test_config.motors.azimuth.ramp_time_s == 3.0  # default
-    assert test_config.motors.azimuth.max_duty == 80
-
-
-def test_server_config(test_config: AppConfig):
-    assert test_config.server.host == "127.0.0.1"
-    assert test_config.server.port == 8000
+    assert cfg.roboclaw.port == "SIM"
+    assert cfg.roboclaw.address == 0x80
+    assert cfg.roboclaw.connect_mode == "simulated"
+    assert cfg.telemetry.update_rate_hz == 5
