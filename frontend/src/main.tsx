@@ -237,16 +237,12 @@ function AxisControl({ title, negativeLabel, positiveLabel, negativeIcon, positi
   negative: () => Promise<void>;
   positive: () => Promise<void>;
 }) {
-  const isRunning = (motor?.speed_qpps ?? 0) !== 0 || (motor?.pwm ?? 0) !== 0;
   const currentCls = currentClass(motor?.current_a);
 
   return (
     <div className="axis-compact">
       <div className="axis-title">
-        <div className="axis-title-left">
-          <span className={`motor-dot ${isRunning ? 'motor-dot-active' : ''}`} title={isRunning ? 'Running' : 'Idle'} />
-          <h2>{title}</h2>
-        </div>
+        <h2>{title}</h2>
         <span className={`axis-current ${currentCls}`}>
           {motor?.current_a == null ? '—' : `${motor.current_a.toFixed(2)} A`}
         </span>
