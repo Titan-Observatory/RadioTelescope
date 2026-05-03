@@ -62,6 +62,17 @@ def test_api_accepts_alt_az_goto(simulated_config_path):
     assert body["response"]["accel_qpps2"] == 7000
 
 
+def test_api_describes_alt_az_goto_for_browser_gets(simulated_config_path):
+    with TestClient(create_app(simulated_config_path)) as client:
+        response = client.get("/api/telescope/goto")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["method"] == "POST"
+    assert body["mapping"]["m1"] == "azimuth"
+    assert body["mapping"]["m2"] == "altitude"
+
+
 def test_api_rejects_out_of_range_alt_az(simulated_config_path):
     with TestClient(create_app(simulated_config_path)) as client:
         response = client.post("/api/telescope/goto", json={"altitude_deg": 91, "azimuth_deg": 45})

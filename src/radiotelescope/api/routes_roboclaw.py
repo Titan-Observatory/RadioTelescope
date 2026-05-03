@@ -50,6 +50,29 @@ async def stop(request: Request):
     return await asyncio.to_thread(_service(request).client.stop_all)
 
 
+@router.get("/api/telescope/goto")
+async def goto_alt_az_info(request: Request):
+    cfg = request.app.state.config.mount
+    return {
+        "method": "POST",
+        "body": {
+            "altitude_deg": "0..90",
+            "azimuth_deg": "0..360",
+            "speed_qpps": f"optional; default {cfg.goto_speed_qpps}",
+            "accel_qpps2": f"optional; default {cfg.goto_accel_qpps2}",
+            "decel_qpps2": f"optional; default {cfg.goto_decel_qpps2}",
+        },
+        "mapping": {
+            "m1": "azimuth",
+            "m2": "altitude",
+            "az_counts_per_degree": cfg.az_counts_per_degree,
+            "alt_counts_per_degree": cfg.alt_counts_per_degree,
+            "az_zero_count": cfg.az_zero_count,
+            "alt_zero_count": cfg.alt_zero_count,
+        },
+    }
+
+
 @router.post("/api/telescope/goto", response_model=CommandResult)
 async def goto_alt_az(body: AltAzRequest, request: Request):
     cfg = request.app.state.config.mount
@@ -72,7 +95,7 @@ async def goto_alt_az(body: AltAzRequest, request: Request):
             "m2_speed": speed,
             "m2_decel": decel,
             "m2_position": m2_position,
-            "buffer": 0,
+            "buffer": 1,
         },
     )
     result.response.update(

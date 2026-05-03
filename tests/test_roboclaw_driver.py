@@ -79,6 +79,41 @@ def test_serial_read_validates_response_crc(fake_serial):
     assert result.response["voltage_v"] == 12.4
 
 
+def test_serial_m1m2_position_command_writes_documented_packet_order(fake_serial):
+    client = SerialRoboClaw(RoboClawConfig(port="COM3", address=0x80))
+
+    result = client.execute(
+        "speed_accel_decel_position_m1m2",
+        {
+            "m1_accel": 100,
+            "m1_speed": 200,
+            "m1_decel": 300,
+            "m1_position": 400,
+            "m2_accel": 500,
+            "m2_speed": 600,
+            "m2_decel": 700,
+            "m2_position": 800,
+            "buffer": 1,
+        },
+    )
+
+    assert result.ok
+    packet = fake_serial[0].writes[-1]
+    assert packet[:2] == bytes([0x80, COMMANDS["speed_accel_decel_position_m1m2"].command])
+    assert packet[2:-2] == (
+        (100).to_bytes(4, "big")
+        + (200).to_bytes(4, "big")
+        + (300).to_bytes(4, "big")
+        + (400).to_bytes(4, "big", signed=True)
+        + (500).to_bytes(4, "big")
+        + (600).to_bytes(4, "big")
+        + (700).to_bytes(4, "big")
+        + (800).to_bytes(4, "big", signed=True)
+        + b"\x01"
+    )
+    assert int.from_bytes(packet[-2:], "big") == crc16(packet[:-2])
+
+
 def test_serial_ack_failure_returns_error(fake_serial):
     client = SerialRoboClaw(RoboClawConfig(port="COM3", address=0x80))
     fake_serial[0].reads = [b"\x00"]

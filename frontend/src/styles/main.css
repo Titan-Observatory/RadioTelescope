@@ -25,25 +25,38 @@ button {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 34px;
+  min-height: 44px;
   border: 1px solid #35404a;
   border-radius: 6px;
-  padding: 7px 10px;
+  padding: 7px 12px;
   background: #1d252c;
   color: #f5f7f9;
   cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  transition: background 0.1s;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:hover { background: #27323b; }
+button:active { background: #1a262f; }
+button:focus-visible { outline: 2px solid #72e0ad; outline-offset: 2px; }
 
 input {
   width: 100%;
-  min-height: 34px;
+  min-height: 44px;
   border: 1px solid #35404a;
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 6px 10px;
   background: #141a20;
   color: #e8edf2;
+  transition: border-color 0.1s;
+}
+
+input:focus-visible {
+  outline: none;
+  border-color: #72e0ad;
+  box-shadow: 0 0 0 2px rgba(114, 224, 173, 0.2);
 }
 
 .app-shell {
@@ -79,6 +92,7 @@ input {
   gap: 10px;
   color: #aeb8c2;
   font-size: 12px;
+  flex-shrink: 0;
 }
 
 .mode {
@@ -87,16 +101,19 @@ input {
   font-weight: 700;
   text-transform: uppercase;
   font-size: 11px;
+  white-space: nowrap;
 }
 
-.mode-serial { background: #123829; color: #72e0ad; }
+.mode-serial    { background: #123829; color: #72e0ad; }
 .mode-simulated { background: #403718; color: #f3cc6b; }
-.mode-error { background: #4a1e23; color: #ff8a97; }
+.mode-error     { background: #4a1e23; color: #ff8a97; }
 
 .stop-button {
   border-color: #8d313a;
   background: #5d1f27;
 }
+.stop-button:hover  { background: #6e2530; }
+.stop-button:active { background: #4f1b22; }
 
 .banner {
   display: flex;
@@ -132,10 +149,11 @@ input {
   border-radius: 8px;
   background: #151b21;
   padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .controls-panel { grid-area: controls; }
-.tune-panel { grid-area: tune; }
+.tune-panel     { grid-area: tune; }
 .telemetry-panel { grid-area: telemetry; }
 .terminal-panel { grid-area: terminal; }
 
@@ -145,9 +163,11 @@ input {
   letter-spacing: 0;
 }
 
+/* Controls panel -------------------------------------------------- */
+
 .controls-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr)) 82px;
+  grid-template-columns: repeat(2, minmax(200px, 1fr)) 88px;
   gap: 10px;
 }
 
@@ -182,11 +202,12 @@ input {
 }
 
 .axis-actions button {
-  min-height: 58px;
+  min-height: 72px;
   font-size: 18px;
   font-weight: 700;
 }
 
+/* Speed control — vertical (desktop) */
 .speed-control {
   display: grid;
   grid-row: span 2;
@@ -199,7 +220,7 @@ input {
   grid-template-rows: auto auto minmax(96px, 1fr);
   justify-items: center;
   gap: 6px;
-  min-height: 178px;
+  min-height: 190px;
   border: 1px solid #27313a;
   border-radius: 6px;
   background: #11171c;
@@ -225,17 +246,19 @@ input {
   align-self: center;
   transform: rotate(-90deg);
   transform-origin: center;
+  cursor: pointer;
 }
 
 .speed-control .stop-button {
-  min-height: 34px;
-  padding-inline: 6px;
+  min-height: 44px;
+  padding-inline: 10px;
 }
 
+/* Target form */
 .target-form {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(4, minmax(110px, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(100px, 1fr)) auto;
   gap: 8px;
   align-items: end;
   border-top: 1px solid #27313a;
@@ -246,6 +269,8 @@ input {
   display: grid;
   gap: 4px;
 }
+
+/* Dense readout --------------------------------------------------- */
 
 .dense-readout {
   min-width: 0;
@@ -290,17 +315,17 @@ input {
   gap: 8px;
 }
 
+/* Live tuning ---------------------------------------------------- */
+
 .compact-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(150px, 1fr)) auto;
+  grid-template-columns: repeat(2, minmax(140px, 1fr)) auto;
   gap: 8px;
   align-items: end;
   margin-bottom: 10px;
 }
 
-.compact-form:last-child {
-  margin-bottom: 0;
-}
+.compact-form:last-child { margin-bottom: 0; }
 
 .compact-form label {
   display: grid;
@@ -312,6 +337,8 @@ input {
   color: #9eaab5;
   font-size: 12px;
 }
+
+/* Terminal ------------------------------------------------------- */
 
 .terminal-box {
   height: 230px;
@@ -326,10 +353,19 @@ input {
   height: 100%;
 }
 
+/* Tablet: single-column layout (≤ 980 px) ----------------------- */
 @media (max-width: 980px) {
-  .topbar, .topbar-status {
+  .topbar {
     align-items: flex-start;
     flex-direction: column;
+    gap: 8px;
+  }
+
+  .topbar-status {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .dashboard {
@@ -340,8 +376,14 @@ input {
       "telemetry"
       "terminal";
   }
+
+  /* Spread telemetry tiles across 3 columns when panel is full width */
+  .telemetry-dense {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
+/* Mobile (≤ 640 px) --------------------------------------------- */
 @media (max-width: 640px) {
   .dashboard {
     padding: 8px;
@@ -352,24 +394,88 @@ input {
     padding: 10px;
   }
 
-  .controls-grid,
-  .telemetry-dense,
-  .compact-form,
-  .target-form,
-  .speed-control,
-  .speed-control label {
-    grid-template-columns: 1fr;
+  .telemetry-dense {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* Two axes side-by-side; speed control drops below them full-width */
   .controls-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .speed-control {
-    grid-row: auto;
+    grid-template-columns: 1fr 1fr;
   }
 
   .axis-actions button {
-    min-height: 48px;
+    min-height: 64px;
+  }
+
+  /* Speed control: switch to horizontal bar layout */
+  .speed-control {
+    grid-row: auto;
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid #27313a;
+    border-radius: 6px;
+    background: #11171c;
+  }
+
+  .speed-control label {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    grid-template-rows: unset;
+    justify-items: unset;
+  }
+
+  .speed-control label span {
+    white-space: nowrap;
+  }
+
+  .speed-control strong {
+    font-size: 14px;
+    min-width: 40px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .speed-control input[type="range"] {
+    flex: 1;
+    width: auto;
+    height: 28px;
+    padding: 0;
+    transform: none;
+    transform-origin: initial;
+    align-self: auto;
+  }
+
+  .speed-control .stop-button {
+    flex-shrink: 0;
+  }
+
+  /* Live tuning: 2-col fields, full-width buttons */
+  .compact-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .compact-form button {
+    grid-column: 1 / -1;
+  }
+
+  /* Target form: 2×2 fields, full-width Go To button */
+  .target-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .target-form button[type="submit"] {
+    grid-column: 1 / -1;
   }
 }
