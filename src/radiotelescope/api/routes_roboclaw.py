@@ -199,7 +199,7 @@ async def telescope_config(request: Request):
         goto_decel_qpps2=cfg.goto_decel_qpps2,
         observer_latitude_deg=observer.latitude_deg,
         observer_longitude_deg=observer.longitude_deg,
-        pointing_limit_altaz=cfg.pointing_limit_altaz,
+        pointing_limit_altaz=[point.model_dump() for point in cfg.pointing_limit_altaz],
     )
 
 

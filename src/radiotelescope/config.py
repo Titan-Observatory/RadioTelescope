@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field, field_validator
 class RoboClawConfig(BaseModel):
     port: str = "/dev/ttyACM0"
     baudrate: int = Field(default=38400, gt=0)
+    # Packet Serial uses a one-byte address. BasicMicro may show the default
+    # as decimal 128, which is 0x80 in this config, not 0x128.
     address: int = Field(default=0x80, ge=0x80, le=0x87)
     timeout_s: float = Field(default=0.25, gt=0)
     connect_mode: Literal["auto", "serial", "simulated"] = "auto"

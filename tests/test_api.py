@@ -86,6 +86,33 @@ pointing_limit_altaz = [
     assert "outside configured pointing limits" in rejected.json()["detail"]
 
 
+def test_api_telescope_config_includes_pointing_limits(simulated_config_path):
+    simulated_config_path.write_text(
+        simulated_config_path.read_text(encoding="utf-8").replace(
+            "goto_decel_qpps2 = 5000",
+            """goto_decel_qpps2 = 5000
+pointing_limit_altaz = [
+  { altitude_deg = 10.0, azimuth_deg = 10.0 },
+  { altitude_deg = 70.0, azimuth_deg = 90.0 },
+  { altitude_deg = 10.0, azimuth_deg = 170.0 },
+]
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    with TestClient(create_app(simulated_config_path)) as client:
+        response = client.get("/api/telescope/config")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["pointing_limit_altaz"] == [
+        {"altitude_deg": 10.0, "azimuth_deg": 10.0},
+        {"altitude_deg": 70.0, "azimuth_deg": 90.0},
+        {"altitude_deg": 10.0, "azimuth_deg": 170.0},
+    ]
+
+
 def test_api_describes_alt_az_goto_for_browser_gets(simulated_config_path):
     with TestClient(create_app(simulated_config_path)) as client:
         response = client.get("/api/telescope/goto")

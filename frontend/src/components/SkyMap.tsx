@@ -271,10 +271,9 @@ export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapPro
         if (coords && coords.length === 2 && isFinite(coords[0]) && isFinite(coords[1])) {
           const { ra_deg, dec_deg } = galToEq(coords[0], coords[1]);
           const currentConfig = configRef.current;
-          const limits = currentConfig?.pointing_limit_altaz ?? [];
-          if (currentConfig && limits.length === 3) {
+          if (currentConfig && currentConfig.pointing_limit_altaz.length === 3) {
             const altAz = raDecToAltAz(ra_deg, dec_deg, currentConfig, new Date());
-            if (!isInsideTriangle(altAz, limits)) {
+            if (!isInsideTriangle(altAz, currentConfig.pointing_limit_altaz)) {
               setPending(null);
               onNotice('Selected target is outside configured pointing limits.');
               return;
@@ -318,7 +317,7 @@ export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapPro
     if (!ready || !limitOverlayRef.current) return;
 
     limitOverlayRef.current.removeAll();
-    if (config?.pointing_limit_altaz.length === 3) {
+    if (config && config.pointing_limit_altaz.length === 3) {
       const date = telemetry?.timestamp != null
         ? new Date(telemetry.timestamp * 1000)
         : new Date();

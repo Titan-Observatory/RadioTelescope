@@ -4,7 +4,8 @@ log_level = "INFO"
 [roboclaw]
 port = "/dev/ttyACM0"
 baudrate = 57600
-address = 0x128
+# Packet Serial address. BasicMicro's decimal 128 is 0x80 here; do not write 0x128.
+address = 0x80
 timeout_s = 1
 connect_mode = "auto"
 
