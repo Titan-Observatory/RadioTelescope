@@ -3,9 +3,9 @@ log_level = "INFO"
 
 [roboclaw]
 port = "/dev/ttyACM0"
-baudrate = 38400
-address = 0x80
-timeout_s = 0.25
+baudrate = 57600
+address = 0x128
+timeout_s = 1
 connect_mode = "auto"
 
 [telemetry]
@@ -25,9 +25,24 @@ alt_zero_count = 0
 goto_speed_qpps = 10000
 goto_accel_qpps2 = 25000
 goto_decel_qpps2 = 25000
+# Replace these with the three measured corners of the mount's reachable Alt/Az region.
+pointing_limit_altaz = [
+  { altitude_deg = 15.0, azimuth_deg = 45.0 },
+  { altitude_deg = 80.0, azimuth_deg = 180.0 },
+  { altitude_deg = 15.0, azimuth_deg = 315.0 },
+]
+
+[observer]
+name = "My Radio Telescope"
+latitude_deg = 28.03          # set to actual observatory latitude
+longitude_deg = -81.97         # set to actual observatory longitude
+altitude_m = 58.0            # metres above sea level
+dish_diameter_m = 2.286      # 90 inches
+observing_freq_hz = 1.42e9   # hydrogen line (21 cm)
+# beam_fwhm_deg = 7.0        # uncomment to override computed FWHM
 
 [server]
 host = "0.0.0.0"
 port = 8000
 cors_origins = ["*"]
-allowed_clients = ["10.0.27.1", "10.0.27.2"]
+allowed_clients = ["10.0.27.1", "10.0.27.2","10.0.207.217"]

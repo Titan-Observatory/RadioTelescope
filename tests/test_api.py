@@ -62,6 +62,30 @@ def test_api_accepts_alt_az_goto(simulated_config_path):
     assert body["response"]["accel_qpps2"] == 7000
 
 
+def test_api_rejects_goto_outside_pointing_limit_triangle(simulated_config_path):
+    simulated_config_path.write_text(
+        simulated_config_path.read_text(encoding="utf-8").replace(
+            "goto_decel_qpps2 = 5000",
+            """goto_decel_qpps2 = 5000
+pointing_limit_altaz = [
+  { altitude_deg = 10.0, azimuth_deg = 10.0 },
+  { altitude_deg = 70.0, azimuth_deg = 90.0 },
+  { altitude_deg = 10.0, azimuth_deg = 170.0 },
+]
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    with TestClient(create_app(simulated_config_path)) as client:
+        accepted = client.post("/api/telescope/goto", json={"altitude_deg": 30, "azimuth_deg": 90})
+        rejected = client.post("/api/telescope/goto", json={"altitude_deg": 5, "azimuth_deg": 90})
+
+    assert accepted.status_code == 200
+    assert rejected.status_code == 400
+    assert "outside configured pointing limits" in rejected.json()["detail"]
+
+
 def test_api_describes_alt_az_goto_for_browser_gets(simulated_config_path):
     with TestClient(create_app(simulated_config_path)) as client:
         response = client.get("/api/telescope/goto")

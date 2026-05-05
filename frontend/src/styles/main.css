@@ -40,9 +40,10 @@ button {
   font-size: 13px;
 }
 
-button:hover         { background: #1f2d3a; border-color: #3d5060; }
-button:active        { background: #131e28; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5); }
-button:focus-visible { outline: 2px solid #72e0ad; outline-offset: 2px; }
+button:hover          { background: #1f2d3a; border-color: #3d5060; }
+button:active         { background: #131e28; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5); }
+button:focus-visible  { outline: 2px solid #72e0ad; outline-offset: 2px; }
+button:disabled       { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
 input {
   width: 100%;
@@ -178,16 +179,19 @@ input:focus-visible {
 
 .banner-warn  { border-color: #4a3d18; background: #221d0e; color: #e8c860; }
 .banner-error { border-color: #501828; background: #1e0e14; color: #ff9aaa; }
+.banner-ok    { border-color: #1a5038; background: #0d2e20; color: #72e0ad; }
 
 /* ─── Dashboard grid ────────────────────────────────────────────────────── */
 
 .dashboard {
   display: grid;
-  grid-template-columns: minmax(360px, 1.2fr) minmax(260px, 0.8fr);
+  grid-template-columns: minmax(360px, 1.2fr) minmax(400px, 1fr);
+  grid-template-rows: auto auto 1fr auto;
   grid-template-areas:
-    "controls telemetry"
-    "tune     telemetry"
-    "terminal terminal";
+    "controls skymap"
+    "tune     skymap"
+    "telemetry telemetry"
+    "terminal  terminal";
   gap: 10px;
   padding: 10px;
   flex: 1;
@@ -204,8 +208,176 @@ input:focus-visible {
 
 .controls-panel  { grid-area: controls; }
 .tune-panel      { grid-area: tune; }
+.skymap-panel    { grid-area: skymap; display: flex; flex-direction: column; min-height: 520px; padding: 12px 14px 8px; }
 .telemetry-panel { grid-area: telemetry; }
 .terminal-panel  { grid-area: terminal; }
+
+/* ─── Sky map ────────────────────────────────────────────────────────────── */
+
+.skymap-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.skymap-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.skymap-layer-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.skymap-control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #7a8e9e;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.skymap-surveys {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, auto));
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #1d2c37;
+  border-radius: 7px;
+  background: rgba(8, 15, 22, 0.9);
+}
+
+.skymap-survey-btn {
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #8ca1ae;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.skymap-survey-btn:hover:not(:disabled) {
+  color: #d9e6ef;
+  background: rgba(114, 224, 173, 0.08);
+}
+
+.skymap-survey-btn.active {
+  color: #72e0ad;
+  background: rgba(114, 224, 173, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(114, 224, 173, 0.32);
+}
+
+.skymap-survey-btn:disabled {
+  opacity: 0.45;
+}
+
+.skymap-aladin {
+  flex: 1;
+  min-height: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #050810;
+  position: relative;
+}
+
+.skymap-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #4a6070;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.skymap-loading-icon {
+  opacity: 0.4;
+  animation: spin 3s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.skymap-footer {
+  margin-top: 8px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.skymap-hint {
+  font-size: 12px;
+  color: #4a6070;
+  font-style: italic;
+}
+
+.skymap-hint span {
+  color: #72e0ad;
+  opacity: 0.8;
+  font-style: normal;
+}
+
+.skymap-confirm {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.skymap-coords {
+  font-size: 12px;
+  font-family: 'Cascadia Mono', 'Consolas', monospace;
+  color: #f3cc6b;
+  flex: 1;
+}
+
+.skymap-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.skymap-slew-btn {
+  background: rgba(114, 224, 173, 0.12);
+  border-color: rgba(114, 224, 173, 0.4);
+  color: #72e0ad;
+  min-height: 34px;
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+.skymap-slew-btn:hover {
+  background: rgba(114, 224, 173, 0.2);
+  border-color: rgba(114, 224, 173, 0.6);
+}
+
+.skymap-cancel-btn {
+  min-height: 34px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #6a7e8a;
+  border-color: #1e2d38;
+}
 
 /* ─── Panel header ──────────────────────────────────────────────────────── */
 
@@ -431,6 +603,39 @@ h2.panel-header {
 .action-button:hover  { background: #122e22; border-color: #2a7058; }
 .action-button:active { background: #0a1e16; }
 
+/* ─── Homing bar ────────────────────────────────────────────────────────── */
+
+.homing-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #1a2832;
+  padding-top: 10px;
+}
+
+.homing-label {
+  color: #6a7e8e;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.homing-active {
+  border-color: #5a4d1a;
+  background: #221d0e;
+  color: #f3cc6b;
+  animation: homing-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes homing-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
 /* ─── Dense readout ─────────────────────────────────────────────────────── */
 
 .dense-readout {
@@ -549,10 +754,13 @@ h2.panel-header {
     grid-template-columns: 1fr;
     grid-template-areas:
       "controls"
+      "skymap"
       "tune"
       "telemetry"
       "terminal";
   }
+
+  .skymap-panel { min-height: 420px; }
 
   .telemetry-dense {
     grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "pydantic>=2.0",
     "pyserial>=3.5",
+    "katpoint>=0.10",
 ]
 
 [project.optional-dependencies]

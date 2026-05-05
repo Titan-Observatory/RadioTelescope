@@ -1,4 +1,4 @@
-import type { CommandInfo, CommandResult, RoboClawTelemetry } from './types';
+import type { CommandInfo, CommandResult, RaDecTarget, RoboClawTelemetry, TelescopeConfig } from './types';
 
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -33,5 +33,16 @@ export const api = {
       accel_qpps2: accelQpps2,
       decel_qpps2: accelQpps2,
     }),
+  telescopeConfig: () => request<TelescopeConfig>('GET', '/api/telescope/config'),
+  gotoRaDec: (target: RaDecTarget, speedQpps?: number, accelQpps2?: number) =>
+    request<CommandResult>('POST', '/api/telescope/goto_radec', {
+      ra_deg: target.ra_deg,
+      dec_deg: target.dec_deg,
+      speed_qpps: speedQpps,
+      accel_qpps2: accelQpps2,
+      decel_qpps2: accelQpps2,
+    }),
   stop: () => request<Record<string, CommandResult>>('POST', '/api/roboclaw/stop'),
+  homeElevation: () => request<{ status: string; message: string }>('POST', '/api/telescope/home/elevation'),
+  zeroAzimuth:   () => request<{ status: string; message: string }>('POST', '/api/telescope/home/azimuth'),
 };

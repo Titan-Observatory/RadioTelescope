@@ -4,16 +4,28 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
+import katpoint
+
+from radiotelescope.config import MountConfig
 from radiotelescope.hardware.roboclaw import RoboClawClient
 from radiotelescope.models.state import RoboClawTelemetry
+from radiotelescope.pointing import altaz_to_radec
 
 logger = logging.getLogger(__name__)
 
 
 class RoboClawService:
-    def __init__(self, client: RoboClawClient, update_rate_hz: int) -> None:
+    def __init__(
+        self,
+        client: RoboClawClient,
+        update_rate_hz: int,
+        mount_cfg: MountConfig | None = None,
+        antenna: katpoint.Antenna | None = None,
+    ) -> None:
         self._client = client
         self._rate = update_rate_hz
+        self._mount_cfg = mount_cfg
+        self._antenna = antenna
         self._subscribers: list[asyncio.Queue[RoboClawTelemetry]] = []
         self._task: asyncio.Task | None = None
         self._latest: RoboClawTelemetry | None = None
@@ -61,7 +73,35 @@ class RoboClawService:
     async def _poll_loop(self) -> None:
         interval = 1.0 / self._rate
         while True:
-            self._latest = await asyncio.to_thread(self._client.snapshot)
+            snap = await asyncio.to_thread(self._client.snapshot)
+            updates: dict = {}
+
+            if self._mount_cfg is not None:
+                m1 = snap.motors.get("m1")
+                m2 = snap.motors.get("m2")
+                cfg = self._mount_cfg
+                az = (
+                    (m1.encoder - cfg.az_zero_count) / cfg.az_counts_per_degree
+                    if m1 and m1.encoder is not None
+                    else None
+                )
+                alt = (
+                    (m2.encoder - cfg.alt_zero_count) / cfg.alt_counts_per_degree
+                    if m2 and m2.encoder is not None
+                    else None
+                )
+                updates["azimuth_deg"] = az
+                updates["altitude_deg"] = alt
+
+                if self._antenna is not None and alt is not None and az is not None:
+                    try:
+                        ra, dec = altaz_to_radec(alt, az, self._antenna)
+                        updates["ra_deg"] = ra
+                        updates["dec_deg"] = dec
+                    except Exception:
+                        logger.debug("altaz_to_radec failed", exc_info=True)
+
+            self._latest = snap.model_copy(update=updates) if updates else snap
             for q in list(self._subscribers):
                 _put_latest(q, self._latest)
             await asyncio.sleep(interval)

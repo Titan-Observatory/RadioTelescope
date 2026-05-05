@@ -61,6 +61,10 @@ class RoboClawTelemetry(BaseModel):
     motors: dict[str, MotorSnapshot] = Field(default_factory=dict)
     host: HostStats = Field(default_factory=HostStats)
     last_error: str | None = None
+    altitude_deg: float | None = None
+    azimuth_deg: float | None = None
+    ra_deg: float | None = None
+    dec_deg: float | None = None
 
 
 class CommandArg(BaseModel):
@@ -100,6 +104,37 @@ class CommandResult(BaseModel):
     ok: bool
     response: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+
+
+class AltAzPoint(BaseModel):
+    altitude_deg: float = Field(ge=0, le=90)
+    azimuth_deg: float = Field(ge=0, le=360)
+
+
+class TelescopeConfig(BaseModel):
+    beam_fwhm_deg: float
+    goto_speed_qpps: int
+    goto_accel_qpps2: int
+    goto_decel_qpps2: int
+    observer_latitude_deg: float
+    observer_longitude_deg: float
+    pointing_limit_altaz: list[AltAzPoint] = Field(default_factory=list)
+
+
+class RaDecRequest(BaseModel):
+    ra_deg: float = Field(ge=0, lt=360)
+    dec_deg: float = Field(ge=-90, le=90)
+    speed_qpps: int | None = Field(default=None, ge=0)
+    accel_qpps2: int | None = Field(default=None, ge=0)
+    decel_qpps2: int | None = Field(default=None, ge=0)
+
+
+class SkyOverlay(BaseModel):
+    id: str
+    label: str
+    ra_deg: float
+    dec_deg: float
+    color: str = "#ffffff"
 
 
 class HealthStatus(BaseModel):

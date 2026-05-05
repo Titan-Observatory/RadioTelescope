@@ -53,6 +53,38 @@ export interface RoboClawTelemetry {
   motors: Record<string, MotorSnapshot>;
   host: HostStats;
   last_error: string | null;
+  altitude_deg: number | null;
+  azimuth_deg: number | null;
+  ra_deg: number | null;
+  dec_deg: number | null;
+}
+
+export interface TelescopeConfig {
+  beam_fwhm_deg: number;
+  goto_speed_qpps: number;
+  goto_accel_qpps2: number;
+  goto_decel_qpps2: number;
+  observer_latitude_deg: number;
+  observer_longitude_deg: number;
+  pointing_limit_altaz: AltAzPoint[];
+}
+
+export interface AltAzPoint {
+  altitude_deg: number;
+  azimuth_deg: number;
+}
+
+export interface RaDecTarget {
+  ra_deg: number;
+  dec_deg: number;
+}
+
+export interface SkyOverlay {
+  id: string;
+  label: string;
+  ra_deg: number;
+  dec_deg: number;
+  color?: string;
 }
 
 export interface CommandArg {

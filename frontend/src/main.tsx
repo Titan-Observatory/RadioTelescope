@@ -3,7 +3,7 @@ import '@xterm/xterm/css/xterm.css';
 
 import {
   Activity, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Cpu, Gauge, Navigation, Radio, RotateCcw, Save, Sliders, Square,
+  Cpu, Crosshair, Gauge, Home, Map, Navigation, Radio, RotateCcw, Save, Sliders, Square,
   Terminal as TerminalIcon, Thermometer, Zap,
 } from 'lucide-react';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -11,7 +11,8 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { api, ApiError } from './api';
-import type { CommandInfo, MotorSnapshot, RoboClawTelemetry } from './types';
+import { SkyMap } from './components/SkyMap';
+import type { CommandInfo, MotorSnapshot, RoboClawTelemetry, TelescopeConfig } from './types';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -19,10 +20,12 @@ function App() {
   const [telemetry, setTelemetry] = useState<RoboClawTelemetry | null>(null);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [telescopeConfig, setTelescopeConfig] = useState<TelescopeConfig | null>(null);
 
   useEffect(() => {
     void api.status().then(setTelemetry).catch((err) => setNotice(errorMessage(err)));
     void api.commands().then(setCommands).catch((err) => setNotice(errorMessage(err)));
+    void api.telescopeConfig().then(setTelescopeConfig).catch(() => {/* non-critical */});
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/roboclaw`);
@@ -68,6 +71,28 @@ function App() {
     }
   };
 
+  const homeElevation = async () => {
+    setNotice(null);
+    try {
+      const r = await api.homeElevation();
+      setNotice(r.message);
+      setTelemetry(await api.status());
+    } catch (err) {
+      setNotice(errorMessage(err));
+    }
+  };
+
+  const zeroAzimuth = async () => {
+    setNotice(null);
+    try {
+      const r = await api.zeroAzimuth();
+      setNotice(r.message);
+      setTelemetry(await api.status());
+    } catch (err) {
+      setNotice(errorMessage(err));
+    }
+  };
+
   const flags = telemetry?.status_flags ?? [];
 
   return (
@@ -96,7 +121,7 @@ function App() {
       )}
 
       {notice && (
-        <div className="banner banner-error">
+        <div className={`banner ${notice.startsWith('Elevation homed') || notice.startsWith('Azimuth') ? 'banner-ok' : 'banner-error'}`}>
           <AlertTriangle size={14} />
           <span>{notice}</span>
         </div>
@@ -104,10 +129,14 @@ function App() {
 
       <main className="dashboard">
         <section className="panel controls-panel">
-          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} />
+          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} />
         </section>
         <section className="panel tune-panel">
           <LiveTuning runCommand={runCommand} />
+        </section>
+        <section className="panel skymap-panel">
+          <PanelHeader icon={<Map size={14} />} title="Sky Map" />
+          <SkyMap telemetry={telemetry} config={telescopeConfig} onNotice={setNotice} />
         </section>
         <section className="panel telemetry-panel">
           <TelemetryDashboard telemetry={telemetry} />
@@ -161,22 +190,30 @@ function PanelHeader({ icon, title }: { icon: React.ReactNode; title: string }) 
 
 // ─── Telescope controls ───────────────────────────────────────────────────────
 
-function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz }: {
+function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, homeElevation, zeroAzimuth }: {
   telemetry: RoboClawTelemetry | null;
   runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
   stopAll: () => Promise<void>;
   gotoAltAz: (alt: number, az: number, speed: number, accel: number) => Promise<void>;
+  homeElevation: () => Promise<void>;
+  zeroAzimuth: () => Promise<void>;
 }) {
   const [slewSpeed, setSlewSpeed] = useState(40);
   const [targetAz, setTargetAz] = useState(0);
   const [targetAlt, setTargetAlt] = useState(45);
   const [targetSpeed, setTargetSpeed] = useState(10_000);
   const [targetAccel, setTargetAccel] = useState(25_000);
+  const [elHoming, setElHoming] = useState(false);
   const speed = Math.round(slewSpeed * 127 / 100);
 
   const submitTarget = async (e: FormEvent) => {
     e.preventDefault();
     await gotoAltAz(targetAlt, targetAz, targetSpeed, targetAccel);
+  };
+
+  const runHomeElevation = async () => {
+    setElHoming(true);
+    try { await homeElevation(); } finally { setElHoming(false); }
   };
 
   return (
@@ -220,6 +257,24 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz }: {
           <label><span>Accel (QPPS²)</span><input type="number" min={0} max={4_294_967_295} value={targetAccel} onChange={(e) => setTargetAccel(Number(e.target.value))} /></label>
           <button type="submit" className="action-button"><Navigation size={14} /> Go To</button>
         </form>
+        <div className="homing-bar">
+          <span className="homing-label">Homing</span>
+          <button
+            onClick={() => void runHomeElevation()}
+            disabled={elHoming}
+            className={elHoming ? 'homing-active' : ''}
+            title="Drive elevation down until the end stop cuts current, then zero the encoder"
+          >
+            <Home size={14} />
+            {elHoming ? 'Homing elevation…' : 'Home Elevation'}
+          </button>
+          <button
+            onClick={() => void zeroAzimuth()}
+            title="Zero the azimuth encoder at the current pointing position"
+          >
+            <Crosshair size={14} /> Zero Azimuth
+          </button>
+        </div>
       </div>
     </>
   );

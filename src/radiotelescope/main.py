@@ -14,6 +14,7 @@ from radiotelescope.api import routes_roboclaw, routes_terminal
 from radiotelescope.api.client_allowlist import ClientAllowlistMiddleware
 from radiotelescope.config import load_config
 from radiotelescope.hardware.roboclaw import make_client
+from radiotelescope.pointing import compute_fwhm_deg, make_antenna
 from radiotelescope.services.roboclaw import RoboClawService
 
 logger = logging.getLogger("radiotelescope")
@@ -23,7 +24,10 @@ logger = logging.getLogger("radiotelescope")
 async def lifespan(app: FastAPI):
     cfg = app.state.config
     client = make_client(cfg.roboclaw)
-    service = RoboClawService(client, cfg.telemetry.update_rate_hz)
+    antenna = make_antenna(cfg.observer)
+    app.state.antenna = antenna
+    app.state.fwhm_deg = compute_fwhm_deg(cfg.observer)
+    service = RoboClawService(client, cfg.telemetry.update_rate_hz, cfg.mount, antenna)
     app.state.roboclaw_service = service
 
     await service.start()
