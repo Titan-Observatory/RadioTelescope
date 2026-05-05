@@ -14,6 +14,21 @@ import { api, ApiError } from './api';
 import { SkyMap } from './components/SkyMap';
 import type { CommandInfo, MotorSnapshot, RoboClawTelemetry, TelescopeConfig } from './types';
 
+interface ErrorLogEntry {
+  id: number;
+  source: string;
+  message: string;
+  firstSeen: Date;
+  lastSeen: Date;
+  count: number;
+}
+
+interface ControllerIssue {
+  title: string;
+  summary: string;
+  action: string;
+}
+
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 function App() {
@@ -21,16 +36,51 @@ function App() {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [telescopeConfig, setTelescopeConfig] = useState<TelescopeConfig | null>(null);
+  const [errorLog, setErrorLog] = useState<ErrorLogEntry[]>([]);
+  const nextErrorId = useRef(1);
+
+  const logEvent = (source: string, message: string) => {
+    const now = new Date();
+    setErrorLog((entries) => {
+      const latest = entries[0];
+      if (latest && latest.source === source && latest.message === message) {
+        return [{ ...latest, lastSeen: now, count: latest.count + 1 }, ...entries.slice(1)];
+      }
+      return [
+        { id: nextErrorId.current++, source, message, firstSeen: now, lastSeen: now, count: 1 },
+        ...entries,
+      ].slice(0, 20);
+    });
+  };
 
   useEffect(() => {
-    void api.status().then(setTelemetry).catch((err) => setNotice(errorMessage(err)));
-    void api.commands().then(setCommands).catch((err) => setNotice(errorMessage(err)));
+    void api.status().then((next) => {
+      setTelemetry(next);
+      if (next.last_error) logEvent('RoboClaw', next.last_error);
+    }).catch((err) => {
+      const message = errorMessage(err);
+      setNotice(message);
+      logEvent('API', message);
+    });
+    void api.commands().then(setCommands).catch((err) => {
+      const message = errorMessage(err);
+      setNotice(message);
+      logEvent('API', message);
+    });
     void api.telescopeConfig().then(setTelescopeConfig).catch(() => {/* non-critical */});
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/roboclaw`);
-    ws.onmessage = (event) => setTelemetry(JSON.parse(event.data) as RoboClawTelemetry);
-    ws.onerror = () => setNotice('RoboClaw telemetry websocket disconnected.');
+    ws.onmessage = (event) => {
+      const next = JSON.parse(event.data) as RoboClawTelemetry;
+      setTelemetry(next);
+      if (next.last_error) logEvent('RoboClaw', next.last_error);
+    };
+    ws.onerror = () => {
+      const message = 'RoboClaw telemetry websocket disconnected.';
+      setNotice(message);
+      logEvent('WebSocket', message);
+    };
     return () => ws.close();
   }, []);
 
@@ -94,6 +144,7 @@ function App() {
   };
 
   const flags = telemetry?.status_flags ?? [];
+  const controllerIssue = explainControllerError(telemetry?.last_error ?? null);
 
   return (
     <div className="app-shell">
@@ -114,10 +165,7 @@ function App() {
       )}
 
       {telemetry?.last_error && (
-        <div className="banner banner-error">
-          <AlertTriangle size={14} />
-          <span>Controller error: {telemetry.last_error}</span>
-        </div>
+        <ControllerIssueBanner issue={controllerIssue} />
       )}
 
       {notice && (
@@ -126,6 +174,8 @@ function App() {
           <span>{notice}</span>
         </div>
       )}
+
+      <ErrorLog entries={errorLog} onClear={() => setErrorLog([])} />
 
       <main className="dashboard">
         <section className="panel controls-panel">
@@ -185,6 +235,47 @@ function PanelHeader({ icon, title }: { icon: React.ReactNode; title: string }) 
       <span className="panel-header-icon">{icon}</span>
       {title}
     </h2>
+  );
+}
+
+function ControllerIssueBanner({ issue }: { issue: ControllerIssue | null }) {
+  if (!issue) return null;
+
+  return (
+    <div className="banner banner-error banner-column">
+      <div className="banner-main">
+        <AlertTriangle size={14} />
+        <strong>{issue.title}</strong>
+        <span>{issue.summary}</span>
+      </div>
+      <span className="banner-detail">{issue.action}</span>
+    </div>
+  );
+}
+
+function ErrorLog({ entries, onClear }: { entries: ErrorLogEntry[]; onClear: () => void }) {
+  if (entries.length === 0) return null;
+
+  return (
+    <details className="error-log">
+      <summary>
+        <span>Recent errors</span>
+        <strong>{entries.length}</strong>
+      </summary>
+      <div className="error-log-body">
+        <button type="button" className="error-log-clear" onClick={onClear}>Clear</button>
+        {entries.map((entry) => (
+          <div className="error-log-entry" key={entry.id}>
+            <div className="error-log-meta">
+              <strong>{entry.source}</strong>
+              <span>{entry.lastSeen.toLocaleTimeString()}</span>
+              {entry.count > 1 && <span>{entry.count}x</span>}
+            </div>
+            <code>{entry.message}</code>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -538,6 +629,39 @@ function currentClass(a: number | null | undefined): string {
   if (a > 5) return 'val-crit';
   if (a > 3) return 'val-warn';
   return '';
+}
+
+function explainControllerError(message: string | null): ControllerIssue | null {
+  if (!message) return null;
+  const lower = message.toLowerCase();
+  const hasSerialTimeout = lower.includes('serial timeout');
+  const hasCrcMismatch = lower.includes('crc mismatch');
+
+  if (hasSerialTimeout || hasCrcMismatch) {
+    return {
+      title: 'RoboClaw serial link is unstable.',
+      summary: hasSerialTimeout && hasCrcMismatch
+        ? 'Reads are timing out and later bytes are corrupting CRC checks.'
+        : hasSerialTimeout
+          ? 'The controller is returning fewer bytes than expected before timeout.'
+          : 'The controller returned bytes, but the packet checksum did not match.',
+      action: 'Check baud rate, packet address, USB/TTL wiring, shared ground, and power noise. If wiring is solid, raise roboclaw.timeout_s to 2.0 and restart the service.',
+    };
+  }
+
+  if (lower.includes('missing ack')) {
+    return {
+      title: 'RoboClaw did not acknowledge a command.',
+      summary: 'A write command was sent, but the controller did not return the expected ACK byte.',
+      action: 'Confirm Packet Serial mode, address 0x80-0x87, and that no other process is using the serial port.',
+    };
+  }
+
+  return {
+    title: 'RoboClaw reported an error.',
+    summary: 'The latest telemetry snapshot included a controller read or command failure.',
+    action: 'Open Recent errors below for the raw command message and timestamp.',
+  };
 }
 
 function errorMessage(err: unknown): string {

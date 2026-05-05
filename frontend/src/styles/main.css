@@ -181,6 +181,77 @@ input:focus-visible {
 .banner-error { border-color: #501828; background: #1e0e14; color: #ff9aaa; }
 .banner-ok    { border-color: #1a5038; background: #0d2e20; color: #72e0ad; }
 
+.banner-column {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.banner-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.banner-detail {
+  color: #c98994;
+  padding-left: 22px;
+}
+
+.error-log {
+  border-bottom: 1px solid #263746;
+  background: #101923;
+  color: #9bafbd;
+  font-size: 12px;
+}
+
+.error-log summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 18px;
+  user-select: none;
+}
+
+.error-log summary strong {
+  color: #f3cc6b;
+}
+
+.error-log-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 18px 12px;
+}
+
+.error-log-clear {
+  justify-self: start;
+  min-height: 26px;
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
+.error-log-entry {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #1d2c37;
+  border-radius: 6px;
+  padding: 8px;
+  background: #0b1219;
+}
+
+.error-log-meta {
+  display: flex;
+  gap: 10px;
+  color: #6f8494;
+}
+
+.error-log-entry code {
+  color: #d2dde5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ─── Dashboard grid ────────────────────────────────────────────────────── */
 
 .dashboard {
