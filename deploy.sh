@@ -9,11 +9,7 @@ cd "$ROOT_DIR"
 git pull
 
 cd "$ROOT_DIR/frontend"
-if [[ -f package-lock.json ]]; then
-  npm ci
-else
-  npm install
-fi
+npm install
 npm run build
 
 cd "$ROOT_DIR"
