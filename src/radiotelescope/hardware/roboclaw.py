@@ -277,6 +277,9 @@ class SerialRoboClaw:
     def _write_packet(self, command: int, payload: bytes = b"") -> None:
         header = bytes([self._cfg.address, command]) + payload
         crc = crc16(header)
+        reset_input_buffer = getattr(self._serial, "reset_input_buffer", None)
+        if reset_input_buffer is not None:
+            reset_input_buffer()
         self._serial.write(header + crc.to_bytes(2, "big"))
 
     def _read_response(self, spec: CommandSpec) -> dict[str, Any]:
@@ -311,7 +314,19 @@ class SerialRoboClaw:
         return bytes(data)
 
     def _read_exact(self, length: int) -> bytes:
-        data = self._serial.read(length)
+        deadline = time.monotonic() + self._cfg.timeout_s
+        chunks = bytearray()
+        while len(chunks) < length:
+            remaining_time = deadline - time.monotonic()
+            if remaining_time <= 0:
+                break
+            read_size = length - len(chunks)
+            data = self._serial.read(read_size)
+            if data:
+                chunks.extend(data)
+                continue
+            time.sleep(min(0.005, remaining_time))
+        data = bytes(chunks)
         if len(data) != length:
             raise RoboClawError(f"serial timeout reading {length} bytes; received {len(data)}")
         return data
@@ -481,10 +496,13 @@ def make_client(config: RoboClawConfig) -> RoboClawClient:
 def build_snapshot(client: RoboClawClient, connection: ConnectionStatus) -> RoboClawTelemetry:
     errors: list[str] = []
 
-    def read(command_id: str) -> dict[str, Any]:
+    def read(command_id: str, *, critical: bool = True) -> dict[str, Any]:
         result = client.execute(command_id, {})
         if not result.ok:
-            errors.append(f"{command_id}: {result.error}")
+            if critical:
+                errors.append(f"{command_id}: {result.error}")
+            else:
+                logger.debug("Optional RoboClaw telemetry command %s failed: %s", command_id, result.error)
             return {}
         return result.response
 
@@ -499,8 +517,8 @@ def build_snapshot(client: RoboClawClient, connection: ConnectionStatus) -> Robo
     speed2 = read("read_speed_m2")
     raw_speeds = read("read_raw_speeds")
     avg_speeds = read("read_average_speeds")
-    speed_errors = read("read_speed_errors")
-    position_errors = read("read_position_errors")
+    speed_errors = read("read_speed_errors", critical=False)
+    position_errors = read("read_position_errors", critical=False)
     buffers = read("read_buffers")
     encoder_modes = read("read_encoder_modes")
     temp = read("read_temperature").get("temperature_c")

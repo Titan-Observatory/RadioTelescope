@@ -21,6 +21,7 @@ class FakeSerial:
         self.kwargs = kwargs
         self.writes: list[bytes] = []
         self.reads: list[bytes] = [ACK]
+        self.reset_count = 0
         self.closed = False
 
     def write(self, data: bytes) -> None:
@@ -37,6 +38,9 @@ class FakeSerial:
 
     def close(self) -> None:
         self.closed = True
+
+    def reset_input_buffer(self) -> None:
+        self.reset_count += 1
 
 
 @pytest.fixture
@@ -77,6 +81,27 @@ def test_serial_read_validates_response_crc(fake_serial):
 
     assert result.ok
     assert result.response["voltage_v"] == 12.4
+
+
+def test_serial_read_accumulates_split_response_chunks(fake_serial):
+    client = SerialRoboClaw(RoboClawConfig(port="COM3", address=0x80, timeout_s=0.1))
+    payload = (124).to_bytes(2, "big")
+    crc = crc16(bytes([0x80, COMMANDS["read_main_battery_voltage"].command]) + payload)
+    fake_serial[0].reads = [payload[:1], payload[1:], crc.to_bytes(2, "big")[:1], crc.to_bytes(2, "big")[1:]]
+
+    result = client.execute("read_main_battery_voltage")
+
+    assert result.ok
+    assert result.response["voltage_v"] == 12.4
+
+
+def test_serial_command_clears_stale_input_before_write(fake_serial):
+    client = SerialRoboClaw(RoboClawConfig(port="COM3", address=0x80))
+
+    result = client.execute("forward_m1", {"speed": 64})
+
+    assert result.ok
+    assert fake_serial[0].reset_count == 1
 
 
 def test_serial_m1m2_position_command_writes_documented_packet_order(fake_serial):
