@@ -1,5 +1,5 @@
 ﻿import A from 'aladin-lite';
-import { Layers, Telescope } from 'lucide-react';
+import { Layers, Maximize2, Telescope } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { AltAzPoint, RaDecTarget, RoboClawTelemetry, SkyOverlay, TelescopeConfig } from '../types';
@@ -11,6 +11,7 @@ function CameraPip() {
   const [label, setLabel] = useState('Cam A');
   const [error, setError] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const pipRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetch('/api/camera/status')
@@ -24,8 +25,12 @@ function CameraPip() {
 
   if (!enabled) return null;
 
+  const goFullscreen = () => {
+    void pipRef.current?.requestFullscreen?.().catch(() => {/* user gesture or unsupported */});
+  };
+
   return (
-    <div className={`cam-pip${error ? ' cam-pip-error' : ''}`}>
+    <div ref={pipRef} className={`cam-pip${error ? ' cam-pip-error' : ''}`}>
       <img
         ref={imgRef}
         className="cam-pip-feed"
@@ -39,6 +44,15 @@ function CameraPip() {
       ) : (
         <div className="cam-pip-live"><span className="cam-pip-dot" />LIVE</div>
       )}
+      <button
+        type="button"
+        className="cam-pip-fullscreen"
+        onClick={goFullscreen}
+        title="Fullscreen"
+        aria-label="Fullscreen camera"
+      >
+        <Maximize2 size={13} />
+      </button>
       <div className="cam-pip-label">{label}</div>
     </div>
   );
