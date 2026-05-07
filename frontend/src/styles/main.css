@@ -168,6 +168,32 @@ input:focus-visible {
   flex-shrink: 0;
 }
 
+.poll-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-strong);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  cursor: help;
+}
+
+.poll-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.poll-ok   { color: var(--ok, #72e0ad); }
+.poll-warn { color: var(--warn, #f3cc6b); }
+.poll-bad  { color: var(--err, #ff7e59); }
+
 .topbar-time {
   color: var(--fg-subtle);
   font-size: 12px;

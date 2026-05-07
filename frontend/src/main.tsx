@@ -318,10 +318,48 @@ function TopBar({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
         </div>
       </div>
       <div className="topbar-status">
+        <PollIndicator telemetry={telemetry} />
         <span className={`mode mode-${mode}`}>{MODE_LABEL[mode] ?? mode}</span>
         <span className="topbar-time">{telemetry ? new Date(telemetry.timestamp * 1000).toLocaleTimeString() : '—'}</span>
       </div>
     </header>
+  );
+}
+
+function PollIndicator({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
+  // Force a re-render every second so the staleness age stays current even
+  // when no telemetry message has arrived.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const poll = telemetry?.poll;
+  if (!poll) return null;
+
+  const target = poll.target_hz;
+  const actual = poll.actual_hz;
+  const ageMs = poll.last_tick_age_s != null ? poll.last_tick_age_s * 1000 : null;
+
+  // "stale" if no tick in 2 target intervals
+  const staleThresholdMs = (1000 / target) * 2;
+  const isStale = ageMs != null && ageMs > staleThresholdMs;
+
+  let level: 'ok' | 'warn' | 'bad' = 'ok';
+  if (isStale || actual == null) level = 'bad';
+  else if (actual < target * 0.7) level = 'warn';
+  else if (actual < target * 0.4) level = 'bad';
+
+  const display = actual != null ? `${actual.toFixed(1)} Hz` : '— Hz';
+  const tooltip = `Poll loop: ${actual != null ? actual.toFixed(2) : '—'} Hz (target ${target} Hz)` +
+    (ageMs != null ? ` · last tick ${(ageMs / 1000).toFixed(1)} s ago` : '');
+
+  return (
+    <span className={`poll-indicator poll-${level}`} title={tooltip}>
+      <span className="poll-dot" />
+      {display}
+    </span>
   );
 }
 

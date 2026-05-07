@@ -46,9 +46,16 @@ class HostStats(BaseModel):
     uptime_s: float | None = None
 
 
+class PollStats(BaseModel):
+    target_hz: float
+    actual_hz: float | None = None
+    last_tick_age_s: float | None = None
+
+
 class RoboClawTelemetry(BaseModel):
     connection: ConnectionStatus
     timestamp: float
+    poll: PollStats | None = None
     firmware: str | None = None
     main_battery_v: float | None = None
     logic_battery_v: float | None = None

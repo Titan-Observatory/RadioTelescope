@@ -210,6 +210,7 @@ async def sync_alt_az(body: AltAzRequest, request: Request):
     m2 = await asyncio.to_thread(client.execute, "set_encoder_m2", {"value": m2_value})
     if not m2.ok:
         raise HTTPException(400, detail=m2.error or "Failed to set M2 encoder")
+    await _service(request).refresh()
     return {"m1": m1, "m2": m2}
 
 

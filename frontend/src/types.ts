@@ -38,9 +38,16 @@ export interface HostStats {
   uptime_s: number | null;
 }
 
+export interface PollStats {
+  target_hz: number;
+  actual_hz: number | null;
+  last_tick_age_s: number | null;
+}
+
 export interface RoboClawTelemetry {
   connection: ConnectionStatus;
   timestamp: number;
+  poll: PollStats | null;
   firmware: string | null;
   main_battery_v: number | null;
   logic_battery_v: number | null;
