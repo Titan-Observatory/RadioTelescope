@@ -2,13 +2,14 @@ import './styles/main.css';
 
 import {
   Activity, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Cpu, Crosshair, Gauge, Home, LogOut, Map, Navigation, Radio, Square,
+  Cpu, Crosshair, Gauge, Home, LogOut, Map, Navigation, Square,
   Thermometer, Zap,
 } from 'lucide-react';
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { api, ApiError } from './api';
+import { BRAND } from './branding';
 import { SkyMap } from './components/SkyMap';
 import { QueuePage } from './components/QueuePage';
 import {
@@ -16,6 +17,11 @@ import {
   type QueueConfig, type QueueStatus,
 } from './queue';
 import type { CommandInfo, MotorSnapshot, RoboClawTelemetry, TelescopeConfig } from './types';
+
+// Apply branding to the document head so favicon + title share the same source as the TopBar.
+document.title = `${BRAND.name} · ${BRAND.tagline}`;
+const favicon = document.getElementById('favicon') as HTMLLinkElement | null;
+if (favicon) favicon.href = BRAND.faviconUrl;
 
 interface ErrorLogEntry {
   id: number;
@@ -304,23 +310,25 @@ const MODE_LABEL: Record<string, string> = {
 function TopBar({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
   const conn = telemetry?.connection;
   const mode = conn?.mode ?? 'loading';
-  const subtitle = conn
-    ? [conn.port, telemetry?.firmware ? `firmware ${telemetry.firmware}` : null].filter(Boolean).join(' · ')
-    : 'Connecting…';
 
   return (
     <header className="topbar">
-      <div className="topbar-brand">
-        <Radio size={18} className="brand-icon" />
-        <div>
-          <h1>Radio Telescope</h1>
-          <p className="topbar-sub">{subtitle}</p>
+      <a className="topbar-brand" href={BRAND.homepage} target="_blank" rel="noreferrer">
+        <img src={BRAND.logoUrl} alt={BRAND.name} className="brand-logo" />
+        <div className="brand-text">
+          <h1>{BRAND.name}</h1>
+          <p className="topbar-sub">{BRAND.tagline}</p>
         </div>
-      </div>
+      </a>
       <div className="topbar-status">
         <PollIndicator telemetry={telemetry} />
         <span className={`mode mode-${mode}`}>{MODE_LABEL[mode] ?? mode}</span>
-        <span className="topbar-time">{telemetry ? new Date(telemetry.timestamp * 1000).toLocaleTimeString() : '—'}</span>
+        <span className="topbar-time" title="Time at the telescope (UTC)">
+          <span className="topbar-time-label">Telescope time</span>
+          {telemetry
+            ? `${new Date(telemetry.timestamp * 1000).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false })} UTC`
+            : '—'}
+        </span>
       </div>
     </header>
   );
