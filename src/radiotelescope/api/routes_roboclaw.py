@@ -195,23 +195,36 @@ async def goto_alt_az(body: AltAzRequest, request: Request):
     )
 
 
-@router.post("/api/telescope/sync", response_model=dict[str, CommandResult], dependencies=[Depends(require_control)])
+@router.post("/api/telescope/sync", dependencies=[Depends(require_control)])
 async def sync_alt_az(body: AltAzRequest, request: Request):
-    """Set the encoders so the controller reports the given alt/az without moving — for testing."""
-    cfg = request.app.state.config.mount
-    azimuth = _normalise_azimuth(body.azimuth_deg)
-    m1_value = round(cfg.az_zero_count + azimuth * cfg.az_counts_per_degree)
-    m2_value = round(cfg.alt_zero_count + body.altitude_deg * cfg.alt_counts_per_degree)
+    """Recalibrate the alt/az offsets so the current encoder positions are reported as the given alt/az.
 
+    Doesn't move the dish or touch the encoders — just shifts the zero references
+    in memory. The change is non-persistent (lost on restart).
+    """
+    cfg = request.app.state.config.mount
     client = _service(request).client
-    m1 = await asyncio.to_thread(client.execute, "set_encoder_m1", {"value": m1_value})
-    if not m1.ok:
-        raise HTTPException(400, detail=m1.error or "Failed to set M1 encoder")
-    m2 = await asyncio.to_thread(client.execute, "set_encoder_m2", {"value": m2_value})
-    if not m2.ok:
-        raise HTTPException(400, detail=m2.error or "Failed to set M2 encoder")
+
+    enc_m1 = await asyncio.to_thread(client.execute, "read_encoder_m1", {})
+    enc_m2 = await asyncio.to_thread(client.execute, "read_encoder_m2", {})
+    if not enc_m1.ok or not enc_m2.ok:
+        raise HTTPException(400, detail=enc_m1.error or enc_m2.error or "Failed to read encoders")
+    current_m1 = enc_m1.response.get("encoder")
+    current_m2 = enc_m2.response.get("encoder")
+    if current_m1 is None or current_m2 is None:
+        raise HTTPException(400, detail="Encoder read returned no value")
+
+    azimuth = _normalise_azimuth(body.azimuth_deg)
+    cfg.az_zero_count  = int(round(current_m1 - azimuth            * cfg.az_counts_per_degree))
+    cfg.alt_zero_count = int(round(current_m2 - body.altitude_deg * cfg.alt_counts_per_degree))
+
     await _service(request).refresh()
-    return {"m1": m1, "m2": m2}
+    return {
+        "az_zero_count": cfg.az_zero_count,
+        "alt_zero_count": cfg.alt_zero_count,
+        "reported_azimuth_deg": azimuth,
+        "reported_altitude_deg": body.altitude_deg,
+    }
 
 
 @router.get("/api/telescope/config", response_model=TelescopeConfig)

@@ -486,7 +486,7 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, syncAltA
             type="button"
             className="action-button"
             onClick={() => void syncAltAz(targetAlt, targetAz)}
-            title="Testing only — sets the encoders so the controller reports this position without moving the dish"
+            title="Testing only — recalibrates the alt/az zero offsets so the controller reports this position. Does not move the dish or touch the encoders."
           >
             <Crosshair size={14} /> Set as Current
           </button>

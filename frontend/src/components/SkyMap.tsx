@@ -410,15 +410,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
         target: `${initialTarget.ra_deg} ${initialTarget.dec_deg}`,
         cooFrame: 'equatorial',  // equatorial coords, view centred on NE horizon
         projection: 'STG',       // stereographic — natural perspective
-        showCooGrid: true,
-        gridColor: 'rgb(114, 224, 173)',
-        gridOpacity: 0.35,
-        gridOptions: {
-          enabled: true,
-          showLabels: true,
-          thickness: 1,
-          labelSize: 12,
-        },
+        showCooGrid: false,      // we draw our own alt/az grid below for a horizon-aligned look
         showReticle: false,
         showZoomControl: true,
         showFov: false,
@@ -537,9 +529,16 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    // Cache horizon RA/Dec samples (only need to recompute every ~30 s as Earth rotates)
+    // Cache horizon + alt/az grid RA/Dec samples (recomputed every ~30 s as Earth rotates)
     let horizonRaDec: RaDecTarget[] = [];
+    // Almucantars: rings of constant altitude, sampled around the full azimuth range
+    let almucantars: { altitude_deg: number; samples: RaDecTarget[] }[] = [];
+    // Meridians: lines of constant azimuth, sampled from horizon to zenith
+    let meridians: { azimuth_deg: number; samples: RaDecTarget[] }[] = [];
     let lastSampleTime = -Infinity;
+
+    const ALT_RINGS = [15, 30, 45, 60, 75];
+    const AZ_LINES = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
 
     const refreshHorizonSamples = () => {
       const date = new Date();
@@ -547,7 +546,48 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
       for (let az = 0; az < 360; az += 2) {
         horizonRaDec.push(altAzToRaDec({ altitude_deg: 0, azimuth_deg: az }, config, date));
       }
+      almucantars = ALT_RINGS.map((alt) => {
+        const samples: RaDecTarget[] = [];
+        for (let az = 0; az < 360; az += 4) {
+          samples.push(altAzToRaDec({ altitude_deg: alt, azimuth_deg: az }, config, date));
+        }
+        return { altitude_deg: alt, samples };
+      });
+      meridians = AZ_LINES.map((az) => {
+        const samples: RaDecTarget[] = [];
+        for (let alt = 0; alt <= 88; alt += 2) {
+          samples.push(altAzToRaDec({ altitude_deg: alt, azimuth_deg: az }, config, date));
+        }
+        return { azimuth_deg: az, samples };
+      });
       lastSampleTime = Date.now();
+    };
+
+    const drawProjectedPolyline = (
+      ctx: CanvasRenderingContext2D,
+      aladin: ReturnType<typeof A.aladin>,
+      samples: RaDecTarget[],
+      closePath: boolean,
+      w: number,
+      h: number,
+    ) => {
+      // Project to pixels, splitting into segments wherever a sample falls off-screen
+      // so that lines crossing behind the projection don't streak across the view.
+      const margin = 40;
+      let started = false;
+      ctx.beginPath();
+      for (const { ra_deg, dec_deg } of samples) {
+        const p = aladin.world2pix(ra_deg, dec_deg);
+        if (!p || !isFinite(p[0]) || !isFinite(p[1]) ||
+            p[0] < -margin || p[0] > w + margin || p[1] < -margin || p[1] > h + margin) {
+          started = false;
+          continue;
+        }
+        if (!started) { ctx.moveTo(p[0], p[1]); started = true; }
+        else            { ctx.lineTo(p[0], p[1]); }
+      }
+      if (closePath) ctx.closePath();
+      ctx.stroke();
     };
 
     let frameId: number;
@@ -611,6 +651,32 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
       // have a real image. The clipping polygon above will stay the same.
       ctx.fillStyle = 'rgba(18, 38, 14, 0.82)';
       ctx.fill('evenodd');
+
+      // ── Alt/az grid (almucantars + meridians) ─────────────────────────────
+      ctx.save();
+      ctx.strokeStyle = 'rgba(114, 224, 173, 0.28)';
+      ctx.lineWidth = 1;
+      for (const ring of almucantars) {
+        drawProjectedPolyline(ctx, aladin, ring.samples, true, w, h);
+      }
+      for (const meridian of meridians) {
+        drawProjectedPolyline(ctx, aladin, meridian.samples, false, w, h);
+      }
+
+      // Almucantar altitude labels — placed at the south meridian (az = 180°)
+      ctx.fillStyle    = 'rgba(114, 224, 173, 0.55)';
+      ctx.font         = '10px Inter, system-ui, sans-serif';
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'middle';
+      for (const ring of almucantars) {
+        const labelPos = altAzToRaDec({ altitude_deg: ring.altitude_deg, azimuth_deg: 180 }, config, date);
+        const lp = aladin.world2pix(labelPos.ra_deg, labelPos.dec_deg);
+        if (lp && isFinite(lp[0]) && isFinite(lp[1]) &&
+            lp[0] >= 0 && lp[0] <= w && lp[1] >= 0 && lp[1] <= h) {
+          ctx.fillText(`${ring.altitude_deg}°`, lp[0] + 4, lp[1]);
+        }
+      }
+      ctx.restore();
 
       // ── Horizon line ───────────────────────────────────────────────────────
       ctx.beginPath();
