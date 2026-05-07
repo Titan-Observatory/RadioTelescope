@@ -37,7 +37,29 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const widgetRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const autoJoinedTokenRef = useRef<string | null>(null);
   const inQueue = (status?.position ?? -1) >= 0;
+
+  // Auto-join as soon as the captcha is solved — no button click needed.
+  // Guarded by the token value so a re-render doesn't re-submit.
+  useEffect(() => {
+    if (!turnstileEnabled) return;
+    if (inQueue || joining) return;
+    if (!captchaToken) return;
+    if (autoJoinedTokenRef.current === captchaToken) return;
+    autoJoinedTokenRef.current = captchaToken;
+    void onJoin(captchaToken);
+  }, [captchaToken, turnstileEnabled, inQueue, joining, onJoin]);
+
+  // If the join attempt failed, reset the captcha so the user can retry.
+  useEffect(() => {
+    if (!joinError || !turnstileEnabled) return;
+    autoJoinedTokenRef.current = null;
+    setCaptchaToken(null);
+    if (window.turnstile && widgetIdRef.current) {
+      window.turnstile.reset(widgetIdRef.current);
+    }
+  }, [joinError, turnstileEnabled]);
 
   useEffect(() => {
     if (inQueue || !turnstileEnabled || !siteKey) return;
@@ -71,20 +93,33 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
   }, [inQueue, turnstileEnabled, siteKey]);
 
   if (!inQueue) {
-    const canJoin = !turnstileEnabled || !!captchaToken;
     return (
       <div className="queue-landing">
         <div className="queue-card">
           <h1>Radio Telescope</h1>
-          <p>This telescope is shared. Join the queue to take control.</p>
+          <p>
+            {turnstileEnabled
+              ? 'This telescope is shared. Complete the check below to join the queue.'
+              : 'This telescope is shared. Join the queue to take control.'}
+          </p>
           {turnstileEnabled && siteKey && <div className="cf-turnstile" ref={widgetRef} />}
-          <button
-            className="action-button"
-            disabled={joining || !canJoin}
-            onClick={() => void onJoin(captchaToken)}
-          >
-            {joining ? 'Joining…' : 'Join queue'}
-          </button>
+          {turnstileEnabled ? (
+            <p className="queue-status-line">
+              {joining
+                ? 'Joining…'
+                : captchaToken
+                  ? 'Verified — joining queue…'
+                  : 'Waiting for verification…'}
+            </p>
+          ) : (
+            <button
+              className="action-button"
+              disabled={joining}
+              onClick={() => void onJoin(null)}
+            >
+              {joining ? 'Joining…' : 'Join queue'}
+            </button>
+          )}
           {joinError && <p className="banner banner-error">{joinError}</p>}
         </div>
       </div>

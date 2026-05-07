@@ -338,7 +338,7 @@ const SURVEYS = [
   {
     id: 'CDS/P/HI4PI/NHI',
     label: 'Hydrogen Line',
-    title: 'HI4PI 21cm neutral hydrogen column density, colorized for readability',
+    title: 'HI4PI 21cm neutral hydrogen column density',
   },
   {
     id: 'CDS/P/Mellinger/color',
@@ -412,7 +412,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
         projection: 'STG',       // stereographic — natural perspective
         showCooGrid: false,      // we draw our own alt/az grid below for a horizon-aligned look
         showReticle: false,
-        showZoomControl: true,
+        showZoomControl: false,
         showFov: false,
         showFullscreenControl: false,
         showLayersControl: false,
@@ -1000,11 +1000,21 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
           </div>
         </div>
 
+        {(pendingAltAz || (telemetry?.altitude_deg != null && telemetry.azimuth_deg != null)) && (
+          <div className="skymap-altaz-chip">
+            {pendingAltAz ? (
+              <span className="skymap-altaz-target">{fmtAltAz(pendingAltAz.altitude_deg, pendingAltAz.azimuth_deg)}</span>
+            ) : (
+              <span>{fmtAltAz(telemetry!.altitude_deg!, telemetry!.azimuth_deg!)}</span>
+            )}
+          </div>
+        )}
+
         <CameraPip />
         {!ready && (
           <div className="skymap-loading">
             <Telescope size={24} className="skymap-loading-icon" />
-            <span>Loading sky atlasâ€¦</span>
+            <span>Loading sky atlas</span>
           </div>
         )}
         {solarTooltipPos && (
@@ -1012,23 +1022,12 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
             className="skymap-solar-tooltip"
             style={{ left: solarTooltipPos.x + 14, top: solarTooltipPos.y + 14 }}
           >
-            <strong>Solar exclusion zone (15°)</strong>
-            <p>Pointing within 15° of the Sun risks saturating the receiver. Wait until the Sun moves clear, or observe a different region of the sky.</p>
+            <strong>Range of Solar Influence</strong>
+            <p>Pointing within 15° of the Sun will likely overwhelm the hydrogen signal, but is safe to do</p>
           </div>
         )}
       </div>
 
-      <div className="skymap-footer">
-        <div className="skymap-hint">
-          {pendingAltAz ? (
-            <span>Target set · {fmtAltAz(pendingAltAz.altitude_deg, pendingAltAz.azimuth_deg)}</span>
-          ) : telemetry?.altitude_deg != null && telemetry.azimuth_deg != null ? (
-            <span>{fmtAltAz(telemetry.altitude_deg, telemetry.azimuth_deg)}</span>
-          ) : (
-            <span>Click the sky to set a slew target</span>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

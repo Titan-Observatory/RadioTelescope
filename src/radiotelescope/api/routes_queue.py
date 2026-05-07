@@ -102,17 +102,26 @@ async def queue_ws(ws: WebSocket) -> None:
 
     await queue.mark_ws_connected(token, True)
     listener = queue.subscribe()
-    try:
-        # Push initial snapshot.
+
+    async def _send_loop() -> None:
         await ws.send_json(queue.status_for(token).model_dump())
         while True:
-            # Wait for either a broadcast or a 1 s tick (so the client sees
-            # countdowns update).
             try:
                 await asyncio.wait_for(listener.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 pass
             await ws.send_json(queue.status_for(token).model_dump())
+
+    async def _recv_loop() -> None:
+        # Any inbound message is treated as a UI-activity heartbeat; the
+        # frontend throttles clicks / scrolls / keypresses into these pings
+        # so the idle countdown isn't tied solely to control commands.
+        while True:
+            await ws.receive_text()
+            await queue.mark_command(token)
+
+    try:
+        await asyncio.gather(_send_loop(), _recv_loop())
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     finally:

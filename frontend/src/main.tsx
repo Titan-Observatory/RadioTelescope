@@ -115,7 +115,28 @@ function App() {
         if (typeof next.position === 'number') setQueueStatus(next);
       } catch { /* ignore */ }
     };
-    return () => ws.close();
+
+    // Treat any UI activity (click, scroll, keypress, pointer) as a heartbeat
+    // that resets the server-side idle countdown. Throttled so we send at
+    // most once every few seconds while the user is interacting.
+    let lastSent = 0;
+    const sendActivity = () => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      const now = Date.now();
+      if (now - lastSent < 5000) return;
+      lastSent = now;
+      try { ws.send('a'); } catch { /* ignore */ }
+    };
+    const events: (keyof DocumentEventMap)[] = ['click', 'scroll', 'keydown', 'pointerdown', 'wheel', 'touchstart'];
+    for (const e of events) {
+      document.addEventListener(e, sendActivity, { passive: true, capture: true });
+    }
+    return () => {
+      for (const e of events) {
+        document.removeEventListener(e, sendActivity, { capture: true });
+      }
+      ws.close();
+    };
   }, [queueStatus?.position === -1, queueStatus == null]);
 
   const handleJoin = async (turnstileToken: string | null) => {
@@ -234,18 +255,16 @@ function App() {
 
   return (
     <div className="app-shell">
-      <TopBar telemetry={telemetry} />
+      <TopBar
+        telemetry={telemetry}
+        leaseStatus={queueEnabled && queueStatus?.is_active ? queueStatus : null}
+        onLeaveLease={() => void handleLeave()}
+      />
 
-      {queueEnabled && queueStatus && queueStatus.is_active && (
-        <LeaseBanner status={queueStatus} onLeave={() => void handleLeave()} />
-      )}
-
-      {telemetry?.connection.mode !== 'serial' && (
-        <div className={`banner ${telemetry?.connection.mode === 'error' ? 'banner-error' : ''}`}>
+      {telemetry?.connection.mode === 'error' && (
+        <div className="banner banner-error">
           <AlertTriangle size={14} />
-          <span>{telemetry?.connection.mode === 'error'
-            ? 'Lost connection to the telescope. Check that all cables are secure and try refreshing.'
-            : 'No telescope hardware detected — running in demo mode. Controls will not move anything.'}</span>
+          <span>Lost connection to the telescope. Check that all cables are secure and try refreshing.</span>
         </div>
       )}
 
@@ -264,7 +283,8 @@ function App() {
 
       <main className="dashboard">
         <section className="panel controls-panel">
-          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
+          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
+          <AdminPanel syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} targetAz={targetAz} targetAlt={targetAlt} />
         </section>
         <section className="panel skymap-panel">
           <PanelHeader icon={<Map size={14} />} title="Sky Map" />
@@ -278,17 +298,21 @@ function App() {
   );
 }
 
-function LeaseBanner({ status, onLeave }: { status: QueueStatus; onLeave: () => void }) {
+function LeaseChip({ status, onLeave }: { status: QueueStatus; onLeave: () => void }) {
   const remaining = Math.max(0, Math.round(status.lease_remaining_s ?? 0));
   const idle = status.idle_remaining_s == null ? null : Math.max(0, Math.round(status.idle_remaining_s));
   return (
-    <div className="banner banner-ok lease-banner">
-      <Activity size={14} />
-      <span>You are in control. Time remaining: <strong>{formatSeconds(remaining)}</strong>
-        {idle != null && idle < 30 && <> · idle release in <strong>{idle}s</strong></>}
-      </span>
-      <button className="lease-leave" onClick={onLeave}><LogOut size={12} /> Release control</button>
-    </div>
+    <span className="topbar-lease" title="You are in control of the telescope.">
+      <Activity size={12} />
+      <span className="topbar-lease-label">Session</span>
+      <strong>{formatSeconds(remaining)}</strong>
+      {idle != null && idle < 30 && (
+        <span className="topbar-lease-idle">· idle {idle}s</span>
+      )}
+      <button className="topbar-lease-leave" onClick={onLeave} title="Release control">
+        <LogOut size={11} /> Release
+      </button>
+    </span>
   );
 }
 
@@ -307,10 +331,15 @@ const MODE_LABEL: Record<string, string> = {
   loading: 'Connecting',
 };
 
-function TopBar({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
-  const conn = telemetry?.connection;
-  const mode = conn?.mode ?? 'loading';
-
+function TopBar({
+  telemetry,
+  leaseStatus,
+  onLeaveLease,
+}: {
+  telemetry: RoboClawTelemetry | null;
+  leaseStatus: QueueStatus | null;
+  onLeaveLease: () => void;
+}) {
   return (
     <header className="topbar">
       <a className="topbar-brand" href={BRAND.homepage} target="_blank" rel="noreferrer">
@@ -321,8 +350,8 @@ function TopBar({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
         </div>
       </a>
       <div className="topbar-status">
-        <PollIndicator telemetry={telemetry} />
-        <span className={`mode mode-${mode}`}>{MODE_LABEL[mode] ?? mode}</span>
+        {leaseStatus && <LeaseChip status={leaseStatus} onLeave={onLeaveLease} />}
+        <StatusPill telemetry={telemetry} />
         <span className="topbar-time" title="Time at the telescope (UTC)">
           <span className="topbar-time-label">Telescope time</span>
           {telemetry
@@ -334,39 +363,55 @@ function TopBar({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
   );
 }
 
-function PollIndicator({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
-  // Force a re-render every second so the staleness age stays current even
-  // when no telemetry message has arrived.
+function StatusPill({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
+  const mode = telemetry?.connection?.mode ?? 'loading';
   const poll = telemetry?.poll;
-  if (!poll) return null;
 
-  const target = poll.target_hz;
-  const actual = poll.actual_hz;
-  const ageMs = poll.last_tick_age_s != null ? poll.last_tick_age_s * 1000 : null;
+  let pollLevel: 'ok' | 'warn' | 'bad' = 'ok';
+  if (poll) {
+    const ageMs = poll.last_tick_age_s != null ? poll.last_tick_age_s * 1000 : null;
+    const staleThresholdMs = (1000 / poll.target_hz) * 2;
+    const isStale = ageMs != null && ageMs > staleThresholdMs;
+    if (isStale || poll.actual_hz == null) pollLevel = 'bad';
+    else if (poll.actual_hz < poll.target_hz * 0.7) pollLevel = 'warn';
+    else if (poll.actual_hz < poll.target_hz * 0.4) pollLevel = 'bad';
+  }
 
-  // "stale" if no tick in 2 target intervals
-  const staleThresholdMs = (1000 / target) * 2;
-  const isStale = ageMs != null && ageMs > staleThresholdMs;
-
-  let level: 'ok' | 'warn' | 'bad' = 'ok';
-  if (isStale || actual == null) level = 'bad';
-  else if (actual < target * 0.7) level = 'warn';
-  else if (actual < target * 0.4) level = 'bad';
-
-  const display = actual != null ? `${actual.toFixed(1)} Hz` : '— Hz';
-  const tooltip = `Poll loop: ${actual != null ? actual.toFixed(2) : '—'} Hz (target ${target} Hz)` +
-    (ageMs != null ? ` · last tick ${(ageMs / 1000).toFixed(1)} s ago` : '');
+  const dotLevel = mode === 'error' ? 'bad' : mode === 'loading' ? 'loading' : pollLevel;
 
   return (
-    <span className={`poll-indicator poll-${level}`} title={tooltip}>
+    <span className={`status-pill status-pill-${dotLevel}`}>
       <span className="poll-dot" />
-      {display}
+      {MODE_LABEL[mode] ?? mode}
+      <span className="status-pill-popover">
+        <span className="status-pill-row">
+          <span className="status-pill-key">Connection</span>
+          <span className="status-pill-val">{mode}</span>
+        </span>
+        {poll && (
+          <>
+            <span className="status-pill-row">
+              <span className="status-pill-key">Poll rate</span>
+              <span className="status-pill-val">
+                {poll.actual_hz != null ? `${poll.actual_hz.toFixed(1)} Hz` : '— Hz'}
+                <span className="status-pill-muted"> / {poll.target_hz} Hz target</span>
+              </span>
+            </span>
+            {poll.last_tick_age_s != null && (
+              <span className="status-pill-row">
+                <span className="status-pill-key">Last tick</span>
+                <span className="status-pill-val">{poll.last_tick_age_s.toFixed(1)} s ago</span>
+              </span>
+            )}
+          </>
+        )}
+      </span>
     </span>
   );
 }
@@ -425,31 +470,22 @@ function ErrorLog({ entries, onClear }: { entries: ErrorLogEntry[]; onClear: () 
 
 // ─── Telescope controls ───────────────────────────────────────────────────────
 
-function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, syncAltAz, homeElevation, zeroAzimuth, targetAz, targetAlt, setTargetAz, setTargetAlt }: {
+function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt }: {
   telemetry: RoboClawTelemetry | null;
   runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
   stopAll: () => Promise<void>;
   gotoAltAz: (alt: number, az: number) => Promise<void>;
-  syncAltAz: (alt: number, az: number) => Promise<void>;
-  homeElevation: () => Promise<void>;
-  zeroAzimuth: () => Promise<void>;
   targetAz: number;
   targetAlt: number;
   setTargetAz: (v: number) => void;
   setTargetAlt: (v: number) => void;
 }) {
   const [slewSpeed, setSlewSpeed] = useState(40);
-  const [elHoming, setElHoming] = useState(false);
   const speed = Math.round(slewSpeed * 127 / 100);
 
   const submitTarget = async (e: FormEvent) => {
     e.preventDefault();
     await gotoAltAz(targetAlt, targetAz);
-  };
-
-  const runHomeElevation = async () => {
-    setElHoming(true);
-    try { await homeElevation(); } finally { setElHoming(false); }
   };
 
   return (
@@ -489,36 +525,68 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, syncAltA
         <form className="target-form" onSubmit={submitTarget}>
           <label><span>Azimuth °</span><input type="number" min={0} max={360} step={0.001} value={targetAz} onChange={(e) => setTargetAz(Number(e.target.value))} /></label>
           <label><span>Altitude °</span><input type="number" min={0} max={90} step={0.001} value={targetAlt} onChange={(e) => setTargetAlt(Number(e.target.value))} /></label>
-          <button type="submit" className="action-button"><Navigation size={14} /> Slew Here</button>
+          <button type="submit" className="action-button"><Navigation size={14} /> Slew </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+// ─── Admin panel ─────────────────────────────────────────────────────────────
+
+function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, targetAz, targetAlt }: {
+  syncAltAz: (alt: number, az: number) => Promise<void>;
+  homeElevation: () => Promise<void>;
+  zeroAzimuth: () => Promise<void>;
+  targetAz: number;
+  targetAlt: number;
+}) {
+  const [elHoming, setElHoming] = useState(false);
+
+  const runHomeElevation = async () => {
+    setElHoming(true);
+    try { await homeElevation(); } finally { setElHoming(false); }
+  };
+
+  return (
+    <details className="admin-panel">
+      <summary className="admin-panel-summary">
+        <Cpu size={13} /> Calibration &amp; Homing
+      </summary>
+      <div className="admin-panel-body">
+        <div className="admin-row">
+          <span className="admin-label">Position offset</span>
           <button
             type="button"
-            className="action-button"
             onClick={() => void syncAltAz(targetAlt, targetAz)}
-            title="Testing only — recalibrates the alt/az zero offsets so the controller reports this position. Does not move the dish or touch the encoders."
+            title="Recalibrates the alt/az zero offsets so the controller reports the current target coordinates. Does not move the dish."
           >
-            <Crosshair size={14} /> Set as Current
+            <Crosshair size={13} /> Set as Current
           </button>
-        </form>
-        <div className="homing-bar">
-          <span className="homing-label">Calibrate</span>
+        </div>
+        <div className="admin-row">
+          <span className="admin-label">Elevation home</span>
           <button
             onClick={() => void runHomeElevation()}
             disabled={elHoming}
             className={elHoming ? 'homing-active' : ''}
             title="Slowly lowers the dish until it hits the bottom stop, then resets the elevation encoder to zero"
           >
-            <Home size={14} />
-            {elHoming ? 'Homing elevation…' : 'Home Elevation'}
+            <Home size={13} />
+            {elHoming ? 'Homing…' : 'Home Elevation'}
           </button>
+        </div>
+        <div className="admin-row">
+          <span className="admin-label">Azimuth zero</span>
           <button
             onClick={() => void zeroAzimuth()}
             title="Sets the current azimuth position as the zero reference point"
           >
-            <Crosshair size={14} /> Zero Azimuth
+            <Crosshair size={13} /> Zero Azimuth
           </button>
         </div>
       </div>
-    </>
+    </details>
   );
 }
 
