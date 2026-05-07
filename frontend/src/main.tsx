@@ -167,6 +167,17 @@ function App() {
     }
   };
 
+  const syncAltAz = async (altDeg: number, azDeg: number) => {
+    setNotice(null);
+    try {
+      await api.syncAltAz(altDeg, azDeg);
+      setNotice(`Pointing set to Az ${azDeg.toFixed(1)}° · Alt ${altDeg.toFixed(1)}°`);
+      setTelemetry(await api.status());
+    } catch (err) {
+      setNotice(errorMessage(err));
+    }
+  };
+
   const homeElevation = async () => {
     setNotice(null);
     try {
@@ -247,7 +258,7 @@ function App() {
 
       <main className="dashboard">
         <section className="panel controls-panel">
-          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
+          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
         </section>
         <section className="panel skymap-panel">
           <PanelHeader icon={<Map size={14} />} title="Sky Map" />
@@ -368,11 +379,12 @@ function ErrorLog({ entries, onClear }: { entries: ErrorLogEntry[]; onClear: () 
 
 // ─── Telescope controls ───────────────────────────────────────────────────────
 
-function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, homeElevation, zeroAzimuth, targetAz, targetAlt, setTargetAz, setTargetAlt }: {
+function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, syncAltAz, homeElevation, zeroAzimuth, targetAz, targetAlt, setTargetAz, setTargetAlt }: {
   telemetry: RoboClawTelemetry | null;
   runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
   stopAll: () => Promise<void>;
   gotoAltAz: (alt: number, az: number) => Promise<void>;
+  syncAltAz: (alt: number, az: number) => Promise<void>;
   homeElevation: () => Promise<void>;
   zeroAzimuth: () => Promise<void>;
   targetAz: number;
@@ -432,6 +444,14 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, homeElev
           <label><span>Azimuth °</span><input type="number" min={0} max={360} step={0.001} value={targetAz} onChange={(e) => setTargetAz(Number(e.target.value))} /></label>
           <label><span>Altitude °</span><input type="number" min={0} max={90} step={0.001} value={targetAlt} onChange={(e) => setTargetAlt(Number(e.target.value))} /></label>
           <button type="submit" className="action-button"><Navigation size={14} /> Slew Here</button>
+          <button
+            type="button"
+            className="action-button"
+            onClick={() => void syncAltAz(targetAlt, targetAz)}
+            title="Testing only — sets the encoders so the controller reports this position without moving the dish"
+          >
+            <Crosshair size={14} /> Set as Current
+          </button>
         </form>
         <div className="homing-bar">
           <span className="homing-label">Calibrate</span>

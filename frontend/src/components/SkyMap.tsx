@@ -279,6 +279,17 @@ function drawMoonIcon(
   ctx.stroke();
 }
 
+function pointInPolygon(x: number, y: number, polygon: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const intersect = (yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 function isInsideTriangle(point: AltAzPoint, triangle: AltAzPoint[]): boolean {
   if (triangle.length !== 3) return true;
 
@@ -558,10 +569,25 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
       if (px.length < 4) { frameId = requestAnimationFrame(draw); return; }
 
       // ── Ground fill ────────────────────────────────────────────────────────
-      // Evenodd: outer rect fills everywhere EXCEPT inside the horizon polygon
-      // (i.e. the sky stays transparent, the ground gets the fill).
+      // Probe a point well below the horizon to decide which side of the
+      // polygon is "ground". When the view rotates / pans so the projection
+      // centre is below the horizon, the polygon's *interior* in screen space
+      // becomes the ground; otherwise the *exterior* is ground.
+      let groundIsInside = false;
+      for (const probeAz of [180, 0, 90, 270]) {
+        const probe = altAzToRaDec({ altitude_deg: -45, azimuth_deg: probeAz }, config, date);
+        const pp = aladin.world2pix(probe.ra_deg, probe.dec_deg);
+        if (pp && isFinite(pp[0]) && isFinite(pp[1])) {
+          groundIsInside = pointInPolygon(pp[0], pp[1], px);
+          break;
+        }
+      }
+
       ctx.beginPath();
-      ctx.rect(0, 0, w, h);
+      if (!groundIsInside) {
+        // Fill area outside polygon (default: looking at the sky from above).
+        ctx.rect(0, 0, w, h);
+      }
       ctx.moveTo(px[0][0], px[0][1]);
       for (const [x, y] of px.slice(1)) ctx.lineTo(x, y);
       ctx.closePath();

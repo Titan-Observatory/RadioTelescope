@@ -195,6 +195,24 @@ async def goto_alt_az(body: AltAzRequest, request: Request):
     )
 
 
+@router.post("/api/telescope/sync", response_model=dict[str, CommandResult], dependencies=[Depends(require_control)])
+async def sync_alt_az(body: AltAzRequest, request: Request):
+    """Set the encoders so the controller reports the given alt/az without moving — for testing."""
+    cfg = request.app.state.config.mount
+    azimuth = _normalise_azimuth(body.azimuth_deg)
+    m1_value = round(cfg.az_zero_count + azimuth * cfg.az_counts_per_degree)
+    m2_value = round(cfg.alt_zero_count + body.altitude_deg * cfg.alt_counts_per_degree)
+
+    client = _service(request).client
+    m1 = await asyncio.to_thread(client.execute, "set_encoder_m1", {"value": m1_value})
+    if not m1.ok:
+        raise HTTPException(400, detail=m1.error or "Failed to set M1 encoder")
+    m2 = await asyncio.to_thread(client.execute, "set_encoder_m2", {"value": m2_value})
+    if not m2.ok:
+        raise HTTPException(400, detail=m2.error or "Failed to set M2 encoder")
+    return {"m1": m1, "m2": m2}
+
+
 @router.get("/api/telescope/config", response_model=TelescopeConfig)
 async def telescope_config(request: Request):
     cfg = request.app.state.config.mount
