@@ -176,8 +176,8 @@ COMMANDS: dict[str, CommandSpec] = {
     "set_standard_config": CommandSpec("set_standard_config", "Set Standard Config", "Configuration", "Set standard config bitfield.", 98, "config", (_arg("config", "u16", "Config", 0, 65535, 0),), dangerous=True),
     "read_standard_config": CommandSpec("read_standard_config", "Read Standard Config", "Configuration", "Read standard config bitfield.", 99, "read", response=(_resp("config", "u16"),)),
     "read_average_speeds": CommandSpec("read_average_speeds", "Read Average Speeds", "Motors", "Read average speeds for both motors.", 108, "read", response=(_resp("m1_speed", "s32"), _resp("m2_speed", "s32"))),
-    "read_speed_errors": CommandSpec("read_speed_errors", "Read Speed Errors", "Motors", "Read closed-loop speed errors.", 111, "read", response=(_resp("m1_error", "s32"), _resp("m2_error", "s32"))),
-    "read_position_errors": CommandSpec("read_position_errors", "Read Position Errors", "Positioning", "Read closed-loop position errors.", 114, "read", response=(_resp("m1_error", "s32"), _resp("m2_error", "s32"))),
+    "read_speed_errors": CommandSpec("read_speed_errors", "Read Speed Errors", "Motors", "Read closed-loop speed errors.", 111, "read", response=(_resp("m1_error", "s16"), _resp("m2_error", "s16"))),
+    "read_position_errors": CommandSpec("read_position_errors", "Read Position Errors", "Positioning", "Read closed-loop position errors.", 114, "read", response=(_resp("m1_error", "s16"), _resp("m2_error", "s16"))),
 }
 
 OPERATOR_COMMAND_IDS = {
@@ -292,12 +292,15 @@ class SerialRoboClaw:
         response_spec = _response_specs(spec)
         if response_spec[0].type == "string":
             data = self._read_string()
+            # RoboClaw includes the null terminator in the CRC for string responses
+            crc_payload = data + b"\x00"
         else:
             data_len = sum(_response_type_size(item.type) for item in response_spec)
             data = self._read_exact(data_len)
+            crc_payload = data
 
         received_crc = int.from_bytes(self._read_exact(2), "big")
-        calculated_crc = crc16(bytes([self._cfg.address, spec.command]) + data)
+        calculated_crc = crc16(bytes([self._cfg.address, spec.command]) + crc_payload)
         if received_crc != calculated_crc:
             raise RoboClawError(f"CRC mismatch for command {spec.command}")
         return _decode_response(spec, data)

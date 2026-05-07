@@ -74,9 +74,12 @@ def queue_service(request: Request | WebSocket) -> QueueService:
 
 
 async def require_control(request: Request) -> None:
-    """Gate control endpoints: must be the active queue holder, or LAN admin."""
-    if is_lan_admin(request):
-        return
+    """Gate control endpoints: must be the active queue holder.
+
+    LAN admins are auto-joined by /api/queue/status, so they hold a real
+    session token and flow through this same check — that way the idle/lease
+    timers actually advance for local clients too.
+    """
     if not request.app.state.config.queue.enabled:
         return
     token = read_session_token(request)

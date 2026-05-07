@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from radiotelescope.api.dependencies import (
     client_ip,
-    is_lan_admin,
     queue_service,
     read_session_token,
     write_session_token,
@@ -48,30 +47,14 @@ async def queue_config(request: Request) -> QueueConfigResponse:
 
 @router.get("/api/queue/status", response_model=QueueStatus)
 async def queue_status(request: Request) -> QueueStatus:
-    queue = queue_service(request)
-    if is_lan_admin(request):
-        # LAN admins are presented as the active controller without occupying a slot.
-        return QueueStatus(
-            token="",
-            is_active=True,
-            position=0,
-            queue_length=queue.status_for(None).queue_length,
-            lease_remaining_s=None,
-            idle_remaining_s=None,
-            has_active_user=True,
-        )
     token = read_session_token(request)
-    return queue.status_for(token)
+    return queue_service(request).status_for(token)
 
 
 @router.post("/api/queue/join", response_model=QueueStatus)
 async def queue_join(body: JoinRequest, request: Request, response: Response) -> QueueStatus:
     cfg = request.app.state.config
     queue = queue_service(request)
-
-    if is_lan_admin(request):
-        # Skip queue + captcha; LAN clients always have control.
-        return await queue_status(request)
 
     if cfg.turnstile.enabled and cfg.turnstile.secret_key:
         if not body.turnstile_token:
@@ -110,23 +93,6 @@ async def queue_leave(request: Request, response: Response) -> dict[str, str]:
 async def queue_ws(ws: WebSocket) -> None:
     await ws.accept()
     queue = queue_service(ws)
-
-    if is_lan_admin(ws):
-        # LAN admins don't need a session; report a synthetic "active" snapshot.
-        await ws.send_json(
-            QueueStatus(
-                token="", is_active=True, position=0,
-                queue_length=queue.status_for(None).queue_length,
-                lease_remaining_s=None, idle_remaining_s=None,
-                has_active_user=True,
-            ).model_dump()
-        )
-        try:
-            while True:
-                await asyncio.sleep(5)
-                await ws.send_json(queue.status_for(None).model_dump() | {"is_active": True, "position": 0})
-        except (WebSocketDisconnect, asyncio.CancelledError):
-            return
 
     token = read_session_token(ws)
     if token is None:
