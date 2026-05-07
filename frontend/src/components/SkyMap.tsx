@@ -567,26 +567,39 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
       ctx: CanvasRenderingContext2D,
       aladin: ReturnType<typeof A.aladin>,
       samples: RaDecTarget[],
-      closePath: boolean,
+      wrap: boolean,
       w: number,
       h: number,
     ) => {
-      // Project to pixels, splitting into segments wherever a sample falls off-screen
-      // so that lines crossing behind the projection don't streak across the view.
+      // Project to pixels, splitting into segments wherever:
+      //  (a) a sample is off-screen / unprojectable, or
+      //  (b) two consecutive samples are absurdly far apart in pixels (the
+      //      projection wrapped behind us — connecting them would streak).
       const margin = 40;
-      let started = false;
+      const maxSegmentPx = Math.max(w, h);
+      let prev: [number, number] | null = null;
+      let firstOnscreen: [number, number] | null = null;
       ctx.beginPath();
       for (const { ra_deg, dec_deg } of samples) {
         const p = aladin.world2pix(ra_deg, dec_deg);
-        if (!p || !isFinite(p[0]) || !isFinite(p[1]) ||
-            p[0] < -margin || p[0] > w + margin || p[1] < -margin || p[1] > h + margin) {
-          started = false;
-          continue;
+        const offscreen = !p || !isFinite(p[0]) || !isFinite(p[1]) ||
+          p[0] < -margin || p[0] > w + margin || p[1] < -margin || p[1] > h + margin;
+        if (offscreen) { prev = null; continue; }
+        const point = p as [number, number];
+        if (prev == null || Math.hypot(point[0] - prev[0], point[1] - prev[1]) > maxSegmentPx) {
+          ctx.moveTo(point[0], point[1]);
+          if (firstOnscreen == null) firstOnscreen = point;
+        } else {
+          ctx.lineTo(point[0], point[1]);
         }
-        if (!started) { ctx.moveTo(p[0], p[1]); started = true; }
-        else            { ctx.lineTo(p[0], p[1]); }
+        prev = point;
       }
-      if (closePath) ctx.closePath();
+      // For closed shapes, only connect the last point back to the first if the
+      // whole loop stayed on-screen (single sub-path) and the closing chord is short.
+      if (wrap && prev && firstOnscreen &&
+          Math.hypot(prev[0] - firstOnscreen[0], prev[1] - firstOnscreen[1]) < maxSegmentPx) {
+        ctx.lineTo(firstOnscreen[0], firstOnscreen[1]);
+      }
       ctx.stroke();
     };
 
@@ -725,13 +738,17 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
       const pendingTarget = pendingRef.current;
       const tel = telemetryRef.current;
       if (pendingTarget && tel) {
-        // Resolve telescope RA/Dec (prefer direct fields, fall back to Alt/Az conversion)
-        let telRa  = tel.ra_deg  ?? null;
-        let telDec = tel.dec_deg ?? null;
-        if ((telRa == null || telDec == null) && tel.altitude_deg != null && tel.azimuth_deg != null) {
+        // Resolve telescope RA/Dec via the same conversion the click handler uses,
+        // so the line lands on the same pixel as the beam circle.
+        let telRa: number | null = null;
+        let telDec: number | null = null;
+        if (tel.altitude_deg != null && tel.azimuth_deg != null) {
           const pt = altAzToRaDec({ altitude_deg: tel.altitude_deg, azimuth_deg: tel.azimuth_deg }, config, date);
           telRa  = pt.ra_deg;
           telDec = pt.dec_deg;
+        } else {
+          telRa  = tel.ra_deg  ?? null;
+          telDec = tel.dec_deg ?? null;
         }
 
         if (telRa != null && telDec != null) {
@@ -860,18 +877,22 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
     if (!ready || !beamOverlayRef.current) return;
     const fwhm = config?.beam_fwhm_deg ?? 6.5;
 
-    // Prefer RA/Dec from telemetry; fall back to computing it from Alt/Az so the
-    // beam still moves in simulated mode even if katpoint RA/Dec conversion is absent.
-    let ra_deg  = telemetry?.ra_deg  ?? null;
-    let dec_deg = telemetry?.dec_deg ?? null;
-    if ((ra_deg == null || dec_deg == null) && config &&
-        telemetry?.altitude_deg != null && telemetry?.azimuth_deg != null) {
+    // Always derive RA/Dec from Alt/Az on the client so the round-trip stays
+    // consistent with the click handler (both go through raDecToAltAz/altAzToRaDec).
+    // Backend katpoint RA/Dec uses full corrections and disagrees by ~1° near the
+    // horizon, which would make the beam land in the wrong place after "Set as Current".
+    let ra_deg: number | null = null;
+    let dec_deg: number | null = null;
+    if (config && telemetry?.altitude_deg != null && telemetry?.azimuth_deg != null) {
       const pt = altAzToRaDec(
         { altitude_deg: telemetry.altitude_deg, azimuth_deg: telemetry.azimuth_deg },
         config, new Date(),
       );
       ra_deg  = pt.ra_deg;
       dec_deg = pt.dec_deg;
+    } else {
+      ra_deg  = telemetry?.ra_deg  ?? null;
+      dec_deg = telemetry?.dec_deg ?? null;
     }
 
     beamOverlayRef.current.removeAll();
