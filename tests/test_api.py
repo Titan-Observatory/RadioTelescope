@@ -135,7 +135,7 @@ def test_api_allows_configured_client(simulated_config_path):
     simulated_config_path.write_text(
         simulated_config_path.read_text(encoding="utf-8").replace(
             'allowed_clients = ["testclient"]',
-            'allowed_clients = ["10.0.27.1", "10.0.27.2"]',
+            'allowed_clients = ["10.0.27.1", "10.0.27.2"]\nlan_only = true',
         ),
         encoding="utf-8",
     )
@@ -150,7 +150,7 @@ def test_api_rejects_unconfigured_client(simulated_config_path):
     simulated_config_path.write_text(
         simulated_config_path.read_text(encoding="utf-8").replace(
             'allowed_clients = ["testclient"]',
-            'allowed_clients = ["10.0.27.1", "10.0.27.2"]',
+            'allowed_clients = ["10.0.27.1", "10.0.27.2"]\nlan_only = true',
         ),
         encoding="utf-8",
     )

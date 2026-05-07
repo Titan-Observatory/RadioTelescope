@@ -1,65 +1,52 @@
 ﻿import A from 'aladin-lite';
-import { Layers, Navigation, Telescope } from 'lucide-react';
+import { Layers, Telescope } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { api, ApiError } from '../api';
 import type { AltAzPoint, RaDecTarget, RoboClawTelemetry, SkyOverlay, TelescopeConfig } from '../types';
 
-// â”€â”€â”€ Galactic â†” Equatorial conversion (IAU 1958 / J2000) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Camera PIP ───────────────────────────────────────────────────────────────
+
+function CameraPip() {
+  const [enabled, setEnabled] = useState(false);
+  const [label, setLabel] = useState('Cam A');
+  const [error, setError] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    fetch('/api/camera/status')
+      .then((r) => r.json())
+      .then((d: { enabled: boolean; label: string }) => {
+        setEnabled(d.enabled);
+        setLabel(d.label);
+      })
+      .catch(() => {/* non-critical */});
+  }, []);
+
+  if (!enabled) return null;
+
+  return (
+    <div className={`cam-pip${error ? ' cam-pip-error' : ''}`}>
+      <img
+        ref={imgRef}
+        className="cam-pip-feed"
+        src="/api/camera/stream"
+        alt="Camera feed"
+        onError={() => setError(true)}
+        onLoad={() => setError(false)}
+      />
+      {error ? (
+        <div className="cam-pip-offline">No signal</div>
+      ) : (
+        <div className="cam-pip-live"><span className="cam-pip-dot" />LIVE</div>
+      )}
+      <div className="cam-pip-label">{label}</div>
+    </div>
+  );
+}
+
+// ─── Astronomy math ───────────────────────────────────────────────────────────
 const D = Math.PI / 180;
 const R = 180 / Math.PI;
-
-const EQ_TO_GAL = [
-  [-0.0548755604, -0.8734370902, -0.4838350155],
-  [ 0.4941094279, -0.4448296300,  0.7469822445],
-  [-0.8676661490, -0.1980763734,  0.4559837762],
-] as const;
-
-function sphericalToVector(lonDeg: number, latDeg: number): [number, number, number] {
-  const lon = lonDeg * D;
-  const lat = latDeg * D;
-  const cosLat = Math.cos(lat);
-  return [cosLat * Math.cos(lon), cosLat * Math.sin(lon), Math.sin(lat)];
-}
-
-function vectorToSpherical([x, y, z]: [number, number, number]): { lon_deg: number; lat_deg: number } {
-  return {
-    lon_deg: ((Math.atan2(y, x) * R) + 360) % 360,
-    lat_deg: Math.asin(Math.max(-1, Math.min(1, z))) * R,
-  };
-}
-
-function rotate(
-  m: typeof EQ_TO_GAL,
-  [x, y, z]: [number, number, number],
-): [number, number, number] {
-  return [
-    m[0][0] * x + m[0][1] * y + m[0][2] * z,
-    m[1][0] * x + m[1][1] * y + m[1][2] * z,
-    m[2][0] * x + m[2][1] * y + m[2][2] * z,
-  ];
-}
-
-function rotateTranspose(
-  m: typeof EQ_TO_GAL,
-  [x, y, z]: [number, number, number],
-): [number, number, number] {
-  return [
-    m[0][0] * x + m[1][0] * y + m[2][0] * z,
-    m[0][1] * x + m[1][1] * y + m[2][1] * z,
-    m[0][2] * x + m[1][2] * y + m[2][2] * z,
-  ];
-}
-
-function galToEq(l_deg: number, b_deg: number): { ra_deg: number; dec_deg: number } {
-  const { lon_deg, lat_deg } = vectorToSpherical(rotateTranspose(EQ_TO_GAL, sphericalToVector(l_deg, b_deg)));
-  return { ra_deg: lon_deg, dec_deg: lat_deg };
-}
-
-function eqToGal(ra_deg: number, dec_deg: number): { l_deg: number; b_deg: number } {
-  const { lon_deg, lat_deg } = vectorToSpherical(rotate(EQ_TO_GAL, sphericalToVector(ra_deg, dec_deg)));
-  return { l_deg: lon_deg, b_deg: lat_deg };
-}
 
 function normalizeDeg(deg: number): number {
   return ((deg % 360) + 360) % 360;
@@ -123,6 +110,175 @@ function altAzToRaDec(point: AltAzPoint, config: TelescopeConfig, date: Date): R
   };
 }
 
+function positionAngleDeg(from: RaDecTarget, to: RaDecTarget): number {
+  const ra1 = from.ra_deg * D;
+  const dec1 = from.dec_deg * D;
+  const ra2 = to.ra_deg * D;
+  const dec2 = to.dec_deg * D;
+  const deltaRa = ra2 - ra1;
+  const y = Math.sin(deltaRa);
+  const x = Math.cos(dec1) * Math.tan(dec2) - Math.sin(dec1) * Math.cos(deltaRa);
+  return normalizeDeg(Math.atan2(y, x) * R);
+}
+
+function localUpOrientationDeg(center: RaDecTarget, config: TelescopeConfig, date: Date): number {
+  const centerAltAz = raDecToAltAz(center.ra_deg, center.dec_deg, config, date);
+  const upAlt = Math.min(89.5, centerAltAz.altitude_deg + 1);
+  const localUp = altAzToRaDec(
+    { altitude_deg: upAlt, azimuth_deg: centerAltAz.azimuth_deg },
+    config,
+    date,
+  );
+  return positionAngleDeg(center, localUp);
+}
+
+function initialHorizonRotationDeg(center: RaDecTarget, config: TelescopeConfig, date: Date): number {
+  const rotation = normalizeDeg(360 - localUpOrientationDeg(center, config, date));
+  return rotation === 0 ? 0.001 : rotation;
+}
+
+// ─── Solar / lunar position (low-precision, ~1° accuracy) ────────────────────
+
+function julianDay(date: Date): number {
+  return date.getTime() / 86_400_000 + 2_440_587.5;
+}
+
+function sunRaDec(date: Date): RaDecTarget {
+  const d  = julianDay(date) - 2_451_545.0;
+  const L  = normalizeDeg(280.460 + 0.9856474 * d);
+  const g  = normalizeDeg(357.528 + 0.9856003 * d) * D;
+  const λ  = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D;
+  const ε  = (23.439 - 0.0000004 * d) * D;
+  return {
+    ra_deg:  normalizeDeg(Math.atan2(Math.cos(ε) * Math.sin(λ), Math.cos(λ)) * R),
+    dec_deg: Math.asin(Math.sin(ε) * Math.sin(λ)) * R,
+  };
+}
+
+function moonRaDec(date: Date): RaDecTarget {
+  const d   = julianDay(date) - 2_451_545.0;
+  const L   = normalizeDeg(218.316 + 13.176396 * d);
+  const M   = normalizeDeg(134.963 + 13.064993 * d) * D;
+  const F   = normalizeDeg(93.272  + 13.229350 * d) * D;
+  const lon = (L + 6.289 * Math.sin(M)) * D;
+  const lat = 5.128 * Math.sin(F) * D;
+  const ε   = (23.439 - 0.0000004 * d) * D;
+  return {
+    ra_deg: normalizeDeg(
+      Math.atan2(Math.cos(ε) * Math.sin(lon) - Math.tan(lat) * Math.sin(ε), Math.cos(lon)) * R,
+    ),
+    dec_deg: Math.asin(
+      Math.sin(lat) * Math.cos(ε) + Math.cos(lat) * Math.sin(ε) * Math.sin(lon),
+    ) * R,
+  };
+}
+
+/** Illuminated fraction (0 = new, 1 = full) and whether the moon is waxing. */
+function moonIllumination(
+  sun: RaDecTarget,
+  moon: RaDecTarget,
+): { fraction: number; waxing: boolean } {
+  const sRa = sun.ra_deg * D, sDec = sun.dec_deg * D;
+  const mRa = moon.ra_deg * D, mDec = moon.dec_deg * D;
+  const elongation = Math.acos(
+    Math.max(-1, Math.min(1,
+      Math.sin(sDec) * Math.sin(mDec) + Math.cos(sDec) * Math.cos(mDec) * Math.cos(sRa - mRa),
+    )),
+  );
+  return {
+    fraction: (1 + Math.cos(elongation)) / 2,
+    // Moon is waxing when it is 0–180° east of the sun
+    waxing: normalizeDeg(moon.ra_deg - sun.ra_deg) < 180,
+  };
+}
+
+// ─── Canvas body-icon helpers ─────────────────────────────────────────────────
+
+/**
+ * Draws the sun as an accurately-sized disc.
+ * r is the pixel radius derived from the current Aladin projection so the
+ * disc matches the sun's true ~0.53° angular diameter at whatever zoom level
+ * the viewer is at.
+ */
+function drawSunIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
+  // Limb darkening: centre is near-white, edge deepens to amber
+  const disc = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  disc.addColorStop(0,   '#fffde8');  // bright white-yellow core
+  disc.addColorStop(0.55, '#ffe030'); // yellow mid-disc
+  disc.addColorStop(1,   '#ffb000');  // amber limb
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.fillStyle = disc;
+  ctx.fill();
+}
+
+/**
+ * Draws the moon disc with the correct phase shape.
+ *
+ * Uses the two-arc path technique: the lit region is bounded by an outer
+ * semicircle on the lit side and the terminator ellipse arc on the other
+ * side, then filled in a single path — no masking or composite ops needed.
+ *
+ * fraction : 0 = new moon, 1 = full moon
+ * waxing   : true → lit on the right, false → lit on the left
+ */
+function drawMoonIcon(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  fraction: number,
+  waxing: boolean,
+): void {
+  const r = 9;
+
+  // Subtle corona
+  const glow = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 2.4);
+  glow.addColorStop(0,   'rgba(200, 218, 255, 0.22)');
+  glow.addColorStop(1,   'rgba(180, 200, 255, 0)');
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 2.4, 0, 2 * Math.PI);
+  ctx.fillStyle = glow;
+  ctx.fill();
+
+  // c runs −1 (new) → 0 (quarter) → +1 (full)
+  const c  = 2 * fraction - 1;
+  // Half-width of the terminator ellipse; small epsilon avoids a degenerate arc
+  const rx = Math.max(0.5, Math.abs(c) * r);
+
+  // Dark disc — shadow side fill so the moon is opaque against the survey
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.fillStyle = '#0c1a2e';
+  ctx.fill();
+
+  // ── Phase shape ───────────────────────────────────────────────────────────
+  // Path: outer semicircle (lit side) + terminator ellipse arc (closing return).
+  // For gibbous (c > 0): ellipse bulges toward the dark side → counterclockwise.
+  // For crescent (c < 0): ellipse bulges toward the lit side → clockwise.
+  // Both arcs run top→bottom then bottom→top so the path closes perfectly.
+
+  ctx.beginPath();
+  if (waxing) {
+    // Lit on the right
+    ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, false);            // right semicircle ↓
+    ctx.ellipse(cx, cy, rx, r, 0, Math.PI / 2, -Math.PI / 2, c > 0); // terminator ↑
+  } else {
+    // Lit on the left
+    ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, true);             // left semicircle ↓
+    ctx.ellipse(cx, cy, rx, r, 0, Math.PI / 2, -Math.PI / 2, c < 0); // terminator ↑
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#dde8ff';
+  ctx.fill();
+
+  // Disc outline — faint ring so a thin crescent or new moon is still locatable
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.strokeStyle = 'rgba(180, 200, 255, 0.35)';
+  ctx.lineWidth   = 1;
+  ctx.stroke();
+}
+
 function isInsideTriangle(point: AltAzPoint, triangle: AltAzPoint[]): boolean {
   if (triangle.length !== 3) return true;
 
@@ -160,11 +316,6 @@ const SURVEYS = [
     title: 'HI4PI 21cm neutral hydrogen column density, colorized for readability',
   },
   {
-    id: 'CDS/P/NVSS',
-    label: 'Radio sources',
-    title: 'NRAO VLA Sky Survey (NVSS) â€” 1.4 GHz radio continuum, northern sky',
-  },
-  {
     id: 'CDS/P/Mellinger/color',
     label: 'Milky Way',
     title: 'Mellinger visible-light color all-sky survey',
@@ -173,49 +324,67 @@ const SURVEYS = [
 
 type SurveyId = (typeof SURVEYS)[number]['id'];
 
+const DEFAULT_HORIZON_VIEW: AltAzPoint = {
+  altitude_deg: 15,
+  azimuth_deg: 45,
+};
+
 
 // â”€â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface SkyMapProps {
   telemetry: RoboClawTelemetry | null;
   config: TelescopeConfig | null;
   onNotice: (msg: string | null) => void;
+  onTarget: (az: number, alt: number) => void;
   overlays?: SkyOverlay[];
 }
 
-export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapProps) {
+export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }: SkyMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const aladinRef = useRef<ReturnType<typeof A.aladin> | null>(null);
-  const configRef = useRef<TelescopeConfig | null>(null);
+  const configRef       = useRef<TelescopeConfig | null>(null);
+  const telemetryRef    = useRef<RoboClawTelemetry | null>(null);
+  const pendingRef      = useRef<RaDecTarget | null>(null);
+  // Updated every draw frame so the hover handler can check without a loop
+  const sunZoneRef      = useRef<{ cx: number; cy: number; r: number } | null>(null);
   const beamOverlayRef = useRef<ReturnType<typeof A.graphicOverlay> | null>(null);
   const limitOverlayRef = useRef<ReturnType<typeof A.graphicOverlay> | null>(null);
   const pendingOverlayRef = useRef<ReturnType<typeof A.graphicOverlay> | null>(null);
+  const horizonOverlayRef = useRef<ReturnType<typeof A.graphicOverlay> | null>(null);
+  const horizonCanvasRef  = useRef<HTMLCanvasElement | null>(null);
   const targetCatalogRef = useRef<ReturnType<typeof A.catalog> | null>(null);
+  const initializedRef = useRef(false);
+  const onTargetRef = useRef<((az: number, alt: number) => void) | null>(null);
   const [ready, setReady] = useState(false);
   const [pending, setPending] = useState<RaDecTarget | null>(null);
-  const [slewing, setSlewing] = useState(false);
   const [survey, setSurvey] = useState<SurveyId>('CDS/P/HI4PI/NHI');
+  const [solarTooltipPos, setSolarTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
-  useEffect(() => {
-    configRef.current = config;
-  }, [config]);
+  useEffect(() => { configRef.current    = config;    }, [config]);
+  useEffect(() => { telemetryRef.current = telemetry; }, [telemetry]);
+  useEffect(() => { pendingRef.current   = pending;   }, [pending]);
+  useEffect(() => { onTargetRef.current  = onTarget;  }, [onTarget]);
 
   // Initialise Aladin Lite once
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !config || initializedRef.current) return;
+    initializedRef.current = true;
     const container = containerRef.current;
     let cancelled = false;
     let removeClickHandler: (() => void) | null = null;
 
     void A.init.then(() => {
       if (cancelled || !container) return;
+      const initialDate = new Date();
+      const initialTarget = altAzToRaDec(DEFAULT_HORIZON_VIEW, config, initialDate);
+      const initialRotation = initialHorizonRotationDeg(initialTarget, config, initialDate);
 
       const aladin = A.aladin(container, {
         survey: 'CDS/P/HI4PI/NHI',
-        fov: 120,
-        cooFrame: 'galactic',   // galactic l/b â€” natural for HI work
-        projection: 'AIT',
-        lockNorthUp: true,
-        inertia: false,
+        fov: 80,
+        target: `${initialTarget.ra_deg} ${initialTarget.dec_deg}`,
+        cooFrame: 'equatorial',  // equatorial coords, view centred on NE horizon
+        projection: 'STG',       // stereographic — natural perspective
         showCooGrid: true,
         gridColor: 'rgb(114, 224, 173)',
         gridOpacity: 0.35,
@@ -236,11 +405,14 @@ export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapPro
         showCooLocation: false,
         showProjectionControl: false,
       });
+      aladin.setRotation(initialRotation);
 
-      // Beam + pending overlays
-      const beamOverlay = A.graphicOverlay({ color: 'rgba(114,224,173,0.85)', lineWidth: 2 });
-      const limitOverlay = A.graphicOverlay({ color: 'rgba(255,126,89,0.85)', lineWidth: 2 });
+      // Overlays — horizon drawn first so it sits under everything else
+      const horizonOverlay = A.graphicOverlay({ color: 'rgba(255,126,89,0.7)', lineWidth: 2 });
+      const beamOverlay    = A.graphicOverlay({ color: 'rgba(114,224,173,0.85)', lineWidth: 2 });
+      const limitOverlay   = A.graphicOverlay({ color: 'rgba(255,126,89,0.85)', lineWidth: 2 });
       const pendingOverlay = A.graphicOverlay({ color: '#f3cc6b', lineWidth: 1.5 });
+      aladin.addOverlay(horizonOverlay);
       aladin.addOverlay(limitOverlay);
       aladin.addOverlay(beamOverlay);
       aladin.addOverlay(pendingOverlay);
@@ -258,32 +430,44 @@ export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapPro
       aladin.addCatalog(targetCatalog);
 
       aladinRef.current = aladin;
-      beamOverlayRef.current = beamOverlay;
-      limitOverlayRef.current = limitOverlay;
+      beamOverlayRef.current    = beamOverlay;
+      limitOverlayRef.current   = limitOverlay;
       pendingOverlayRef.current = pendingOverlay;
-      targetCatalogRef.current = targetCatalog;
+      horizonOverlayRef.current = horizonOverlay;
+      targetCatalogRef.current  = targetCatalog;
       setReady(true);
 
-      // Click: pix2world returns (l, b) in galactic mode â†’ convert to RA/Dec for backend
+      // Click: pix2world returns [ra, dec] in equatorial mode, so use it directly.
       const handleClick = (e: MouseEvent) => {
         const rect = container.getBoundingClientRect();
         const coords = aladin.pix2world(e.clientX - rect.left, e.clientY - rect.top);
-        if (coords && coords.length === 2 && isFinite(coords[0]) && isFinite(coords[1])) {
-          const { ra_deg, dec_deg } = galToEq(coords[0], coords[1]);
-          const currentConfig = configRef.current;
-          if (currentConfig && currentConfig.pointing_limit_altaz.length === 3) {
-            const altAz = raDecToAltAz(ra_deg, dec_deg, currentConfig, new Date());
-            if (!isInsideTriangle(altAz, currentConfig.pointing_limit_altaz)) {
-              setPending(null);
-              onNotice('Selected target is outside configured pointing limits.');
-              return;
-            }
-          }
+        if (!coords || coords.length !== 2 || !isFinite(coords[0]) || !isFinite(coords[1])) return;
 
-          const target: RaDecTarget = { ra_deg, dec_deg };
-          onNotice(null);
-          setPending(target);
+        const ra_deg = coords[0];
+        const dec_deg = coords[1];
+        const currentConfig = configRef.current;
+        if (!currentConfig) return;
+
+        const altAz = raDecToAltAz(ra_deg, dec_deg, currentConfig, new Date());
+
+        // In simulated mode skip all limit checks — no hardware to protect
+        const isSimulated = telemetryRef.current?.connection.mode === 'simulated';
+        if (!isSimulated) {
+          if (altAz.altitude_deg < 0) {
+            onNotice('Selected point is below the horizon.');
+            return;
+          }
+          if (currentConfig.pointing_limit_altaz.length === 3 &&
+              !isInsideTriangle(altAz, currentConfig.pointing_limit_altaz)) {
+            setPending(null);
+            onNotice('Selected target is outside configured pointing limits.');
+            return;
+          }
         }
+
+        onNotice(null);
+        setPending({ ra_deg, dec_deg });
+        onTargetRef.current?.(altAz.azimuth_deg, altAz.altitude_deg);
       };
       container.addEventListener('click', handleClick);
       removeClickHandler = () => container.removeEventListener('click', handleClick);
@@ -293,7 +477,7 @@ export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapPro
       cancelled = true;
       removeClickHandler?.();
     };
-  }, []);
+  }, [config, onNotice]);
 
   // Change survey
   useEffect(() => {
@@ -311,6 +495,231 @@ export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapPro
 
     aladinRef.current.setImageSurvey(survey);
   }, [survey, ready]);
+
+  // Cardinal labels and horizon line are drawn by the canvas overlay below.
+  // Clear the Aladin graphic overlay so it doesn't add noise.
+  useEffect(() => {
+    if (!ready || !horizonOverlayRef.current) return;
+    horizonOverlayRef.current.removeAll();
+  }, [ready]);
+
+  // Canvas horizon overlay — ground fill + horizon line, tracks pan/zoom via rAF.
+  // To swap in a real panorama, replace the fillStyle block with ctx.drawImage(panoramaImg, …)
+  // mapped to the same clipping polygon.
+  useEffect(() => {
+    if (!ready || !config) return;
+    const canvas = horizonCanvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    // Cache horizon RA/Dec samples (only need to recompute every ~30 s as Earth rotates)
+    let horizonRaDec: RaDecTarget[] = [];
+    let lastSampleTime = -Infinity;
+
+    const refreshHorizonSamples = () => {
+      const date = new Date();
+      horizonRaDec = [];
+      for (let az = 0; az < 360; az += 2) {
+        horizonRaDec.push(altAzToRaDec({ altitude_deg: 0, azimuth_deg: az }, config, date));
+      }
+      lastSampleTime = Date.now();
+    };
+
+    let frameId: number;
+    let dashOffset = 0;
+
+    const draw = () => {
+      const date = new Date();
+      if (Date.now() - lastSampleTime > 30_000) refreshHorizonSamples();
+
+      const aladin = aladinRef.current;
+      if (!aladin) { frameId = requestAnimationFrame(draw); return; }
+
+      // Resize canvas to match container
+      const rect = container.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width  = w;
+        canvas.height = h;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { frameId = requestAnimationFrame(draw); return; }
+      ctx.clearRect(0, 0, w, h);
+
+      // Project horizon samples from RA/Dec → canvas pixels
+      const px: [number, number][] = [];
+      for (const { ra_deg, dec_deg } of horizonRaDec) {
+        const p = aladin.world2pix(ra_deg, dec_deg);
+        if (p && isFinite(p[0]) && isFinite(p[1])) px.push([p[0], p[1]]);
+      }
+
+      if (px.length < 4) { frameId = requestAnimationFrame(draw); return; }
+
+      // ── Ground fill ────────────────────────────────────────────────────────
+      // Evenodd: outer rect fills everywhere EXCEPT inside the horizon polygon
+      // (i.e. the sky stays transparent, the ground gets the fill).
+      ctx.beginPath();
+      ctx.rect(0, 0, w, h);
+      ctx.moveTo(px[0][0], px[0][1]);
+      for (const [x, y] of px.slice(1)) ctx.lineTo(x, y);
+      ctx.closePath();
+
+      // ── Panorama placeholder ───────────────────────────────────────────────
+      // Replace this block with ctx.drawImage(yourPanoramaImg, …) once you
+      // have a real image. The clipping polygon above will stay the same.
+      ctx.fillStyle = 'rgba(18, 38, 14, 0.82)';
+      ctx.fill('evenodd');
+
+      // ── Horizon line ───────────────────────────────────────────────────────
+      ctx.beginPath();
+      ctx.moveTo(px[0][0], px[0][1]);
+      for (const [x, y] of px.slice(1)) ctx.lineTo(x, y);
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(255, 126, 89, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // ── Cardinal direction labels ──────────────────────────────────────────
+      // Drawn just below the horizon line so they sit in the ground fill.
+      const cardinals = [
+        { label: 'N',  az: 0,   bold: true  },
+        { label: 'NE', az: 45,  bold: false },
+        { label: 'E',  az: 90,  bold: true  },
+        { label: 'SE', az: 135, bold: false },
+        { label: 'S',  az: 180, bold: true  },
+        { label: 'SW', az: 225, bold: false },
+        { label: 'W',  az: 270, bold: true  },
+        { label: 'NW', az: 315, bold: false },
+      ];
+
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+
+      for (const { label, az, bold } of cardinals) {
+        const { ra_deg: lRa, dec_deg: lDec } = altAzToRaDec(
+          { altitude_deg: -4, azimuth_deg: az }, config, date,
+        );
+        const lp = aladin.world2pix(lRa, lDec);
+        if (!lp || !isFinite(lp[0]) || !isFinite(lp[1])) continue;
+        if (lp[0] < -30 || lp[0] > w + 30 || lp[1] < -30 || lp[1] > h + 30) continue;
+
+        const fontSize = bold ? 14 : 11;
+        ctx.font      = `${bold ? 'bold ' : ''}${fontSize}px Inter, system-ui, sans-serif`;
+        // Subtle dark halo so labels read over both sky and ground
+        ctx.lineWidth   = 3;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.strokeText(label, lp[0], lp[1]);
+        ctx.fillStyle   = 'rgba(255, 126, 89, 0.92)';
+        ctx.fillText(label, lp[0], lp[1]);
+      }
+
+      // ── Slew-path line ───────────────────────────────────────────────────
+      const pendingTarget = pendingRef.current;
+      const tel = telemetryRef.current;
+      if (pendingTarget && tel) {
+        // Resolve telescope RA/Dec (prefer direct fields, fall back to Alt/Az conversion)
+        let telRa  = tel.ra_deg  ?? null;
+        let telDec = tel.dec_deg ?? null;
+        if ((telRa == null || telDec == null) && tel.altitude_deg != null && tel.azimuth_deg != null) {
+          const pt = altAzToRaDec({ altitude_deg: tel.altitude_deg, azimuth_deg: tel.azimuth_deg }, config, date);
+          telRa  = pt.ra_deg;
+          telDec = pt.dec_deg;
+        }
+
+        if (telRa != null && telDec != null) {
+          const pTel     = aladin.world2pix(telRa, telDec);
+          const pPending = aladin.world2pix(pendingTarget.ra_deg, pendingTarget.dec_deg);
+
+          if (pTel     && isFinite(pTel[0])     && isFinite(pTel[1]) &&
+              pPending && isFinite(pPending[0])  && isFinite(pPending[1])) {
+            dashOffset = (dashOffset + 0.4) % 22;
+
+            ctx.save();
+            ctx.setLineDash([7, 5]);
+            ctx.lineDashOffset = -dashOffset;
+            ctx.strokeStyle    = 'rgba(243, 204, 107, 0.75)';
+            ctx.lineWidth      = 1.5;
+            ctx.lineCap        = 'round';
+            ctx.beginPath();
+            ctx.moveTo(pTel[0],     pTel[1]);
+            ctx.lineTo(pPending[0], pPending[1]);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+
+      // ── Sun & Moon ────────────────────────────────────────────────────────
+      const sunPos  = sunRaDec(date);
+      const moonPos = moonRaDec(date);
+      const { fraction, waxing } = moonIllumination(sunPos, moonPos);
+
+      // Sun pixel radius: project a point one solar radius (0.2655°) away in
+      // declination and measure the pixel distance — accurate at any zoom level.
+      const SUN_ANG_RADIUS_DEG  = 0.2655;
+      const SUN_EXCLUSION_DEG   = 15;
+      const pSunEdge      = aladin.world2pix(sunPos.ra_deg, sunPos.dec_deg + SUN_ANG_RADIUS_DEG);
+      const pSunExclusion = aladin.world2pix(sunPos.ra_deg, sunPos.dec_deg + SUN_EXCLUSION_DEG);
+
+      // Reset each frame so the hover handler sees null when sun is below horizon
+      sunZoneRef.current = null;
+
+      const bodies = [
+        { pos: sunPos,  alt: raDecToAltAz(sunPos.ra_deg,  sunPos.dec_deg,  config, date).altitude_deg, isSun: true  },
+        { pos: moonPos, alt: raDecToAltAz(moonPos.ra_deg, moonPos.dec_deg, config, date).altitude_deg, isSun: false },
+      ];
+      for (const body of bodies) {
+        if (body.alt <= 0) continue;
+        const p = aladin.world2pix(body.pos.ra_deg, body.pos.dec_deg);
+        if (!p || !isFinite(p[0]) || !isFinite(p[1])) continue;
+        if (p[0] < -60 || p[0] > w + 60 || p[1] < -60 || p[1] > h + 60) continue;
+
+        let iconR = 9; // fallback / moon fixed size
+        if (body.isSun && pSunEdge && isFinite(pSunEdge[0]) && isFinite(pSunEdge[1])) {
+          iconR = Math.max(3, Math.hypot(pSunEdge[0] - p[0], pSunEdge[1] - p[1]));
+
+          // ── Solar exclusion zone ────────────────────────────────────────────
+          if (pSunExclusion && isFinite(pSunExclusion[0]) && isFinite(pSunExclusion[1])) {
+            const exclR = Math.hypot(pSunExclusion[0] - p[0], pSunExclusion[1] - p[1]);
+            sunZoneRef.current = { cx: p[0], cy: p[1], r: exclR };
+
+            const exclGrad = ctx.createRadialGradient(p[0], p[1], iconR, p[0], p[1], exclR);
+            exclGrad.addColorStop(0,    'rgba(255, 130, 0, 0.38)');
+            exclGrad.addColorStop(0.45, 'rgba(255, 100, 0, 0.18)');
+            exclGrad.addColorStop(1,    'rgba(255,  70, 0, 0)');
+            ctx.beginPath();
+            ctx.arc(p[0], p[1], exclR, 0, 2 * Math.PI);
+            ctx.fillStyle = exclGrad;
+            ctx.fill();
+          }
+
+          drawSunIcon(ctx, p[0], p[1], iconR);
+        } else if (!body.isSun) {
+          drawMoonIcon(ctx, p[0], p[1], fraction, waxing);
+        }
+
+        // Label — sits just below the disc edge
+        const label  = body.isSun ? 'Sun' : 'Moon';
+        const colour = body.isSun ? '#ffd020' : '#c8d8ff';
+        const labelY = p[1] + iconR + 4;
+        ctx.font         = '11px Inter, system-ui, sans-serif';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'top';
+        ctx.lineWidth    = 3;
+        ctx.strokeStyle  = 'rgba(0, 0, 0, 0.6)';
+        ctx.strokeText(label, p[0], labelY);
+        ctx.fillStyle    = colour;
+        ctx.fillText(label, p[0], labelY);
+      }
+
+      frameId = requestAnimationFrame(draw);
+    };
+
+    frameId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frameId);
+  }, [ready, config]);
 
   // Project the fixed Alt/Az pointing-limit triangle onto the current sky.
   useEffect(() => {
@@ -343,8 +752,21 @@ export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapPro
   // Update beam circle on every telemetry tick
   useEffect(() => {
     if (!ready || !beamOverlayRef.current) return;
-    const { ra_deg, dec_deg } = telemetry ?? {};
     const fwhm = config?.beam_fwhm_deg ?? 6.5;
+
+    // Prefer RA/Dec from telemetry; fall back to computing it from Alt/Az so the
+    // beam still moves in simulated mode even if katpoint RA/Dec conversion is absent.
+    let ra_deg  = telemetry?.ra_deg  ?? null;
+    let dec_deg = telemetry?.dec_deg ?? null;
+    if ((ra_deg == null || dec_deg == null) && config &&
+        telemetry?.altitude_deg != null && telemetry?.azimuth_deg != null) {
+      const pt = altAzToRaDec(
+        { altitude_deg: telemetry.altitude_deg, azimuth_deg: telemetry.azimuth_deg },
+        config, new Date(),
+      );
+      ra_deg  = pt.ra_deg;
+      dec_deg = pt.dec_deg;
+    }
 
     beamOverlayRef.current.removeAll();
     if (ra_deg != null && dec_deg != null) {
@@ -401,106 +823,84 @@ export function SkyMap({ telemetry, config, onNotice, overlays = [] }: SkyMapPro
     );
   }, [overlays, ready]);
 
-  const confirmGoto = async () => {
-    if (!pending || !config) return;
-    setSlewing(true);
-    onNotice(null);
-    try {
-      await api.gotoRaDec(pending, config.goto_speed_qpps, config.goto_accel_qpps2);
-      // Pan Aladin to the target (gotoRaDec always takes RA/Dec)
-      aladinRef.current?.gotoRaDec(pending.ra_deg, pending.dec_deg);
-    } catch (err) {
-      onNotice(err instanceof ApiError ? err.message : 'Goto failed');
-    } finally {
-      setSlewing(false);
-      setPending(null);
-      pendingOverlayRef.current?.removeAll();
-    }
-  };
+  const fmtAltAz = (alt: number, az: number) =>
+    `Az ${az.toFixed(1)}°  ·  Alt ${alt.toFixed(1)}°`;
 
-  const cancelPending = () => {
-    setPending(null);
-    pendingOverlayRef.current?.removeAll();
-  };
-
-  // Galactic coordinate formatting for the footer
-  const fmtGal = (l: number, b: number) => {
-    const bSign = b >= 0 ? '+' : 'âˆ’';
-    return `l = ${l.toFixed(2)}Â° Â· b = ${bSign}${Math.abs(b).toFixed(2)}Â°`;
-  };
-
-  const currentGal = telemetry?.ra_deg != null && telemetry.dec_deg != null
-    ? eqToGal(telemetry.ra_deg, telemetry.dec_deg)
+  const pendingAltAz = pending && config
+    ? raDecToAltAz(pending.ra_deg, pending.dec_deg, config, new Date())
     : null;
 
-  const pendingGal = pending
-    ? eqToGal(pending.ra_deg, pending.dec_deg)
-    : null;
+  const handleSolarHover = (e: React.MouseEvent<HTMLDivElement>) => {
+    const zone = sunZoneRef.current;
+    if (!zone) { setSolarTooltipPos(null); return; }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const inside = Math.hypot(mx - zone.cx, my - zone.cy) < zone.r;
+    setSolarTooltipPos(inside ? { x: mx, y: my } : null);
+  };
 
   return (
     <div className="skymap-wrapper">
-      <div className="skymap-toolbar" aria-label="Sky map controls">
-        <div className="skymap-layer-control">
-          <span className="skymap-control-label">
-            <Layers size={13} />
-            View
-          </span>
-          <div className="skymap-surveys" role="group" aria-label="Sky survey">
-            {SURVEYS.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className={`skymap-survey-btn${survey === s.id ? ' active' : ''}`}
-                onClick={() => setSurvey(s.id)}
-                title={s.title}
-                disabled={!ready}
-              >
-                {s.label}
-              </button>
-            ))}
+      <div
+        className="skymap-aladin"
+        ref={containerRef}
+        onMouseMove={handleSolarHover}
+        onMouseLeave={() => setSolarTooltipPos(null)}
+      >
+        <canvas className="skymap-horizon-canvas" ref={horizonCanvasRef} />
+
+        <div className="skymap-toolbar" aria-label="Sky map controls">
+          <div className="skymap-layer-control">
+            <span className="skymap-control-label">
+              <Layers size={13} />
+              View
+            </span>
+            <div className="skymap-surveys" role="group" aria-label="Sky survey">
+              {SURVEYS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`skymap-survey-btn${survey === s.id ? ' active' : ''}`}
+                  onClick={() => setSurvey(s.id)}
+                  title={s.title}
+                  disabled={!ready}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="skymap-aladin" ref={containerRef}>
+        <CameraPip />
         {!ready && (
           <div className="skymap-loading">
             <Telescope size={24} className="skymap-loading-icon" />
             <span>Loading sky atlasâ€¦</span>
           </div>
         )}
+        {solarTooltipPos && (
+          <div
+            className="skymap-solar-tooltip"
+            style={{ left: solarTooltipPos.x + 14, top: solarTooltipPos.y + 14 }}
+          >
+            <strong>Solar exclusion zone (15°)</strong>
+            <p>Pointing within 15° of the Sun risks saturating the receiver. Wait until the Sun moves clear, or observe a different region of the sky.</p>
+          </div>
+        )}
       </div>
 
       <div className="skymap-footer">
-        {pending && pendingGal ? (
-          <div className="skymap-confirm">
-            <span className="skymap-coords">{fmtGal(pendingGal.l_deg, pendingGal.b_deg)}</span>
-            <div className="skymap-actions">
-              <button
-                className="action-button skymap-slew-btn"
-                onClick={() => void confirmGoto()}
-                disabled={slewing}
-              >
-                <Navigation size={13} />
-                {slewing ? 'Slewingâ€¦' : 'Slew Here'}
-              </button>
-              <button className="skymap-cancel-btn" onClick={cancelPending} disabled={slewing}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="skymap-hint">
-            {currentGal != null ? (
-              <span>
-                {fmtGal(currentGal.l_deg, currentGal.b_deg)}
-                {telemetry?.altitude_deg != null && ` Â· Alt ${telemetry.altitude_deg.toFixed(1)}Â°`}
-              </span>
-            ) : (
-              <span>Click the sky to set a slew target</span>
-            )}
-          </div>
-        )}
+        <div className="skymap-hint">
+          {pendingAltAz ? (
+            <span>Target set · {fmtAltAz(pendingAltAz.altitude_deg, pendingAltAz.azimuth_deg)}</span>
+          ) : telemetry?.altitude_deg != null && telemetry.azimuth_deg != null ? (
+            <span>{fmtAltAz(telemetry.altitude_deg, telemetry.azimuth_deg)}</span>
+          ) : (
+            <span>Click the sky to set a slew target</span>
+          )}
+        </div>
       </div>
     </div>
   );

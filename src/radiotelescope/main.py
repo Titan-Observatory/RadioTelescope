@@ -10,11 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from radiotelescope.api import routes_roboclaw, routes_terminal
+from radiotelescope.api import routes_camera, routes_queue, routes_roboclaw
 from radiotelescope.api.client_allowlist import ClientAllowlistMiddleware
 from radiotelescope.config import load_config
 from radiotelescope.hardware.roboclaw import make_client
 from radiotelescope.pointing import compute_fwhm_deg, make_antenna
+from radiotelescope.services.queue import QueueService
 from radiotelescope.services.roboclaw import RoboClawService
 
 logger = logging.getLogger("radiotelescope")
@@ -30,9 +31,18 @@ async def lifespan(app: FastAPI):
     service = RoboClawService(client, cfg.telemetry.update_rate_hz, cfg.mount, antenna)
     app.state.roboclaw_service = service
 
+    queue = QueueService(
+        max_session_seconds=cfg.queue.max_session_seconds,
+        idle_timeout_seconds=cfg.queue.idle_timeout_seconds,
+        max_queue_size=cfg.queue.max_queue_size,
+    )
+    app.state.queue_service = queue
+
     await service.start()
+    await queue.start()
     logger.info("RoboClaw controller started in %s mode", client.connection.mode)
     yield
+    await queue.stop()
     await service.stop()
     logger.info("RoboClaw controller shut down")
 
@@ -54,10 +64,15 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(ClientAllowlistMiddleware, allowed_clients=cfg.server.allowed_clients)
+    app.add_middleware(
+        ClientAllowlistMiddleware,
+        allowed_clients=cfg.server.allowed_clients,
+        block_unknown=cfg.server.lan_only,
+    )
 
     app.include_router(routes_roboclaw.router)
-    app.include_router(routes_terminal.router)
+    app.include_router(routes_queue.router)
+    app.include_router(routes_camera.router)
 
     frontend_dist = _find_frontend_dist()
     if frontend_dist.exists():
@@ -109,7 +124,13 @@ def cli() -> None:
 
     app = create_app(args.config)
     cfg = app.state.config
-    uvicorn.run(app, host=cfg.server.host, port=cfg.server.port)
+    uvicorn.run(
+        app,
+        host=cfg.server.host,
+        port=cfg.server.port,
+        proxy_headers=True,
+        forwarded_allow_ips=",".join(cfg.server.trusted_proxies),
+    )
 
 
 if __name__ == "__main__":

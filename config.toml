@@ -12,11 +12,6 @@ connect_mode = "auto"
 [telemetry]
 update_rate_hz = 5
 
-[terminal]
-enabled = true
-# shell = "powershell.exe" # Windows
-# shell = "/bin/bash"      # Linux/Raspberry Pi
-
 [mount]
 # M1 is azimuth, M2 is altitude. Tune these after measuring encoder counts.
 az_counts_per_degree = 1000.0
@@ -42,8 +37,33 @@ dish_diameter_m = 2.286      # 90 inches
 observing_freq_hz = 1.42e9   # hydrogen line (21 cm)
 # beam_fwhm_deg = 7.0        # uncomment to override computed FWHM
 
+[camera]
+enabled = true
+device = 0        # /dev/video0 (USB webcam index; increment if multiple cameras)
+fps = 15
+label = "Cam A"
+
 [server]
 host = "0.0.0.0"
 port = 8000
 cors_origins = ["*"]
-allowed_clients = ["10.0.27.1", "10.0.27.2","10.0.207.217"]
+allowed_clients = ["127.0.0.1", "::1", "10.0.27.1", "10.0.27.2", "10.0.207.217"]
+# IPs of reverse proxies whose X-Forwarded-For / CF-Connecting-IP headers we trust.
+# When the Pi sits behind a local nginx, this should typically be just loopback.
+trusted_proxies = ["127.0.0.1", "::1"]
+
+[queue]
+enabled = true
+max_session_seconds = 600   # 10 min hard cap on a control lease
+idle_timeout_seconds = 60   # release the lease after 60 s of no commands
+max_queue_size = 100
+# Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+cookie_secret = "CHANGE-ME-generate-with-secrets.token_urlsafe-32"
+cookie_name = "rt_session"
+
+[turnstile]
+enabled = true
+# Cloudflare Turnstile keys. Use the always-pass test key 1x00000000000000000000AA
+# and test secret 1x0000000000000000000000000000000AA for local dev.
+site_key = "1x00000000000000000000AA"
+secret_key = "1x0000000000000000000000000000000AA"

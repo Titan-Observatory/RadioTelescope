@@ -4,8 +4,9 @@ import asyncio
 import math
 import time
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 
+from radiotelescope.api.dependencies import require_control
 from radiotelescope.hardware.roboclaw import COMMANDS, OPERATOR_COMMAND_IDS, command_registry
 from radiotelescope.models.state import AltAzRequest, CommandInfo, CommandRequest, CommandResult, HealthStatus, RaDecRequest, RoboClawTelemetry, TelescopeConfig
 from radiotelescope.pointing import radec_to_altaz
@@ -60,7 +61,13 @@ def _inside_pointing_limits(altitude_deg: float, azimuth_deg: float, request: Re
     return _point_in_triangle(point, triangle)
 
 
+def _is_simulated(request: Request) -> bool:
+    return _service(request).client.connection.mode == "simulated"
+
+
 def _enforce_pointing_limits(altitude_deg: float, azimuth_deg: float, request: Request) -> None:
+    if _is_simulated(request):
+        return  # no physical hardware to protect in simulation
     if not _inside_pointing_limits(altitude_deg, azimuth_deg, request):
         raise HTTPException(
             status_code=400,
@@ -88,7 +95,7 @@ async def commands():
     return command_registry()
 
 
-@router.post("/api/roboclaw/commands/{command_id}", response_model=CommandResult)
+@router.post("/api/roboclaw/commands/{command_id}", response_model=CommandResult, dependencies=[Depends(require_control)])
 async def execute_command(command_id: str, body: CommandRequest, request: Request):
     spec = COMMANDS.get(command_id)
     if spec is None:
@@ -103,7 +110,7 @@ async def execute_command(command_id: str, body: CommandRequest, request: Reques
     return result
 
 
-@router.post("/api/roboclaw/stop", response_model=dict[str, CommandResult])
+@router.post("/api/roboclaw/stop", response_model=dict[str, CommandResult], dependencies=[Depends(require_control)])
 async def stop(request: Request):
     return await asyncio.to_thread(_service(request).client.stop_all)
 
@@ -179,7 +186,7 @@ async def _execute_goto_altaz(
     return result
 
 
-@router.post("/api/telescope/goto", response_model=CommandResult)
+@router.post("/api/telescope/goto", response_model=CommandResult, dependencies=[Depends(require_control)])
 async def goto_alt_az(body: AltAzRequest, request: Request):
     return await _execute_goto_altaz(
         body.altitude_deg, body.azimuth_deg,
@@ -203,11 +210,11 @@ async def telescope_config(request: Request):
     )
 
 
-@router.post("/api/telescope/goto_radec", response_model=CommandResult)
+@router.post("/api/telescope/goto_radec", response_model=CommandResult, dependencies=[Depends(require_control)])
 async def goto_radec(body: RaDecRequest, request: Request):
     antenna = request.app.state.antenna
     alt, az = await asyncio.to_thread(radec_to_altaz, body.ra_deg, body.dec_deg, antenna)
-    if alt < 0:
+    if alt < 0 and not _is_simulated(request):
         raise HTTPException(status_code=400, detail=f"Target is below the horizon (alt={alt:.1f}°)")
     return await _execute_goto_altaz(
         alt, az,
@@ -216,7 +223,7 @@ async def goto_radec(body: RaDecRequest, request: Request):
     )
 
 
-@router.post("/api/telescope/home/elevation")
+@router.post("/api/telescope/home/elevation", dependencies=[Depends(require_control)])
 async def home_elevation(request: Request):
     """Drive M2 downward until the end stop cuts current to zero, then zero the encoder."""
     client = _service(request).client
@@ -260,7 +267,7 @@ async def home_elevation(request: Request):
     return {"status": "ok", "message": "Elevation homed — encoder zeroed at end stop"}
 
 
-@router.post("/api/telescope/home/azimuth")
+@router.post("/api/telescope/home/azimuth", dependencies=[Depends(require_control)])
 async def home_azimuth(request: Request):
     """Zero the azimuth encoder at whatever position the telescope is currently pointing."""
     client = _service(request).client

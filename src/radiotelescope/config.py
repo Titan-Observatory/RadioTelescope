@@ -21,11 +21,6 @@ class TelemetryConfig(BaseModel):
     update_rate_hz: int = Field(default=5, ge=1, le=50)
 
 
-class TerminalConfig(BaseModel):
-    enabled: bool = True
-    shell: str | None = None
-
-
 class ObserverConfig(BaseModel):
     name: str = "Radio Telescope"
     latitude_deg: float = Field(default=51.5, ge=-90, le=90)
@@ -59,11 +54,39 @@ class MountConfig(BaseModel):
         return value
 
 
+class CameraConfig(BaseModel):
+    enabled: bool = True
+    device: int = Field(default=0, ge=0)
+    fps: int = Field(default=15, ge=1, le=60)
+    label: str = "Cam A"
+
+
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     allowed_clients: list[str] = Field(default_factory=lambda: ["10.0.27.1", "10.0.27.2"])
+    trusted_proxies: list[str] = Field(default_factory=lambda: ["127.0.0.1", "::1"])
+    # When True, only IPs in `allowed_clients` (plus loopback) may reach the
+    # server at all. Use for LAN-only deployments. When False, every IP can
+    # connect and per-endpoint authorization is delegated to the queue/session
+    # layer (`require_control` + `is_lan_admin` admin override).
+    lan_only: bool = False
+
+
+class QueueConfig(BaseModel):
+    enabled: bool = True
+    max_session_seconds: int = Field(default=600, ge=10)
+    idle_timeout_seconds: int = Field(default=60, ge=5)
+    max_queue_size: int = Field(default=100, ge=1)
+    cookie_secret: str = Field(default="change-me-in-config", min_length=8)
+    cookie_name: str = "rt_session"
+
+
+class TurnstileConfig(BaseModel):
+    enabled: bool = True
+    site_key: str = ""
+    secret_key: str = ""
 
 
 class GeneralConfig(BaseModel):
@@ -74,10 +97,12 @@ class AppConfig(BaseModel):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
     roboclaw: RoboClawConfig = Field(default_factory=RoboClawConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
-    terminal: TerminalConfig = Field(default_factory=TerminalConfig)
     mount: MountConfig = Field(default_factory=MountConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     observer: ObserverConfig = Field(default_factory=ObserverConfig)
+    camera: CameraConfig = Field(default_factory=CameraConfig)
+    queue: QueueConfig = Field(default_factory=QueueConfig)
+    turnstile: TurnstileConfig = Field(default_factory=TurnstileConfig)
 
 
 def load_config(path: Path | str = "config.toml") -> AppConfig:

@@ -1,17 +1,20 @@
 import './styles/main.css';
-import '@xterm/xterm/css/xterm.css';
 
 import {
   Activity, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Cpu, Crosshair, Gauge, Home, Map, Navigation, Radio, RotateCcw, Save, Sliders, Square,
-  Terminal as TerminalIcon, Thermometer, Zap,
+  Cpu, Crosshair, Gauge, Home, LogOut, Map, Navigation, Radio, Square,
+  Thermometer, Zap,
 } from 'lucide-react';
-import { Terminal as XTerm } from '@xterm/xterm';
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { api, ApiError } from './api';
 import { SkyMap } from './components/SkyMap';
+import { QueuePage } from './components/QueuePage';
+import {
+  fetchQueueConfig, fetchQueueStatus, joinQueue, leaveQueue,
+  type QueueConfig, type QueueStatus,
+} from './queue';
 import type { CommandInfo, MotorSnapshot, RoboClawTelemetry, TelescopeConfig } from './types';
 
 interface ErrorLogEntry {
@@ -37,6 +40,12 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [telescopeConfig, setTelescopeConfig] = useState<TelescopeConfig | null>(null);
   const [errorLog, setErrorLog] = useState<ErrorLogEntry[]>([]);
+  const [targetAz, setTargetAz] = useState(0);
+  const [targetAlt, setTargetAlt] = useState(45);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
+  const [queueConfig, setQueueConfig] = useState<QueueConfig | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const nextErrorId = useRef(1);
 
   const logEvent = (source: string, message: string) => {
@@ -53,7 +62,12 @@ function App() {
     });
   };
 
+  // Bootstrap queue state and telemetry. Telemetry is read-only and visible
+  // to spectators as well as the active controller.
   useEffect(() => {
+    void fetchQueueConfig().then(setQueueConfig).catch(() => {/* queue may be disabled */});
+    void fetchQueueStatus().then(setQueueStatus).catch(() => {/* not joined yet */});
+
     void api.status().then((next) => {
       setTelemetry(next);
       if (next.last_error) logEvent('RoboClaw', next.last_error);
@@ -84,6 +98,38 @@ function App() {
     return () => ws.close();
   }, []);
 
+  // Subscribe to queue status updates as long as we have a session cookie.
+  useEffect(() => {
+    if (queueStatus == null || queueStatus.position < 0) return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/queue`);
+    ws.onmessage = (event) => {
+      try {
+        const next = JSON.parse(event.data) as QueueStatus;
+        if (typeof next.position === 'number') setQueueStatus(next);
+      } catch { /* ignore */ }
+    };
+    return () => ws.close();
+  }, [queueStatus?.position === -1, queueStatus == null]);
+
+  const handleJoin = async (turnstileToken: string | null) => {
+    setJoining(true);
+    setJoinError(null);
+    try {
+      const next = await joinQueue(turnstileToken);
+      setQueueStatus(next);
+    } catch (err) {
+      setJoinError(errorMessage(err));
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const handleLeave = async () => {
+    await leaveQueue();
+    setQueueStatus({ ...(queueStatus ?? {} as QueueStatus), position: -1, is_active: false });
+  };
+
   const commandById = useMemo(
     () => Object.fromEntries(commands.map((c) => [c.id, c])),
     [commands],
@@ -111,10 +157,10 @@ function App() {
     }
   };
 
-  const gotoAltAz = async (altDeg: number, azDeg: number, speedQpps: number, accelQpps2: number) => {
+  const gotoAltAz = async (altDeg: number, azDeg: number) => {
     setNotice(null);
     try {
-      await api.gotoAltAz(altDeg, azDeg, speedQpps, accelQpps2);
+      await api.gotoAltAz(altDeg, azDeg);
       setTelemetry(await api.status());
     } catch (err) {
       setNotice(errorMessage(err));
@@ -143,24 +189,46 @@ function App() {
     }
   };
 
-  const flags = telemetry?.status_flags ?? [];
+  const handleMapTarget = useCallback((az: number, alt: number) => {
+    setTargetAz(Math.round(az * 1000) / 1000);
+    setTargetAlt(Math.round(alt * 1000) / 1000);
+  }, []);
+
   const controllerIssue = explainControllerError(telemetry?.last_error ?? null);
+
+  // Queue gating: when the queue is enabled and we are not the active
+  // controller, render the spectator/queue page instead of the control UI.
+  // Position 0 = active controller; -1 = not in queue; >0 = waiting.
+  const queueEnabled = queueConfig?.enabled ?? false;
+  const isActiveController = !queueEnabled || queueStatus?.is_active === true;
+
+  if (queueEnabled && !isActiveController) {
+    return (
+      <QueuePage
+        status={queueStatus}
+        joining={joining}
+        joinError={joinError}
+        siteKey={queueConfig?.turnstile_site_key ?? null}
+        turnstileEnabled={queueConfig?.turnstile_enabled ?? false}
+        onJoin={handleJoin}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
-      <TopBar telemetry={telemetry} stopAll={stopAll} />
+      <TopBar telemetry={telemetry} />
+
+      {queueEnabled && queueStatus && queueStatus.is_active && (
+        <LeaseBanner status={queueStatus} onLeave={() => void handleLeave()} />
+      )}
 
       {telemetry?.connection.mode !== 'serial' && (
         <div className={`banner ${telemetry?.connection.mode === 'error' ? 'banner-error' : ''}`}>
           <AlertTriangle size={14} />
-          <span>{telemetry?.connection.message ?? 'Using simulated RoboClaw data — no hardware connected.'}</span>
-        </div>
-      )}
-
-      {flags.length > 0 && (
-        <div className="banner banner-warn">
-          <AlertTriangle size={14} />
-          <span>Controller flags: {flags.join(', ')}</span>
+          <span>{telemetry?.connection.mode === 'error'
+            ? 'Lost connection to the telescope. Check that all cables are secure and try refreshing.'
+            : 'No telescope hardware detected — running in demo mode. Controls will not move anything.'}</span>
         </div>
       )}
 
@@ -169,42 +237,64 @@ function App() {
       )}
 
       {notice && (
-        <div className={`banner ${notice.startsWith('Elevation homed') || notice.startsWith('Azimuth') ? 'banner-ok' : 'banner-error'}`}>
+        <div className={`banner ${notice.toLowerCase().includes('homed') || notice.toLowerCase().includes('zero') || notice.toLowerCase().includes('set') ? 'banner-ok' : 'banner-error'}`}>
           <AlertTriangle size={14} />
           <span>{notice}</span>
         </div>
       )}
 
-      <ErrorLog entries={errorLog} onClear={() => setErrorLog([])} />
+      {errorLog.length > 0 && <ErrorLog entries={errorLog} onClear={() => setErrorLog([])} />}
 
       <main className="dashboard">
         <section className="panel controls-panel">
-          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} />
-        </section>
-        <section className="panel tune-panel">
-          <LiveTuning runCommand={runCommand} />
+          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
         </section>
         <section className="panel skymap-panel">
           <PanelHeader icon={<Map size={14} />} title="Sky Map" />
-          <SkyMap telemetry={telemetry} config={telescopeConfig} onNotice={setNotice} />
+          <SkyMap telemetry={telemetry} config={telescopeConfig} onNotice={setNotice} onTarget={handleMapTarget} />
         </section>
         <section className="panel telemetry-panel">
           <TelemetryDashboard telemetry={telemetry} />
-        </section>
-        <section className="panel terminal-panel">
-          <HostTerminal />
         </section>
       </main>
     </div>
   );
 }
 
+function LeaseBanner({ status, onLeave }: { status: QueueStatus; onLeave: () => void }) {
+  const remaining = Math.max(0, Math.round(status.lease_remaining_s ?? 0));
+  const idle = status.idle_remaining_s == null ? null : Math.max(0, Math.round(status.idle_remaining_s));
+  return (
+    <div className="banner banner-ok lease-banner">
+      <Activity size={14} />
+      <span>You are in control. Time remaining: <strong>{formatSeconds(remaining)}</strong>
+        {idle != null && idle < 30 && <> · idle release in <strong>{idle}s</strong></>}
+      </span>
+      <button className="lease-leave" onClick={onLeave}><LogOut size={12} /> Release control</button>
+    </div>
+  );
+}
+
+function formatSeconds(s: number): string {
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, '0')}`;
+}
+
 // ─── TopBar ──────────────────────────────────────────────────────────────────
 
-function TopBar({ telemetry, stopAll }: { telemetry: RoboClawTelemetry | null; stopAll: () => Promise<void> }) {
+const MODE_LABEL: Record<string, string> = {
+  serial: 'Connected',
+  simulated: 'Demo',
+  error: 'Disconnected',
+  loading: 'Connecting',
+};
+
+function TopBar({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
   const conn = telemetry?.connection;
+  const mode = conn?.mode ?? 'loading';
   const subtitle = conn
-    ? `${conn.port} · ${conn.baudrate.toLocaleString()} baud · 0x${conn.address.toString(16).toUpperCase()}${telemetry?.firmware ? ` · fw ${telemetry.firmware}` : ''}`
+    ? [conn.port, telemetry?.firmware ? `firmware ${telemetry.firmware}` : null].filter(Boolean).join(' · ')
     : 'Connecting…';
 
   return (
@@ -212,16 +302,13 @@ function TopBar({ telemetry, stopAll }: { telemetry: RoboClawTelemetry | null; s
       <div className="topbar-brand">
         <Radio size={18} className="brand-icon" />
         <div>
-          <h1>RoboClaw Telescope Control</h1>
+          <h1>Radio Telescope</h1>
           <p className="topbar-sub">{subtitle}</p>
         </div>
       </div>
       <div className="topbar-status">
-        <span className={`mode mode-${conn?.mode ?? 'simulated'}`}>{conn?.mode ?? 'loading'}</span>
+        <span className={`mode mode-${mode}`}>{MODE_LABEL[mode] ?? mode}</span>
         <span className="topbar-time">{telemetry ? new Date(telemetry.timestamp * 1000).toLocaleTimeString() : '—'}</span>
-        <button className="stop-button estop-button" onClick={() => void stopAll()} title="Emergency stop — halts both motors immediately">
-          <Square size={15} fill="currentColor" /> E-Stop
-        </button>
       </div>
     </header>
   );
@@ -259,7 +346,7 @@ function ErrorLog({ entries, onClear }: { entries: ErrorLogEntry[]; onClear: () 
   return (
     <details className="error-log">
       <summary>
-        <span>Recent errors</span>
+        <span>Connection issues</span>
         <strong>{entries.length}</strong>
       </summary>
       <div className="error-log-body">
@@ -281,25 +368,25 @@ function ErrorLog({ entries, onClear }: { entries: ErrorLogEntry[]; onClear: () 
 
 // ─── Telescope controls ───────────────────────────────────────────────────────
 
-function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, homeElevation, zeroAzimuth }: {
+function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, homeElevation, zeroAzimuth, targetAz, targetAlt, setTargetAz, setTargetAlt }: {
   telemetry: RoboClawTelemetry | null;
   runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
   stopAll: () => Promise<void>;
-  gotoAltAz: (alt: number, az: number, speed: number, accel: number) => Promise<void>;
+  gotoAltAz: (alt: number, az: number) => Promise<void>;
   homeElevation: () => Promise<void>;
   zeroAzimuth: () => Promise<void>;
+  targetAz: number;
+  targetAlt: number;
+  setTargetAz: (v: number) => void;
+  setTargetAlt: (v: number) => void;
 }) {
   const [slewSpeed, setSlewSpeed] = useState(40);
-  const [targetAz, setTargetAz] = useState(0);
-  const [targetAlt, setTargetAlt] = useState(45);
-  const [targetSpeed, setTargetSpeed] = useState(10_000);
-  const [targetAccel, setTargetAccel] = useState(25_000);
   const [elHoming, setElHoming] = useState(false);
   const speed = Math.round(slewSpeed * 127 / 100);
 
   const submitTarget = async (e: FormEvent) => {
     e.preventDefault();
-    await gotoAltAz(targetAlt, targetAz, targetSpeed, targetAccel);
+    await gotoAltAz(targetAlt, targetAz);
   };
 
   const runHomeElevation = async () => {
@@ -309,7 +396,7 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, homeElev
 
   return (
     <>
-      <PanelHeader icon={<Gauge size={14} />} title="Telescope Controls" />
+      <PanelHeader icon={<Gauge size={14} />} title="Pointing" />
       <div className="controls-grid">
         <AxisControl
           title="Azimuth"
@@ -333,7 +420,7 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, homeElev
         />
         <div className="speed-control">
           <label>
-            <span>Slew</span>
+            <span>Slew speed</span>
             <strong>{slewSpeed}%</strong>
             <input type="range" min={1} max={100} value={slewSpeed} onChange={(e) => setSlewSpeed(Number(e.target.value))} />
           </label>
@@ -342,26 +429,24 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, homeElev
           </button>
         </div>
         <form className="target-form" onSubmit={submitTarget}>
-          <label><span>Azimuth °</span><input type="number" min={0} max={360} step={0.01} value={targetAz} onChange={(e) => setTargetAz(Number(e.target.value))} /></label>
-          <label><span>Altitude °</span><input type="number" min={0} max={90} step={0.01} value={targetAlt} onChange={(e) => setTargetAlt(Number(e.target.value))} /></label>
-          <label><span>Speed (QPPS)</span><input type="number" min={0} max={4_294_967_295} value={targetSpeed} onChange={(e) => setTargetSpeed(Number(e.target.value))} /></label>
-          <label><span>Accel (QPPS²)</span><input type="number" min={0} max={4_294_967_295} value={targetAccel} onChange={(e) => setTargetAccel(Number(e.target.value))} /></label>
-          <button type="submit" className="action-button"><Navigation size={14} /> Go To</button>
+          <label><span>Azimuth °</span><input type="number" min={0} max={360} step={0.001} value={targetAz} onChange={(e) => setTargetAz(Number(e.target.value))} /></label>
+          <label><span>Altitude °</span><input type="number" min={0} max={90} step={0.001} value={targetAlt} onChange={(e) => setTargetAlt(Number(e.target.value))} /></label>
+          <button type="submit" className="action-button"><Navigation size={14} /> Slew Here</button>
         </form>
         <div className="homing-bar">
-          <span className="homing-label">Homing</span>
+          <span className="homing-label">Calibrate</span>
           <button
             onClick={() => void runHomeElevation()}
             disabled={elHoming}
             className={elHoming ? 'homing-active' : ''}
-            title="Drive elevation down until the end stop cuts current, then zero the encoder"
+            title="Slowly lowers the dish until it hits the bottom stop, then resets the elevation encoder to zero"
           >
             <Home size={14} />
             {elHoming ? 'Homing elevation…' : 'Home Elevation'}
           </button>
           <button
             onClick={() => void zeroAzimuth()}
-            title="Zero the azimuth encoder at the current pointing position"
+            title="Sets the current azimuth position as the zero reference point"
           >
             <Crosshair size={14} /> Zero Azimuth
           </button>
@@ -398,46 +483,11 @@ function AxisControl({ title, negativeLabel, positiveLabel, negativeIcon, positi
         <button onClick={() => void positive()}>{positiveIcon}{positiveLabel}</button>
       </div>
       <DenseReadout rows={[
-        ['PWM', value(motor?.pwm)],
-        ['Encoder', encoder(motor?.encoder)],
-        ['Speed', qpps(motor?.speed_qpps)],
+        ['PWM output',       value(motor?.pwm)],
+        ['Encoder position', encoder(motor?.encoder)],
+        ['Encoder speed',    qpps(motor?.speed_qpps)],
       ]} />
     </div>
-  );
-}
-
-// ─── Live tuning ──────────────────────────────────────────────────────────────
-
-function LiveTuning({ runCommand }: { runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void> }) {
-  const [m1Accel, setM1Accel] = useState(25_000);
-  const [m2Accel, setM2Accel] = useState(25_000);
-  const [bothDuty, setBothDuty] = useState(0);
-
-  const applyAccel = async (e: FormEvent) => {
-    e.preventDefault();
-    await runCommand('set_m1_default_duty_accel', { accel: m1Accel });
-    await runCommand('set_m2_default_duty_accel', { accel: m2Accel });
-  };
-
-  const applyDuty = async (e: FormEvent) => {
-    e.preventDefault();
-    await runCommand('duty_m1m2', { m1_duty: bothDuty, m2_duty: bothDuty });
-  };
-
-  return (
-    <>
-      <PanelHeader icon={<Sliders size={14} />} title="Live Tuning" />
-      <form className="compact-form" onSubmit={applyAccel}>
-        <label><span>M1 accel</span><input type="number" min={0} max={4_294_967_295} value={m1Accel} onChange={(e) => setM1Accel(Number(e.target.value))} /></label>
-        <label><span>M2 accel</span><input type="number" min={0} max={4_294_967_295} value={m2Accel} onChange={(e) => setM2Accel(Number(e.target.value))} /></label>
-        <button type="submit"><Save size={14} /> Apply</button>
-      </form>
-      <form className="compact-form" onSubmit={applyDuty}>
-        <label><span>Duty trim</span><input type="number" min={-32767} max={32767} value={bothDuty} onChange={(e) => setBothDuty(Number(e.target.value))} /></label>
-        <button type="submit"><Save size={14} /> Apply Duty</button>
-        <button type="button" onClick={() => void runCommand('reset_encoders', {})}><RotateCcw size={14} /> Reset Enc</button>
-      </form>
-    </>
   );
 }
 
@@ -446,38 +496,34 @@ function LiveTuning({ runCommand }: { runCommand: (id: string, args: Record<stri
 function TelemetryDashboard({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
   return (
     <>
-      <PanelHeader icon={<Activity size={14} />} title="Telemetry" />
+      <PanelHeader icon={<Activity size={14} />} title="Status" />
       <div className="telemetry-dense">
         <DenseReadout title="Power" icon={<Zap size={11} />} rows={[
-          ['Main',   volts(telemetry?.main_battery_v),   voltClass(telemetry?.main_battery_v)],
-          ['Logic',  volts(telemetry?.logic_battery_v),  voltClass(telemetry?.logic_battery_v)],
-          ['Status', telemetry?.status == null ? '—' : `0x${telemetry.status.toString(16).toUpperCase()}`],
+          ['Battery',     volts(telemetry?.main_battery_v),   voltClass(telemetry?.main_battery_v)],
+          ['Electronics', volts(telemetry?.logic_battery_v),  voltClass(telemetry?.logic_battery_v)],
         ]} />
-        <DenseReadout title="Thermal" icon={<Thermometer size={11} />} rows={[
-          ['T1',    celsius(telemetry?.temperature_c),   tempClass(telemetry?.temperature_c)],
-          ['T2',    celsius(telemetry?.temperature_2_c), tempClass(telemetry?.temperature_2_c)],
-          ['Flags', telemetry?.status_flags.length ? telemetry.status_flags.join(', ') : 'None'],
+        <DenseReadout title="Temperature" icon={<Thermometer size={11} />} rows={[
+          ['Controller', celsius(telemetry?.temperature_c),   tempClass(telemetry?.temperature_c)],
+          ['Driver',     celsius(telemetry?.temperature_2_c), tempClass(telemetry?.temperature_2_c)],
         ]} />
-        <DenseReadout title="Pi" icon={<Cpu size={11} />} rows={[
+        <DenseReadout title="Raspberry Pi" icon={<Cpu size={11} />} rows={[
           ['CPU temp', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
-          ['Load',     load(telemetry)],
+          ['CPU load', load(telemetry)],
           ['Memory',   percent(telemetry?.host.memory_used_percent)],
           ['Disk',     disk(telemetry)],
           ['Uptime',   duration(telemetry?.host.uptime_s)],
         ]} />
-        <DenseReadout title="M1 Detail" rows={[
-          ['Avg spd',  qpps(telemetry?.motors.m1?.average_speed_qpps)],
-          ['Raw spd',  qpps(telemetry?.motors.m1?.raw_speed_qpps)],
-          ['Spd err',  qpps(telemetry?.motors.m1?.speed_error_qpps)],
-          ['Pos err',  value(telemetry?.motors.m1?.position_error)],
-          ['Buf',      value(telemetry?.buffer_depths['1'])],
+        <DenseReadout title="Azimuth Motor" rows={[
+          ['Encoder position', encoder(telemetry?.motors.m1?.encoder)],
+          ['Encoder speed',    qpps(telemetry?.motors.m1?.speed_qpps)],
+          ['PWM output',       value(telemetry?.motors.m1?.pwm)],
+          ['Motor current',    telemetry?.motors.m1?.current_a == null ? '—' : `${telemetry.motors.m1.current_a.toFixed(2)} A`],
         ]} />
-        <DenseReadout title="M2 Detail" rows={[
-          ['Avg spd',  qpps(telemetry?.motors.m2?.average_speed_qpps)],
-          ['Raw spd',  qpps(telemetry?.motors.m2?.raw_speed_qpps)],
-          ['Spd err',  qpps(telemetry?.motors.m2?.speed_error_qpps)],
-          ['Pos err',  value(telemetry?.motors.m2?.position_error)],
-          ['Buf',      value(telemetry?.buffer_depths['2'])],
+        <DenseReadout title="Elevation Motor" rows={[
+          ['Encoder position', encoder(telemetry?.motors.m2?.encoder)],
+          ['Encoder speed',    qpps(telemetry?.motors.m2?.speed_qpps)],
+          ['PWM output',       value(telemetry?.motors.m2?.pwm)],
+          ['Motor current',    telemetry?.motors.m2?.current_a == null ? '—' : `${telemetry.motors.m2.current_a.toFixed(2)} A`],
         ]} />
       </div>
     </>
@@ -506,55 +552,6 @@ function DenseReadout({ title, icon, rows }: { title?: string; icon?: React.Reac
         ))}
       </dl>
     </div>
-  );
-}
-
-// ─── Terminal ────────────────────────────────────────────────────────────────
-
-function HostTerminal() {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const term = new XTerm({
-      cursorBlink: true,
-      convertEol: true,
-      fontFamily: 'Cascadia Mono, Consolas, monospace',
-      fontSize: 12,
-      rows: 12,
-      cols: 96,
-      theme: {
-        background: '#0a0e12',
-        foreground: '#d3dbe3',
-        cursor: '#72e0ad',
-        selectionBackground: 'rgba(114, 224, 173, 0.2)',
-      },
-    });
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/terminal`);
-
-    if (containerRef.current) {
-      term.open(containerRef.current);
-      term.focus();
-    }
-
-    ws.onopen = () => term.writeln('\x1b[32mConnected to host terminal.\x1b[0m');
-    ws.onmessage = (event) => term.write(String(event.data));
-    ws.onclose = () => term.writeln('\r\n\x1b[33m[terminal disconnected]\x1b[0m');
-    ws.onerror = () => term.writeln('\r\n\x1b[31m[terminal websocket error]\x1b[0m');
-
-    const disposable = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
-    });
-
-    return () => { disposable.dispose(); ws.close(); term.dispose(); };
-  }, []);
-
-  return (
-    <>
-      <PanelHeader icon={<TerminalIcon size={14} />} title="Terminal" />
-      <div className="terminal-box" ref={containerRef} />
-    </>
   );
 }
 
@@ -639,28 +636,24 @@ function explainControllerError(message: string | null): ControllerIssue | null 
 
   if (hasSerialTimeout || hasCrcMismatch) {
     return {
-      title: 'RoboClaw serial link is unstable.',
-      summary: hasSerialTimeout && hasCrcMismatch
-        ? 'Reads are timing out and later bytes are corrupting CRC checks.'
-        : hasSerialTimeout
-          ? 'The controller is returning fewer bytes than expected before timeout.'
-          : 'The controller returned bytes, but the packet checksum did not match.',
-      action: 'Check baud rate, packet address, USB/TTL wiring, shared ground, and power noise. If wiring is solid, raise roboclaw.timeout_s to 2.0 and restart the service.',
+      title: 'Connection to the motor controller is unstable.',
+      summary: "The telescope isn't responding to commands reliably.",
+      action: 'Check that all cables between the Raspberry Pi and the motor controller are secure and fully seated.',
     };
   }
 
   if (lower.includes('missing ack')) {
     return {
-      title: 'RoboClaw did not acknowledge a command.',
-      summary: 'A write command was sent, but the controller did not return the expected ACK byte.',
-      action: 'Confirm Packet Serial mode, address 0x80-0x87, and that no other process is using the serial port.',
+      title: 'The motor controller didn\'t respond to a command.',
+      summary: 'A movement command was sent but the controller did not confirm it.',
+      action: 'Check that the controller is powered on and the USB cable is connected firmly.',
     };
   }
 
   return {
-    title: 'RoboClaw reported an error.',
-    summary: 'The latest telemetry snapshot included a controller read or command failure.',
-    action: 'Open Recent errors below for the raw command message and timestamp.',
+    title: 'The motor controller reported a problem.',
+    summary: 'Something unexpected happened while communicating with the telescope.',
+    action: 'Expand "Connection issues" below for details. Try refreshing the page if the problem persists.',
   };
 }
 

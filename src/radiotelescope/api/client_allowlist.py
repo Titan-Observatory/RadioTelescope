@@ -9,18 +9,37 @@ logger = logging.getLogger(__name__)
 
 
 class ClientAllowlistMiddleware:
-    def __init__(self, app: ASGIApp, allowed_clients: list[str]) -> None:
+    """LAN-only allowlist.
+
+    Disabled by default when running behind a public reverse proxy: leaving the
+    middleware in `block_unknown=False` mode means *every* IP is allowed
+    through the middleware, and per-endpoint authorization is delegated to the
+    queue/session layer (`require_control` + `is_lan_admin`). When
+    `block_unknown=True` the middleware behaves like the old LAN-only gate.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        allowed_clients: list[str],
+        block_unknown: bool = False,
+    ) -> None:
         self.app = app
         self.allowed_clients = set(allowed_clients)
+        self.block_unknown = block_unknown
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] not in {"http", "websocket"} or not self.allowed_clients:
+        if scope["type"] not in {"http", "websocket"} or not self.block_unknown:
             await self.app(scope, receive, send)
             return
 
         client = scope.get("client")
         client_host = client[0] if client else None
-        if client_host in self.allowed_clients:
+        # Always allow loopback — blocking localhost is never intentional
+        is_loopback = client_host in {"127.0.0.1", "::1"} or (
+            client_host is not None and client_host.startswith("127.")
+        )
+        if is_loopback or client_host in self.allowed_clients:
             await self.app(scope, receive, send)
             return
 

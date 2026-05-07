@@ -76,10 +76,10 @@ declare module 'aladin-lite' {
     on(event: string, handler: (e: { x: number; y: number } & Record<string, unknown>) => void): void;
     pix2world(x: number, y: number): [number, number];
     world2pix(c1: number, c2: number): [number, number];
+    setRotation(rotation: number): void;
     setFov(fov: number): void;
     gotoRaDec(ra: number, dec: number): void;
     getFov(): [number, number];
-    getViewCenter(): [number, number];
     addOverlay(overlay: GraphicOverlay): void;
     addCatalog(catalog: AladinCatalog): void;
     setImageSurvey(surveyId: string): void;
