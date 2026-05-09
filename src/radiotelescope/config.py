@@ -58,6 +58,8 @@ class CameraConfig(BaseModel):
     enabled: bool = True
     device: int = Field(default=0, ge=0)
     fps: int = Field(default=15, ge=1, le=60)
+    width: int = Field(default=1280, ge=160, le=4096)
+    height: int = Field(default=720, ge=120, le=2160)
     label: str = "Cam A"
 
 

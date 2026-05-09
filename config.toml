@@ -21,12 +21,7 @@ alt_zero_count = 0
 goto_speed_qpps = 10000
 goto_accel_qpps2 = 25000
 goto_decel_qpps2 = 25000
-# Replace these with the three measured corners of the mount's reachable Alt/Az region.
-pointing_limit_altaz = [
-  { altitude_deg = 15.0, azimuth_deg = 45.0 },
-  { altitude_deg = 80.0, azimuth_deg = 180.0 },
-  { altitude_deg = 15.0, azimuth_deg = 315.0 },
-]
+pointing_limit_altaz = []
 
 [observer]
 name = "My Radio Telescope"

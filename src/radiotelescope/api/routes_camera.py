@@ -18,13 +18,16 @@ except ImportError:
     logger.warning("opencv-python not installed — camera stream disabled")
 
 
-async def _frames(device: int, fps: int, request: Request) -> AsyncIterator[bytes]:
+async def _frames(device: int, fps: int, width: int, height: int, request: Request) -> AsyncIterator[bytes]:
     loop = asyncio.get_event_loop()
     cap = await loop.run_in_executor(None, cv2.VideoCapture, device)
 
     if not await loop.run_in_executor(None, cap.isOpened):
         await loop.run_in_executor(None, cap.release)
         return
+
+    await loop.run_in_executor(None, cap.set, cv2.CAP_PROP_FRAME_WIDTH, width)
+    await loop.run_in_executor(None, cap.set, cv2.CAP_PROP_FRAME_HEIGHT, height)
 
     delay = 1.0 / max(fps, 1)
     try:
@@ -52,7 +55,7 @@ async def camera_stream(request: Request) -> StreamingResponse:
         raise HTTPException(503, "opencv-python not installed on this host")
 
     return StreamingResponse(
-        _frames(cfg.device, cfg.fps, request),
+        _frames(cfg.device, cfg.fps, cfg.width, cfg.height, request),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
