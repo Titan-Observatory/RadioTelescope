@@ -53,8 +53,17 @@ class AltitudeActuatorConfig(BaseModel):
 
 
 class MountConfig(BaseModel):
-    az_counts_per_degree: float = Field(default=1000.0, gt=0)
-    alt_counts_per_degree: float = Field(default=1000.0, gt=0)
+    # Negative values invert the corresponding axis (use when the motor's encoder
+    # counts up in the opposite direction from increasing degrees).
+    az_counts_per_degree: float = Field(default=1000.0)
+    alt_counts_per_degree: float = Field(default=1000.0)
+
+    @field_validator("az_counts_per_degree", "alt_counts_per_degree")
+    @classmethod
+    def _nonzero_counts(cls, value: float) -> float:
+        if value == 0:
+            raise ValueError("counts_per_degree must be nonzero")
+        return value
     az_zero_count: int = 0
     alt_zero_count: int = 0
     goto_speed_qpps: int = Field(default=10_000, ge=0)

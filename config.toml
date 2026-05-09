@@ -14,7 +14,7 @@ update_rate_hz = 5
 
 [mount]
 # M1 is azimuth, M2 is altitude. Tune these after measuring encoder counts.
-az_counts_per_degree = 2.7778   # ~250 pulses per 90°
+az_counts_per_degree = -2.7778  # negative inverts direction; ~250 pulses per 90°
 alt_counts_per_degree = 1000.0  # unused when [mount.altitude_actuator] is set
 az_zero_count = 0
 alt_zero_count = 0
