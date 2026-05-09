@@ -152,12 +152,23 @@ async def _execute_goto_altaz(
     _enforce_pointing_limits(altitude_deg, azimuth, request)
     m1_position = round(cfg.az_zero_count + azimuth * cfg.az_counts_per_degree)
     m2_position = altitude_to_encoder_counts(altitude_deg, cfg)
-    az_speed = speed_qpps if speed_qpps is not None else (cfg.az_goto_speed_qpps  if cfg.az_goto_speed_qpps  is not None else cfg.goto_speed_qpps)
-    az_accel = accel_qpps2 if accel_qpps2 is not None else (cfg.az_goto_accel_qpps2 if cfg.az_goto_accel_qpps2 is not None else cfg.goto_accel_qpps2)
-    az_decel = decel_qpps2 if decel_qpps2 is not None else (cfg.az_goto_decel_qpps2 if cfg.az_goto_decel_qpps2 is not None else cfg.goto_decel_qpps2)
-    alt_speed = speed_qpps if speed_qpps is not None else (cfg.alt_goto_speed_qpps  if cfg.alt_goto_speed_qpps  is not None else cfg.goto_speed_qpps)
-    alt_accel = accel_qpps2 if accel_qpps2 is not None else (cfg.alt_goto_accel_qpps2 if cfg.alt_goto_accel_qpps2 is not None else cfg.goto_accel_qpps2)
-    alt_decel = decel_qpps2 if decel_qpps2 is not None else (cfg.alt_goto_decel_qpps2 if cfg.alt_goto_decel_qpps2 is not None else cfg.goto_decel_qpps2)
+    stored_m1, stored_m2 = _service(request).stored_qpps
+    az_speed = (
+        speed_qpps if speed_qpps is not None
+        else stored_m1 if stored_m1 is not None
+        else cfg.az_goto_speed_qpps if cfg.az_goto_speed_qpps is not None
+        else cfg.goto_speed_qpps
+    )
+    alt_speed = (
+        speed_qpps if speed_qpps is not None
+        else stored_m2 if stored_m2 is not None
+        else cfg.alt_goto_speed_qpps if cfg.alt_goto_speed_qpps is not None
+        else cfg.goto_speed_qpps
+    )
+    az_accel = accel_qpps2 if accel_qpps2 is not None else (cfg.az_goto_accel_qpps2 if cfg.az_goto_accel_qpps2 is not None else az_speed)
+    az_decel = decel_qpps2 if decel_qpps2 is not None else (cfg.az_goto_decel_qpps2 if cfg.az_goto_decel_qpps2 is not None else az_speed)
+    alt_accel = accel_qpps2 if accel_qpps2 is not None else (cfg.alt_goto_accel_qpps2 if cfg.alt_goto_accel_qpps2 is not None else alt_speed)
+    alt_decel = decel_qpps2 if decel_qpps2 is not None else (cfg.alt_goto_decel_qpps2 if cfg.alt_goto_decel_qpps2 is not None else alt_speed)
 
     result = await asyncio.to_thread(
         _service(request).client.execute,

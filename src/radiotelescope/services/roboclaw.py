@@ -33,6 +33,8 @@ class RoboClawService:
         self._task: asyncio.Task | None = None
         self._latest: RoboClawTelemetry | None = None
         self._tick_times: deque[float] = deque(maxlen=20)
+        self._stored_m1_qpps: int | None = None
+        self._stored_m2_qpps: int | None = None
 
     @property
     def client(self) -> RoboClawClient:
@@ -45,8 +47,28 @@ class RoboClawService:
         return self._latest
 
     async def start(self) -> None:
+        await self.refresh_stored_qpps()
         self._task = asyncio.create_task(self._poll_loop())
         logger.info("RoboClaw telemetry service started at %d Hz", self._rate)
+
+    @property
+    def stored_qpps(self) -> tuple[int | None, int | None]:
+        """(m1, m2) velocity-PID QPPS as stored on the controller, or None if unread."""
+        return (self._stored_m1_qpps, self._stored_m2_qpps)
+
+    async def refresh_stored_qpps(self) -> None:
+        """Read each axis's velocity-PID QPPS from the controller and cache it."""
+        try:
+            m1 = await asyncio.to_thread(self._client.execute, "read_m1_velocity_pid", {})
+            m2 = await asyncio.to_thread(self._client.execute, "read_m2_velocity_pid", {})
+        except Exception as exc:
+            logger.warning("Could not read stored QPPS from controller: %s", exc)
+            return
+        if m1.ok:
+            self._stored_m1_qpps = int(m1.response.get("qpps")) if m1.response.get("qpps") is not None else None
+        if m2.ok:
+            self._stored_m2_qpps = int(m2.response.get("qpps")) if m2.response.get("qpps") is not None else None
+        logger.info("Stored QPPS read from controller: m1=%s m2=%s", self._stored_m1_qpps, self._stored_m2_qpps)
 
     async def stop(self) -> None:
         if self._task:

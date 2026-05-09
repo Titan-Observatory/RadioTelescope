@@ -18,18 +18,13 @@ az_counts_per_degree = 2.7778   # ~250 pulses per 90°
 alt_counts_per_degree = 1000.0  # unused when [mount.altitude_actuator] is set
 az_zero_count = 0
 alt_zero_count = 0
-goto_speed_qpps = 10000
-goto_accel_qpps2 = 25000
-goto_decel_qpps2 = 25000
-# Per-axis overrides (counts/sec, counts/sec²). M1 = azimuth, M2 = altitude.
-# Az has only ~2.78 counts/° so its QPPS values must be tiny — at 10000 QPPS
-# the controller thinks 90° = 9 ms and the motor never gets enough drive time.
-az_goto_speed_qpps = 8       # ~30 s for a 90° slew
-az_goto_accel_qpps2 = 4
-az_goto_decel_qpps2 = 4
-alt_goto_speed_qpps = 10000
-alt_goto_accel_qpps2 = 25000
-alt_goto_decel_qpps2 = 25000
+# goto_*_qpps values are the fallback used only if the controller cannot be
+# read at startup. In normal operation, slew speed comes from the velocity-PID
+# QPPS stored on the RoboClaw itself (set via BasicMicro Motion Studio).
+# Accel/decel default to the speed value (≈1 s ramp) unless explicitly set.
+goto_speed_qpps = 1000
+goto_accel_qpps2 = 1000
+goto_decel_qpps2 = 1000
 pointing_limit_altaz = []
 
 # Linear-actuator geometry for the elevation axis. When this block is present,
