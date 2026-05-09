@@ -10,6 +10,7 @@ from radiotelescope.api.dependencies import require_control
 from radiotelescope.hardware.roboclaw import COMMANDS, OPERATOR_COMMAND_IDS, command_registry
 from radiotelescope.models.state import AltAzRequest, CommandInfo, CommandRequest, CommandResult, HealthStatus, RaDecRequest, RoboClawTelemetry, TelescopeConfig
 from radiotelescope.pointing import radec_to_altaz
+from radiotelescope.services.geometry import altitude_to_encoder_counts
 
 router = APIRouter(tags=["roboclaw"])
 
@@ -150,7 +151,7 @@ async def _execute_goto_altaz(
     azimuth = 0.0 if azimuth_deg == 360 else azimuth_deg
     _enforce_pointing_limits(altitude_deg, azimuth, request)
     m1_position = round(cfg.az_zero_count + azimuth * cfg.az_counts_per_degree)
-    m2_position = round(cfg.alt_zero_count + altitude_deg * cfg.alt_counts_per_degree)
+    m2_position = altitude_to_encoder_counts(altitude_deg, cfg)
     speed = speed_qpps if speed_qpps is not None else cfg.goto_speed_qpps
     accel = accel_qpps2 if accel_qpps2 is not None else cfg.goto_accel_qpps2
     decel = decel_qpps2 if decel_qpps2 is not None else cfg.goto_decel_qpps2
@@ -215,8 +216,10 @@ async def sync_alt_az(body: AltAzRequest, request: Request):
         raise HTTPException(400, detail="Encoder read returned no value")
 
     azimuth = _normalise_azimuth(body.azimuth_deg)
-    cfg.az_zero_count  = int(round(current_m1 - azimuth            * cfg.az_counts_per_degree))
-    cfg.alt_zero_count = int(round(current_m2 - body.altitude_deg * cfg.alt_counts_per_degree))
+    cfg.az_zero_count  = int(round(current_m1 - azimuth * cfg.az_counts_per_degree))
+    # Reset zero so altitude_to_encoder_counts gives the raw target, then anchor.
+    cfg.alt_zero_count = 0
+    cfg.alt_zero_count = int(current_m2 - altitude_to_encoder_counts(body.altitude_deg, cfg))
 
     await _service(request).refresh()
     return {

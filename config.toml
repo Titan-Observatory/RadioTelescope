@@ -23,6 +23,22 @@ goto_accel_qpps2 = 25000
 goto_decel_qpps2 = 25000
 pointing_limit_altaz = []
 
+# Linear-actuator geometry for the elevation axis. When this block is present,
+# alt_counts_per_degree / alt_zero_count are no longer used to convert altitude.
+# a_mm and b_mm are the constant distances from the elevation axis to the
+# frame-side and dish-side actuator pivots respectively. l_retracted_mm is the
+# actuator's tip-to-tip length when the M2 encoder reads zero (i.e. after
+# "Zero Altitude"); alt_at_retracted_deg is the dish altitude at that state.
+# Measure l_retracted_mm with a tape and alt_at_retracted_deg with an
+# inclinometer once, after homing the actuator.
+# Uncomment after measuring alt_at_retracted_deg.
+# [mount.altitude_actuator]
+# a_mm = 317.5                # 12.5 in
+# b_mm = 292.1                # 11.5 in
+# pulses_per_mm = 41.1
+# l_retracted_mm = 268.0      # measured tip-to-tip pivot distance when M2 encoder == 0
+# alt_at_retracted_deg = 0.0  # MEASURE: dish altitude (degrees) when M2 encoder == 0
+
 [observer]
 name = "My Radio Telescope"
 latitude_deg = 28.03          # set to actual observatory latitude

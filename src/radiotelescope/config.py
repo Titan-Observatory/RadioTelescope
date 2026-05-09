@@ -36,6 +36,22 @@ class AltAzLimitPoint(BaseModel):
     azimuth_deg: float = Field(ge=0, le=360)
 
 
+class AltitudeActuatorConfig(BaseModel):
+    """Linear-actuator geometry for the elevation axis.
+
+    Pivot A is fixed on the frame, pivot B is fixed on the dish. The actuator
+    forms the third side of a triangle with the elevation axis as the apex.
+    a_mm and b_mm are the constant distances from the elevation axis to each
+    pivot; the actuator length L between A and B is what changes with encoder
+    count, and altitude is recovered from L via the law of cosines.
+    """
+    a_mm: float = Field(gt=0)
+    b_mm: float = Field(gt=0)
+    pulses_per_mm: float = Field(gt=0)
+    l_retracted_mm: float = Field(gt=0)        # actuator length when encoder counts == 0
+    alt_at_retracted_deg: float                  # dish altitude (deg) when encoder counts == 0
+
+
 class MountConfig(BaseModel):
     az_counts_per_degree: float = Field(default=1000.0, gt=0)
     alt_counts_per_degree: float = Field(default=1000.0, gt=0)
@@ -45,6 +61,7 @@ class MountConfig(BaseModel):
     goto_accel_qpps2: int = Field(default=25_000, ge=0)
     goto_decel_qpps2: int = Field(default=25_000, ge=0)
     pointing_limit_altaz: list[AltAzLimitPoint] = Field(default_factory=list)
+    altitude_actuator: AltitudeActuatorConfig | None = None
 
     @field_validator("pointing_limit_altaz")
     @classmethod

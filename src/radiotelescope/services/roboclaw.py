@@ -12,6 +12,7 @@ from radiotelescope.config import MountConfig
 from radiotelescope.hardware.roboclaw import RoboClawClient
 from radiotelescope.models.state import PollStats, RoboClawTelemetry
 from radiotelescope.pointing import altaz_to_radec
+from radiotelescope.services.geometry import encoder_counts_to_altitude
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class RoboClawService:
                 else None
             )
             alt = (
-                (m2.encoder - cfg.alt_zero_count) / cfg.alt_counts_per_degree
+                encoder_counts_to_altitude(m2.encoder, cfg)
                 if m2 and m2.encoder is not None
                 else None
             )
