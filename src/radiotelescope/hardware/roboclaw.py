@@ -195,6 +195,14 @@ OPERATOR_COMMAND_IDS = {
     "set_m2_default_duty_accel",
     "read_default_duty_accels",
     "reset_encoders",
+    "read_m1_position_pid",
+    "read_m2_position_pid",
+    "set_m1_position_pid",
+    "set_m2_position_pid",
+    "read_m1_velocity_pid",
+    "read_m2_velocity_pid",
+    "set_m1_velocity_pid",
+    "set_m2_velocity_pid",
 }
 
 

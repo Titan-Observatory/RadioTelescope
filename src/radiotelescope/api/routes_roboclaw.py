@@ -119,22 +119,30 @@ async def stop(request: Request):
 @router.get("/api/telescope/goto")
 async def goto_alt_az_info(request: Request):
     cfg = request.app.state.config.mount
+    stored_m1, stored_m2 = _service(request).stored_qpps
+    altitude_mapping: dict = {"alt_zero_count": cfg.alt_zero_count}
+    if cfg.altitude_calibration is not None:
+        altitude_mapping["calibration_points"] = [
+            {"counts": p.counts, "alt_deg": p.alt_deg} for p in cfg.altitude_calibration.points
+        ]
+    else:
+        altitude_mapping["alt_counts_per_degree"] = cfg.alt_counts_per_degree
     return {
         "method": "POST",
         "body": {
             "altitude_deg": "0..90",
             "azimuth_deg": "0..360",
-            "speed_qpps": f"optional; default {cfg.goto_speed_qpps}",
-            "accel_qpps2": f"optional; default {cfg.goto_accel_qpps2}",
-            "decel_qpps2": f"optional; default {cfg.goto_decel_qpps2}",
+            "speed_qpps": f"optional; default = controller stored QPPS, fallback {cfg.goto_speed_qpps}",
+            "accel_qpps2": "optional; defaults to resolved speed",
+            "decel_qpps2": "optional; defaults to resolved speed",
         },
         "mapping": {
             "m1": "azimuth",
             "m2": "altitude",
             "az_counts_per_degree": cfg.az_counts_per_degree,
-            "alt_counts_per_degree": cfg.alt_counts_per_degree,
             "az_zero_count": cfg.az_zero_count,
-            "alt_zero_count": cfg.alt_zero_count,
+            "altitude": altitude_mapping,
+            "stored_qpps": {"m1": stored_m1, "m2": stored_m2},
         },
     }
 
@@ -153,22 +161,12 @@ async def _execute_goto_altaz(
     m1_position = round(cfg.az_zero_count + azimuth * cfg.az_counts_per_degree)
     m2_position = altitude_to_encoder_counts(altitude_deg, cfg)
     stored_m1, stored_m2 = _service(request).stored_qpps
-    az_speed = (
-        speed_qpps if speed_qpps is not None
-        else stored_m1 if stored_m1 is not None
-        else cfg.az_goto_speed_qpps if cfg.az_goto_speed_qpps is not None
-        else cfg.goto_speed_qpps
-    )
-    alt_speed = (
-        speed_qpps if speed_qpps is not None
-        else stored_m2 if stored_m2 is not None
-        else cfg.alt_goto_speed_qpps if cfg.alt_goto_speed_qpps is not None
-        else cfg.goto_speed_qpps
-    )
-    az_accel = accel_qpps2 if accel_qpps2 is not None else (cfg.az_goto_accel_qpps2 if cfg.az_goto_accel_qpps2 is not None else az_speed)
-    az_decel = decel_qpps2 if decel_qpps2 is not None else (cfg.az_goto_decel_qpps2 if cfg.az_goto_decel_qpps2 is not None else az_speed)
-    alt_accel = accel_qpps2 if accel_qpps2 is not None else (cfg.alt_goto_accel_qpps2 if cfg.alt_goto_accel_qpps2 is not None else alt_speed)
-    alt_decel = decel_qpps2 if decel_qpps2 is not None else (cfg.alt_goto_decel_qpps2 if cfg.alt_goto_decel_qpps2 is not None else alt_speed)
+    az_speed  = speed_qpps if speed_qpps is not None else (stored_m1 if stored_m1 is not None else cfg.goto_speed_qpps)
+    alt_speed = speed_qpps if speed_qpps is not None else (stored_m2 if stored_m2 is not None else cfg.goto_speed_qpps)
+    az_accel  = accel_qpps2 if accel_qpps2 is not None else az_speed
+    az_decel  = decel_qpps2 if decel_qpps2 is not None else az_speed
+    alt_accel = accel_qpps2 if accel_qpps2 is not None else alt_speed
+    alt_decel = decel_qpps2 if decel_qpps2 is not None else alt_speed
 
     result = await asyncio.to_thread(
         _service(request).client.execute,
@@ -233,8 +231,7 @@ async def sync_alt_az(body: AltAzRequest, request: Request):
         raise HTTPException(400, detail="Encoder read returned no value")
 
     azimuth = _normalise_azimuth(body.azimuth_deg)
-    cfg.az_zero_count  = int(round(current_m1 - azimuth * cfg.az_counts_per_degree))
-    # Reset zero so altitude_to_encoder_counts gives the raw target, then anchor.
+    cfg.az_zero_count = int(round(current_m1 - azimuth * cfg.az_counts_per_degree))
     cfg.alt_zero_count = 0
     cfg.alt_zero_count = int(current_m2 - altitude_to_encoder_counts(body.altitude_deg, cfg))
 

@@ -720,6 +720,82 @@ h2.panel-header {
   padding-bottom: 4px;
 }
 
+.admin-panel-note {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  line-height: 1.4;
+}
+
+.pid-axis {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+}
+
+.pid-axis-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.pid-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pid-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+}
+
+.pid-section-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.pid-section-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: 22px;
+}
+
+.pid-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 4px 8px;
+}
+
+.pid-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--fg-muted);
+}
+
+.pid-fields input {
+  font-size: 12px;
+  padding: 3px 6px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-xs, 3px);
+  color: var(--fg);
+}
+
 .admin-row {
   display: flex;
   align-items: center;

@@ -2,8 +2,8 @@ import './styles/main.css';
 
 import {
   Activity, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Cpu, Crosshair, Gauge, Home, LogOut, Map, Navigation, Square,
-  Thermometer, Zap,
+  Cpu, Crosshair, Download, Gauge, Home, LogOut, Map, Navigation, Square,
+  Thermometer, Upload, Zap,
 } from 'lucide-react';
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -296,6 +296,7 @@ function App() {
         <section className="panel controls-panel">
           <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
           <AdminPanel syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} zeroAltitude={zeroAltitude} targetAz={targetAz} targetAlt={targetAlt} />
+          <PidTuningPanel onNotice={setNotice} />
         </section>
         <section className="panel skymap-panel">
           <PanelHeader icon={<Map size={14} />} title="Sky Map" />
@@ -608,6 +609,169 @@ function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, zeroAltitude, targe
         </div>
       </div>
     </details>
+  );
+}
+
+// ─── PID tuning ───────────────────────────────────────────────────────────────
+
+const POSITION_FIELDS = ['p', 'i', 'd', 'i_max', 'deadzone', 'min', 'max'] as const;
+const VELOCITY_FIELDS = ['p', 'i', 'd', 'qpps'] as const;
+type PositionField = (typeof POSITION_FIELDS)[number];
+type VelocityField = (typeof VELOCITY_FIELDS)[number];
+
+const POSITION_LABELS: Record<PositionField, string> = {
+  p: 'P', i: 'I', d: 'D', i_max: 'Max I', deadzone: 'Deadzone', min: 'Min Pos', max: 'Max Pos',
+};
+const VELOCITY_LABELS: Record<VelocityField, string> = {
+  p: 'P', i: 'I', d: 'D', qpps: 'QPPS',
+};
+
+function emptyPosition(): Record<PositionField, number> {
+  return { p: 0, i: 0, d: 0, i_max: 0, deadzone: 0, min: 0, max: 0 };
+}
+function emptyVelocity(): Record<VelocityField, number> {
+  return { p: 0, i: 0, d: 0, qpps: 0 };
+}
+
+function PidTuningPanel({ onNotice }: { onNotice: (msg: string | null) => void }) {
+  const [m1Pos, setM1Pos] = useState(emptyPosition);
+  const [m2Pos, setM2Pos] = useState(emptyPosition);
+  const [m1Vel, setM1Vel] = useState(emptyVelocity);
+  const [m2Vel, setM2Vel] = useState(emptyVelocity);
+  const [busy, setBusy] = useState(false);
+
+  const run = async <T,>(label: string, fn: () => Promise<T>): Promise<T | null> => {
+    setBusy(true);
+    onNotice(null);
+    try { return await fn(); }
+    catch (err) { onNotice(`${label}: ${errorMessage(err)}`); return null; }
+    finally { setBusy(false); }
+  };
+
+  const readPosition = (motor: 'm1' | 'm2') => async () => {
+    const r = await run(`Read ${motor} position PID`, () => api.execute(`read_${motor}_position_pid`, {}));
+    if (!r?.ok) return;
+    const next = { ...emptyPosition(), ...(r.response as Record<PositionField, number>) };
+    (motor === 'm1' ? setM1Pos : setM2Pos)(next);
+  };
+
+  const readVelocity = (motor: 'm1' | 'm2') => async () => {
+    const r = await run(`Read ${motor} velocity PID`, () => api.execute(`read_${motor}_velocity_pid`, {}));
+    if (!r?.ok) return;
+    const next = { ...emptyVelocity(), ...(r.response as Record<VelocityField, number>) };
+    (motor === 'm1' ? setM1Vel : setM2Vel)(next);
+  };
+
+  const writePosition = (motor: 'm1' | 'm2', values: Record<PositionField, number>) => async () => {
+    if (!confirm(`Write Position PID to ${motor.toUpperCase()}? This changes controller flash settings.`)) return;
+    await run(`Write ${motor} position PID`, () => api.execute(`set_${motor}_position_pid`, values));
+  };
+
+  const writeVelocity = (motor: 'm1' | 'm2', values: Record<VelocityField, number>) => async () => {
+    if (!confirm(`Write Velocity PID to ${motor.toUpperCase()}? This changes controller flash settings.`)) return;
+    await run(`Write ${motor} velocity PID`, () => api.execute(`set_${motor}_velocity_pid`, values));
+  };
+
+  return (
+    <details className="admin-panel">
+      <summary className="admin-panel-summary">
+        <Cpu size={13} /> PID Tuning
+      </summary>
+      <div className="admin-panel-body">
+        <p className="admin-panel-note">
+          Reads from / writes to the RoboClaw flash. Values persist across power cycles.
+          Use with care — incorrect PID can cause runaway motion.
+        </p>
+        <PidAxis
+          title="M1 — Azimuth"
+          position={m1Pos} setPosition={setM1Pos}
+          velocity={m1Vel} setVelocity={setM1Vel}
+          onReadPos={readPosition('m1')} onWritePos={writePosition('m1', m1Pos)}
+          onReadVel={readVelocity('m1')} onWriteVel={writeVelocity('m1', m1Vel)}
+          busy={busy}
+        />
+        <PidAxis
+          title="M2 — Altitude"
+          position={m2Pos} setPosition={setM2Pos}
+          velocity={m2Vel} setVelocity={setM2Vel}
+          onReadPos={readPosition('m2')} onWritePos={writePosition('m2', m2Pos)}
+          onReadVel={readVelocity('m2')} onWriteVel={writeVelocity('m2', m2Vel)}
+          busy={busy}
+        />
+      </div>
+    </details>
+  );
+}
+
+function PidAxis({
+  title, position, setPosition, velocity, setVelocity,
+  onReadPos, onWritePos, onReadVel, onWriteVel, busy,
+}: {
+  title: string;
+  position: Record<PositionField, number>;
+  setPosition: (v: Record<PositionField, number>) => void;
+  velocity: Record<VelocityField, number>;
+  setVelocity: (v: Record<VelocityField, number>) => void;
+  onReadPos: () => Promise<void>;
+  onWritePos: () => Promise<void>;
+  onReadVel: () => Promise<void>;
+  onWriteVel: () => Promise<void>;
+  busy: boolean;
+}) {
+  return (
+    <div className="pid-axis">
+      <div className="pid-axis-title">{title}</div>
+      <div className="pid-section">
+        <div className="pid-section-header">
+          <span>Position</span>
+          <div className="pid-section-actions">
+            <button type="button" disabled={busy} onClick={() => void onReadPos()} title="Read from controller">
+              <Download size={12} /> Read
+            </button>
+            <button type="button" disabled={busy} onClick={() => void onWritePos()} title="Write to controller flash">
+              <Upload size={12} /> Write
+            </button>
+          </div>
+        </div>
+        <div className="pid-fields">
+          {POSITION_FIELDS.map((k) => (
+            <label key={k}>
+              <span>{POSITION_LABELS[k]}</span>
+              <input
+                type="number"
+                value={position[k]}
+                onChange={(e) => setPosition({ ...position, [k]: Number(e.target.value) })}
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="pid-section">
+        <div className="pid-section-header">
+          <span>Velocity</span>
+          <div className="pid-section-actions">
+            <button type="button" disabled={busy} onClick={() => void onReadVel()} title="Read from controller">
+              <Download size={12} /> Read
+            </button>
+            <button type="button" disabled={busy} onClick={() => void onWriteVel()} title="Write to controller flash">
+              <Upload size={12} /> Write
+            </button>
+          </div>
+        </div>
+        <div className="pid-fields">
+          {VELOCITY_FIELDS.map((k) => (
+            <label key={k}>
+              <span>{VELOCITY_LABELS[k]}</span>
+              <input
+                type="number"
+                value={velocity[k]}
+                onChange={(e) => setVelocity({ ...velocity, [k]: Number(e.target.value) })}
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -75,15 +75,13 @@ class MountConfig(BaseModel):
         return value
     az_zero_count: int = 0
     alt_zero_count: int = 0
+    # Fallback values used only if the controller's stored velocity-PID QPPS
+    # cannot be read at startup. In normal operation those values come from the
+    # RoboClaw itself (cached on RoboClawService.start). Accel/decel default to
+    # the resolved speed (≈1 s ramp) unless explicitly overridden per request.
     goto_speed_qpps: int = Field(default=10_000, ge=0)
     goto_accel_qpps2: int = Field(default=25_000, ge=0)
     goto_decel_qpps2: int = Field(default=25_000, ge=0)
-    az_goto_speed_qpps: int | None = Field(default=None, ge=0)
-    az_goto_accel_qpps2: int | None = Field(default=None, ge=0)
-    az_goto_decel_qpps2: int | None = Field(default=None, ge=0)
-    alt_goto_speed_qpps: int | None = Field(default=None, ge=0)
-    alt_goto_accel_qpps2: int | None = Field(default=None, ge=0)
-    alt_goto_decel_qpps2: int | None = Field(default=None, ge=0)
     pointing_limit_altaz: list[AltAzLimitPoint] = Field(default_factory=list)
     altitude_calibration: AltitudeCalibrationConfig | None = None
 
