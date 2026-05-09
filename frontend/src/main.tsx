@@ -227,6 +227,17 @@ function App() {
     }
   };
 
+  const zeroAltitude = async () => {
+    setNotice(null);
+    try {
+      const r = await api.zeroAltitude();
+      setNotice(r.message);
+      setTelemetry(await api.status());
+    } catch (err) {
+      setNotice(errorMessage(err));
+    }
+  };
+
   const handleMapTarget = useCallback((az: number, alt: number) => {
     setTargetAz(Math.round(az * 1000) / 1000);
     setTargetAlt(Math.round(alt * 1000) / 1000);
@@ -284,7 +295,7 @@ function App() {
       <main className="dashboard">
         <section className="panel controls-panel">
           <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
-          <AdminPanel syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} targetAz={targetAz} targetAlt={targetAlt} />
+          <AdminPanel syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} zeroAltitude={zeroAltitude} targetAz={targetAz} targetAlt={targetAlt} />
         </section>
         <section className="panel skymap-panel">
           <PanelHeader icon={<Map size={14} />} title="Sky Map" />
@@ -534,10 +545,11 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, targetAz
 
 // ─── Admin panel ─────────────────────────────────────────────────────────────
 
-function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, targetAz, targetAlt }: {
+function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, zeroAltitude, targetAz, targetAlt }: {
   syncAltAz: (alt: number, az: number) => Promise<void>;
   homeElevation: () => Promise<void>;
   zeroAzimuth: () => Promise<void>;
+  zeroAltitude: () => Promise<void>;
   targetAz: number;
   targetAlt: number;
 }) {
@@ -583,6 +595,15 @@ function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, targetAz, targetAlt
             title="Sets the current azimuth position as the zero reference point"
           >
             <Crosshair size={13} /> Zero Azimuth
+          </button>
+        </div>
+        <div className="admin-row">
+          <span className="admin-label">Altitude zero</span>
+          <button
+            onClick={() => void zeroAltitude()}
+            title="Sets the current altitude position as the zero reference point"
+          >
+            <Crosshair size={13} /> Zero Altitude
           </button>
         </div>
       </div>

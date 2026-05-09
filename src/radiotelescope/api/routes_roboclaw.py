@@ -309,6 +309,18 @@ async def home_azimuth(request: Request):
     return {"status": "ok", "message": "Azimuth encoder zeroed at current position"}
 
 
+@router.post("/api/telescope/home/altitude", dependencies=[Depends(require_control)])
+async def home_altitude(request: Request):
+    """Zero the altitude encoder at whatever position the telescope is currently pointing."""
+    client = _service(request).client
+    result = await asyncio.to_thread(client.execute, "set_encoder_m2", {"value": 0})
+    if not result.ok:
+        raise HTTPException(400, detail=f"Failed to zero altitude encoder: {result.error}")
+    request.app.state.config.mount.alt_zero_count = 0
+    await _service(request).refresh()
+    return {"status": "ok", "message": "Altitude encoder zeroed at current position"}
+
+
 @router.websocket("/ws/roboclaw")
 async def roboclaw_ws(ws: WebSocket):
     await ws.accept()

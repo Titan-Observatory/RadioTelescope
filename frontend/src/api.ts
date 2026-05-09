@@ -50,4 +50,5 @@ export const api = {
   stop: () => request<Record<string, CommandResult>>('POST', '/api/roboclaw/stop'),
   homeElevation: () => request<{ status: string; message: string }>('POST', '/api/telescope/home/elevation'),
   zeroAzimuth:   () => request<{ status: string; message: string }>('POST', '/api/telescope/home/azimuth'),
+  zeroAltitude:  () => request<{ status: string; message: string }>('POST', '/api/telescope/home/altitude'),
 };
