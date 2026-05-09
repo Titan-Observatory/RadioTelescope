@@ -626,6 +626,16 @@ const VELOCITY_LABELS: Record<VelocityField, string> = {
   p: 'P', i: 'I', d: 'D', qpps: 'QPPS',
 };
 
+// RoboClaw stores P/I/D as fixed-point integers; BasicMicro Motion Studio
+// (and most users) work in the floating-point form. Position is Q22.10
+// (×1024); velocity is Q16.16 (×65536). Other fields are plain integers.
+const POSITION_SCALE: Record<PositionField, number> = {
+  p: 1024, i: 1024, d: 1024, i_max: 1024, deadzone: 1, min: 1, max: 1,
+};
+const VELOCITY_SCALE: Record<VelocityField, number> = {
+  p: 65536, i: 65536, d: 65536, qpps: 1,
+};
+
 function emptyPosition(): Record<PositionField, number> {
   return { p: 0, i: 0, d: 0, i_max: 0, deadzone: 0, min: 0, max: 0 };
 }
@@ -651,25 +661,37 @@ function PidTuningPanel({ onNotice }: { onNotice: (msg: string | null) => void }
   const readPosition = (motor: 'm1' | 'm2') => async () => {
     const r = await run(`Read ${motor} position PID`, () => api.execute(`read_${motor}_position_pid`, {}));
     if (!r?.ok) return;
-    const next = { ...emptyPosition(), ...(r.response as Record<PositionField, number>) };
+    const raw = { ...emptyPosition(), ...(r.response as Record<PositionField, number>) };
+    const next = Object.fromEntries(
+      POSITION_FIELDS.map((k) => [k, raw[k] / POSITION_SCALE[k]]),
+    ) as Record<PositionField, number>;
     (motor === 'm1' ? setM1Pos : setM2Pos)(next);
   };
 
   const readVelocity = (motor: 'm1' | 'm2') => async () => {
     const r = await run(`Read ${motor} velocity PID`, () => api.execute(`read_${motor}_velocity_pid`, {}));
     if (!r?.ok) return;
-    const next = { ...emptyVelocity(), ...(r.response as Record<VelocityField, number>) };
+    const raw = { ...emptyVelocity(), ...(r.response as Record<VelocityField, number>) };
+    const next = Object.fromEntries(
+      VELOCITY_FIELDS.map((k) => [k, raw[k] / VELOCITY_SCALE[k]]),
+    ) as Record<VelocityField, number>;
     (motor === 'm1' ? setM1Vel : setM2Vel)(next);
   };
 
   const writePosition = (motor: 'm1' | 'm2', values: Record<PositionField, number>) => async () => {
     if (!confirm(`Write Position PID to ${motor.toUpperCase()}? This changes controller flash settings.`)) return;
-    await run(`Write ${motor} position PID`, () => api.execute(`set_${motor}_position_pid`, values));
+    const scaled = Object.fromEntries(
+      POSITION_FIELDS.map((k) => [k, Math.round(values[k] * POSITION_SCALE[k])]),
+    ) as Record<PositionField, number>;
+    await run(`Write ${motor} position PID`, () => api.execute(`set_${motor}_position_pid`, scaled));
   };
 
   const writeVelocity = (motor: 'm1' | 'm2', values: Record<VelocityField, number>) => async () => {
     if (!confirm(`Write Velocity PID to ${motor.toUpperCase()}? This changes controller flash settings.`)) return;
-    await run(`Write ${motor} velocity PID`, () => api.execute(`set_${motor}_velocity_pid`, values));
+    const scaled = Object.fromEntries(
+      VELOCITY_FIELDS.map((k) => [k, Math.round(values[k] * VELOCITY_SCALE[k])]),
+    ) as Record<VelocityField, number>;
+    await run(`Write ${motor} velocity PID`, () => api.execute(`set_${motor}_velocity_pid`, scaled));
   };
 
   return (
@@ -739,6 +761,7 @@ function PidAxis({
               <span>{POSITION_LABELS[k]}</span>
               <input
                 type="number"
+                step="any"
                 value={position[k]}
                 onChange={(e) => setPosition({ ...position, [k]: Number(e.target.value) })}
               />
@@ -764,6 +787,7 @@ function PidAxis({
               <span>{VELOCITY_LABELS[k]}</span>
               <input
                 type="number"
+                step="any"
                 value={velocity[k]}
                 onChange={(e) => setVelocity({ ...velocity, [k]: Number(e.target.value) })}
               />
