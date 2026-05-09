@@ -742,7 +742,7 @@ h2.panel-header {
    Sky map
    ========================================================================= */
 
-.skymap-wrapper { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.skymap-wrapper { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
 
 .skymap-toolbar {
   position: absolute;
@@ -806,6 +806,26 @@ h2.panel-header {
 }
 .skymap-survey-btn:disabled { opacity: 0.4; }
 
+.skymap-tooltip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-md);
+  background: rgba(11, 13, 22, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.skymap-tooltip-toggle:hover { color: var(--fg); }
+.skymap-tooltip-toggle.active { color: var(--accent); border-color: var(--accent-line); }
+
 .skymap-aladin {
   flex: 1;
   min-height: 0;
@@ -841,8 +861,55 @@ h2.panel-header {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
+  object-fit: contain;
   background: #000;
+}
+
+.skymap-wrapper-swapped .cam-pip {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  border-radius: var(--r-md);
+  z-index: 4;
+}
+
+.skymap-wrapper-swapped .cam-pip-feed {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.skymap-wrapper-swapped .cam-pip-label {
+  display: none;
+}
+
+.skymap-wrapper-swapped .cam-pip-fullscreen {
+  right: auto;
+  left: 10px;
+  top: 10px;
+}
+
+.skymap-wrapper-swapped .cam-pip-live {
+  top: 10px;
+  left: 44px;
+}
+
+.skymap-wrapper-swapped .skymap-aladin {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 252px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  flex: none;
+  z-index: 10;
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+}
+
+.skymap-wrapper-swapped .skymap-toolbar,
+.skymap-wrapper-swapped .skymap-altaz-chip {
+  display: none;
 }
 
 .cam-pip-live {

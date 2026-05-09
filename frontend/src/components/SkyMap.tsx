@@ -1,17 +1,15 @@
 ﻿import A from 'aladin-lite';
-import { Layers, Maximize2, Telescope } from 'lucide-react';
+import { Info, Layers, Maximize2, Telescope } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { AltAzPoint, RaDecTarget, RoboClawTelemetry, SkyOverlay, TelescopeConfig } from '../types';
 
 // ─── Camera PIP ───────────────────────────────────────────────────────────────
 
-function CameraPip() {
+function CameraPip({ swapped, onToggleSwap }: { swapped: boolean; onToggleSwap: () => void }) {
   const [enabled, setEnabled] = useState(false);
   const [label, setLabel] = useState('Cam A');
   const [error, setError] = useState(false);
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  const pipRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetch('/api/camera/status')
@@ -25,14 +23,9 @@ function CameraPip() {
 
   if (!enabled) return null;
 
-  const goFullscreen = () => {
-    void pipRef.current?.requestFullscreen?.().catch(() => {/* user gesture or unsupported */});
-  };
-
   return (
-    <div ref={pipRef} className={`cam-pip${error ? ' cam-pip-error' : ''}`}>
+    <div className={`cam-pip${error ? ' cam-pip-error' : ''}${swapped ? ' cam-pip-swapped' : ''}`}>
       <img
-        ref={imgRef}
         className="cam-pip-feed"
         src="/api/camera/stream"
         alt="Camera feed"
@@ -47,9 +40,10 @@ function CameraPip() {
       <button
         type="button"
         className="cam-pip-fullscreen"
-        onClick={goFullscreen}
-        title="Fullscreen"
-        aria-label="Fullscreen camera"
+        onClick={onToggleSwap}
+        title={swapped ? 'Restore sky map' : 'Swap with sky map'}
+        aria-label={swapped ? 'Restore sky map' : 'Swap with sky map'}
+        aria-pressed={swapped}
       >
         <Maximize2 size={13} />
       </button>
@@ -372,6 +366,8 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
   const pendingRef      = useRef<RaDecTarget | null>(null);
   // Updated every draw frame so the hover handler can check without a loop
   const sunZoneRef      = useRef<{ cx: number; cy: number; r: number } | null>(null);
+  const beamZoneRef     = useRef<{ cx: number; cy: number; r: number; fwhm: number } | null>(null);
+  const pendingZoneRef  = useRef<{ cx: number; cy: number; r: number; fwhm: number } | null>(null);
   const beamOverlayRef = useRef<ReturnType<typeof A.graphicOverlay> | null>(null);
   const limitOverlayRef = useRef<ReturnType<typeof A.graphicOverlay> | null>(null);
   const pendingOverlayRef = useRef<ReturnType<typeof A.graphicOverlay> | null>(null);
@@ -383,7 +379,12 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
   const [ready, setReady] = useState(false);
   const [pending, setPending] = useState<RaDecTarget | null>(null);
   const [survey, setSurvey] = useState<SurveyId>('CDS/P/HI4PI/NHI');
-  const [solarTooltipPos, setSolarTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [tooltipsEnabled, setTooltipsEnabled] = useState(true);
+  const [cameraSwapped, setCameraSwapped] = useState(false);
+  const [hoverTooltip, setHoverTooltip] = useState<
+    | { kind: 'sun' | 'beam' | 'pending'; x: number; y: number; fwhm?: number }
+    | null
+  >(null);
 
   useEffect(() => { configRef.current    = config;    }, [config]);
   useEffect(() => { telemetryRef.current = telemetry; }, [telemetry]);
@@ -837,6 +838,42 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
         ctx.fillText(label, p[0], labelY);
       }
 
+      // ── FWHM ring hover zones ─────────────────────────────────────────────
+      // Project ring centres + a point one FWHM/2 away in declination so the
+      // pixel radius matches what Aladin draws for the overlay circles.
+      const fwhmDeg = configRef.current?.beam_fwhm_deg ?? 6.5;
+      beamZoneRef.current = null;
+      const tel2 = telemetryRef.current;
+      if (tel2?.altitude_deg != null && tel2?.azimuth_deg != null && configRef.current) {
+        const beamRaDec = altAzToRaDec(
+          { altitude_deg: tel2.altitude_deg, azimuth_deg: tel2.azimuth_deg },
+          configRef.current, date,
+        );
+        const pCen = aladin.world2pix(beamRaDec.ra_deg, beamRaDec.dec_deg);
+        const pEdge = aladin.world2pix(beamRaDec.ra_deg, beamRaDec.dec_deg + fwhmDeg / 2);
+        if (pCen && pEdge && isFinite(pCen[0]) && isFinite(pEdge[0])) {
+          beamZoneRef.current = {
+            cx: pCen[0], cy: pCen[1],
+            r: Math.max(6, Math.hypot(pEdge[0] - pCen[0], pEdge[1] - pCen[1])),
+            fwhm: fwhmDeg,
+          };
+        }
+      }
+
+      pendingZoneRef.current = null;
+      const pend = pendingRef.current;
+      if (pend) {
+        const pCen = aladin.world2pix(pend.ra_deg, pend.dec_deg);
+        const pEdge = aladin.world2pix(pend.ra_deg, pend.dec_deg + fwhmDeg / 2);
+        if (pCen && pEdge && isFinite(pCen[0]) && isFinite(pEdge[0])) {
+          pendingZoneRef.current = {
+            cx: pCen[0], cy: pCen[1],
+            r: Math.max(6, Math.hypot(pEdge[0] - pCen[0], pEdge[1] - pCen[1])),
+            fwhm: fwhmDeg,
+          };
+        }
+      }
+
       frameId = requestAnimationFrame(draw);
     };
 
@@ -958,22 +995,39 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
     : null;
 
   const handleSolarHover = (e: React.MouseEvent<HTMLDivElement>) => {
-    const zone = sunZoneRef.current;
-    if (!zone) { setSolarTooltipPos(null); return; }
+    if (!tooltipsEnabled) { setHoverTooltip(null); return; }
     const rect = e.currentTarget.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const inside = Math.hypot(mx - zone.cx, my - zone.cy) < zone.r;
-    setSolarTooltipPos(inside ? { x: mx, y: my } : null);
+
+    // Prefer the smallest ring under the cursor so the pending target wins
+    // when it overlaps the (larger) solar exclusion zone.
+    const candidates: { kind: 'sun' | 'beam' | 'pending'; r: number; fwhm?: number }[] = [];
+    const beam = beamZoneRef.current;
+    if (beam && Math.hypot(mx - beam.cx, my - beam.cy) < beam.r) {
+      candidates.push({ kind: 'beam', r: beam.r, fwhm: beam.fwhm });
+    }
+    const pend = pendingZoneRef.current;
+    if (pend && Math.hypot(mx - pend.cx, my - pend.cy) < pend.r) {
+      candidates.push({ kind: 'pending', r: pend.r, fwhm: pend.fwhm });
+    }
+    const sun = sunZoneRef.current;
+    if (sun && Math.hypot(mx - sun.cx, my - sun.cy) < sun.r) {
+      candidates.push({ kind: 'sun', r: sun.r });
+    }
+    if (candidates.length === 0) { setHoverTooltip(null); return; }
+    candidates.sort((a, b) => a.r - b.r);
+    const pick = candidates[0];
+    setHoverTooltip({ kind: pick.kind, x: mx, y: my, fwhm: pick.fwhm });
   };
 
   return (
-    <div className="skymap-wrapper">
+    <div className={`skymap-wrapper${cameraSwapped ? ' skymap-wrapper-swapped' : ''}`}>
       <div
         className="skymap-aladin"
         ref={containerRef}
         onMouseMove={handleSolarHover}
-        onMouseLeave={() => setSolarTooltipPos(null)}
+        onMouseLeave={() => setHoverTooltip(null)}
       >
         <canvas className="skymap-horizon-canvas" ref={horizonCanvasRef} />
 
@@ -998,6 +1052,19 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
               ))}
             </div>
           </div>
+          <button
+            type="button"
+            className={`skymap-tooltip-toggle${tooltipsEnabled ? ' active' : ''}`}
+            onClick={() => {
+              setTooltipsEnabled((v) => !v);
+              setHoverTooltip(null);
+            }}
+            title={tooltipsEnabled ? 'Hide hover tooltips' : 'Show hover tooltips'}
+            aria-pressed={tooltipsEnabled}
+          >
+            <Info size={13} />
+            Tooltips
+          </button>
         </div>
 
         {(pendingAltAz || (telemetry?.altitude_deg != null && telemetry.azimuth_deg != null)) && (
@@ -1010,24 +1077,47 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
           </div>
         )}
 
-        <CameraPip />
         {!ready && (
           <div className="skymap-loading">
             <Telescope size={24} className="skymap-loading-icon" />
             <span>Loading sky atlas</span>
           </div>
         )}
-        {solarTooltipPos && (
+        {tooltipsEnabled && hoverTooltip && (
           <div
             className="skymap-solar-tooltip"
-            style={{ left: solarTooltipPos.x + 14, top: solarTooltipPos.y + 14 }}
+            style={{ left: hoverTooltip.x + 14, top: hoverTooltip.y + 14 }}
           >
-            <strong>Range of Solar Influence</strong>
-            <p>Pointing within 15° of the Sun will likely overwhelm the hydrogen signal</p>
+            {hoverTooltip.kind === 'sun' && (
+              <>
+                <strong>Range of Solar Influence</strong>
+                <p>Pointing within 15° of the Sun will likely overwhelm the hydrogen signal</p>
+              </>
+            )}
+            {hoverTooltip.kind === 'beam' && (
+              <>
+                <strong>Telescope Beam (FWHM)</strong>
+                <p>
+                  Half-power footprint at the current pointing
+                  {hoverTooltip.fwhm != null ? ` — ${hoverTooltip.fwhm.toFixed(2)}° full width` : ''}.
+                  Sources inside this ring contribute most of the received power.
+                </p>
+              </>
+            )}
+            {hoverTooltip.kind === 'pending' && (
+              <>
+                <strong>Target Beam (FWHM)</strong>
+                <p>
+                  Projected half-power footprint at the selected target
+                  {hoverTooltip.fwhm != null ? ` — ${hoverTooltip.fwhm.toFixed(2)}° full width` : ''}.
+                </p>
+              </>
+            )}
           </div>
         )}
       </div>
 
+      <CameraPip swapped={cameraSwapped} onToggleSwap={() => setCameraSwapped((v) => !v)} />
     </div>
   );
 }
