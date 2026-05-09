@@ -337,12 +337,12 @@ function isInsideTriangle(point: AltAzPoint, triangle: AltAzPoint[]): boolean {
 const SURVEYS = [
   {
     id: 'CDS/P/HI4PI/NHI',
-    label: 'Hydrogen Line',
+    label: '21cm Hydrogen Line',
     title: 'HI4PI 21cm neutral hydrogen column density',
   },
   {
     id: 'CDS/P/Mellinger/color',
-    label: 'Milky Way',
+    label: 'Visible Light',
     title: 'Mellinger visible-light color all-sky survey',
   },
 ] as const;
@@ -1023,7 +1023,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
             style={{ left: solarTooltipPos.x + 14, top: solarTooltipPos.y + 14 }}
           >
             <strong>Range of Solar Influence</strong>
-            <p>Pointing within 15° of the Sun will likely overwhelm the hydrogen signal, but is safe to do</p>
+            <p>Pointing within 15° of the Sun will likely overwhelm the hydrogen signal</p>
           </div>
         )}
       </div>
