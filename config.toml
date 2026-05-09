@@ -21,6 +21,15 @@ alt_zero_count = 0
 goto_speed_qpps = 10000
 goto_accel_qpps2 = 25000
 goto_decel_qpps2 = 25000
+# Per-axis overrides (counts/sec, counts/sec²). M1 = azimuth, M2 = altitude.
+# Az has only ~2.78 counts/° so its QPPS values must be tiny — at 10000 QPPS
+# the controller thinks 90° = 9 ms and the motor never gets enough drive time.
+az_goto_speed_qpps = 8       # ~30 s for a 90° slew
+az_goto_accel_qpps2 = 4
+az_goto_decel_qpps2 = 4
+alt_goto_speed_qpps = 10000
+alt_goto_accel_qpps2 = 25000
+alt_goto_decel_qpps2 = 25000
 pointing_limit_altaz = []
 
 # Linear-actuator geometry for the elevation axis. When this block is present,
