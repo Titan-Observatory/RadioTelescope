@@ -128,16 +128,67 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
 
   return (
     <div className="queue-waiting">
-      <div className="queue-card">
-        <h1>You are in the queue</h1>
-        <p className="queue-position">
-          Position <strong>#{status!.position}</strong>
-          {status!.queue_length > 0 && <span> · {status!.queue_length} waiting</span>}
-        </p>
-        <div className="queue-placeholder">
-          {/* Placeholder content area — fill in later. */}
+      <header className="queue-header">
+        <div className="queue-header-inner">
+          <div className="queue-header-title">
+            <h1>You are in the queue</h1>
+            <p className="queue-header-sub">Hold tight — you'll get control when it's your turn.</p>
+          </div>
+          <div className="queue-header-status">
+            <span className="queue-header-label">Position</span>
+            <strong className="queue-header-position">#{status!.position}</strong>
+            {status!.queue_length > 0 && (
+              <span className="queue-header-waiting">{status!.queue_length} waiting</span>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
+
+      <main className="queue-content">
+        <section className="queue-section" aria-labelledby="how-to-use-heading">
+          <header className="queue-section-header">
+            <h2 id="how-to-use-heading">How to use the radio telescope</h2>
+            <p className="queue-section-lede">{/* Short intro paragraph goes here. */}</p>
+          </header>
+          <div className="queue-section-body">
+            <article className="queue-block">
+              <h3>{/* Subsection heading */}</h3>
+              <div className="queue-block-body">{/* Body content */}</div>
+            </article>
+            <article className="queue-block">
+              <h3>{/* Subsection heading */}</h3>
+              <div className="queue-block-body">{/* Body content */}</div>
+            </article>
+            <article className="queue-block">
+              <h3>{/* Subsection heading */}</h3>
+              <div className="queue-block-body">{/* Body content */}</div>
+            </article>
+          </div>
+        </section>
+
+        <section className="queue-section" aria-labelledby="hydrogen-line-heading">
+          <header className="queue-section-header">
+            <h2 id="hydrogen-line-heading">The hydrogen line</h2>
+            <p className="queue-section-lede">{/* Short intro paragraph goes here. */}</p>
+          </header>
+          <div className="queue-section-body">
+            <article className="queue-block">
+              <h3>{/* What is it? */}</h3>
+              <div className="queue-block-body">{/* Body content */}</div>
+            </article>
+            <article className="queue-block">
+              <h3>{/* Why does it matter? */}</h3>
+              <div className="queue-block-body">{/* Body content */}</div>
+            </article>
+            <article className="queue-block queue-block-wide">
+              <h3>{/* What you'll see in the spectrum */}</h3>
+              <div className="queue-block-body queue-block-media">
+                {/* Image, diagram, or extended explanation */}
+              </div>
+            </article>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }

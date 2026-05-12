@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -25,6 +26,8 @@ async def spectrum_status(request: Request):
     if service is None:
         return {"enabled": False, "mode": "disabled"}
     cfg = request.app.state.config.sdr
+    latest = service.latest
+    latest_timestamp = latest.get("timestamp") if latest else None
     return {
         "enabled": cfg.enabled,
         "mode": service.mode,
@@ -33,6 +36,10 @@ async def spectrum_status(request: Request):
         "fft_size": cfg.fft_size,
         "integration_frames": cfg.integration_frames,
         "publish_rate_hz": cfg.publish_rate_hz,
+        "latest_timestamp": latest_timestamp,
+        "latest_frame_age_s": (time.time() - latest_timestamp) if latest_timestamp else None,
+        "latest_frames_seen": service.frames_seen,
+        "subscriber_count": service.subscriber_count,
     }
 
 

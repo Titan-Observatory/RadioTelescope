@@ -59,6 +59,14 @@ class SpectrumService:
     def latest(self) -> SpectrumFrame | None:
         return self._latest
 
+    @property
+    def frames_seen(self) -> int:
+        return self._frames_seen
+
+    @property
+    def subscriber_count(self) -> int:
+        return len(self._subscribers)
+
     async def start(self) -> None:
         await self._rx.open()
         self._task = asyncio.create_task(self._run())

@@ -2,7 +2,7 @@ import './styles/main.css';
 
 import {
   Activity, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Cpu, Crosshair, Download, Gauge, Home, LogOut, Map, Navigation, Square,
+  Cpu, Crosshair, Download, Gauge, HelpCircle, Home, LogOut, Navigation,
   Thermometer, Upload, Zap,
 } from 'lucide-react';
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,11 +13,12 @@ import { BRAND } from './branding';
 import { SkyMap } from './components/SkyMap';
 import { SpectrumPanel } from './components/SpectrumPanel';
 import { QueuePage } from './components/QueuePage';
+import { startTour, maybePromptFirstVisit } from './tour';
 import {
   fetchQueueConfig, fetchQueueStatus, joinQueue, leaveQueue,
   type QueueConfig, type QueueStatus,
 } from './queue';
-import type { CommandInfo, MotorSnapshot, RoboClawTelemetry, TelescopeConfig } from './types';
+import type { CommandInfo, RoboClawTelemetry, TelescopeConfig } from './types';
 
 // Apply branding to the document head so favicon + title share the same source as the TopBar.
 document.title = `${BRAND.name} · ${BRAND.tagline}`;
@@ -53,6 +54,7 @@ function App() {
   const [queueConfig, setQueueConfig] = useState<QueueConfig | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [statusOverlayOpen, setStatusOverlayOpen] = useState(false);
   const nextErrorId = useRef(1);
 
   const logEvent = (source: string, message: string) => {
@@ -175,16 +177,6 @@ function App() {
     }
   };
 
-  const stopAll = async () => {
-    setNotice(null);
-    try {
-      await api.stop();
-      setTelemetry(await api.status());
-    } catch (err) {
-      setNotice(errorMessage(err));
-    }
-  };
-
   const gotoAltAz = async (altDeg: number, azDeg: number) => {
     setNotice(null);
     try {
@@ -252,6 +244,14 @@ function App() {
   const queueEnabled = queueConfig?.enabled ?? false;
   const isActiveController = !queueEnabled || queueStatus?.is_active === true;
 
+  // Offer the first-visit guided tour once the user actually has the controls
+  // in front of them — no point prompting while they're still on the queue page.
+  useEffect(() => {
+    if (!isActiveController) return;
+    const t = setTimeout(() => maybePromptFirstVisit(), 600);
+    return () => clearTimeout(t);
+  }, [isActiveController]);
+
   if (queueEnabled && !isActiveController) {
     return (
       <QueuePage
@@ -294,18 +294,42 @@ function App() {
       {errorLog.length > 0 && <ErrorLog entries={errorLog} onClear={() => setErrorLog([])} />}
 
       <main className="dashboard">
+        <section className="panel skymap-panel">
+          <SkyMap telemetry={telemetry} config={telescopeConfig} onNotice={setNotice} onTarget={handleMapTarget} />
+          <div className={`skymap-bottom-dock${statusOverlayOpen ? ' status-open' : ''}`}>
+            <div className="skymap-overlay-controls">
+              <JogControls runCommand={runCommand} />
+            </div>
+            <button
+              type="button"
+              className="status-overlay-toggle"
+              onClick={() => setStatusOverlayOpen((open) => !open)}
+              aria-expanded={statusOverlayOpen}
+              aria-controls="skymap-status-overlay"
+              title={statusOverlayOpen ? 'Collapse status panel' : 'Expand status panel'}
+            >
+              {statusOverlayOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+            </button>
+            <section
+              id="skymap-status-overlay"
+              className="status-overlay-panel"
+              aria-hidden={!statusOverlayOpen}
+            >
+              <TelemetryDashboard telemetry={telemetry} compact />
+            </section>
+          </div>
+        </section>
+        <div className="dashboard-rightcol">
+          <section className="panel spectrum-panel-host">
+            <SpectrumPanel />
+          </section>
+          <section className="panel goto-panel">
+            <GotoForm gotoAltAz={gotoAltAz} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
+          </section>
+        </div>
         <section className="panel controls-panel">
-          <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
-          <SpectrumPanel />
           <AdminPanel syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} zeroAltitude={zeroAltitude} targetAz={targetAz} targetAlt={targetAlt} />
           <PidTuningPanel onNotice={setNotice} />
-        </section>
-        <section className="panel skymap-panel">
-          <PanelHeader icon={<Map size={14} />} title="Sky Map" />
-          <SkyMap telemetry={telemetry} config={telescopeConfig} onNotice={setNotice} onTarget={handleMapTarget} />
-        </section>
-        <section className="panel telemetry-panel">
-          <TelemetryDashboard telemetry={telemetry} />
         </section>
       </main>
     </div>
@@ -338,13 +362,6 @@ function formatSeconds(s: number): string {
 
 // ─── TopBar ──────────────────────────────────────────────────────────────────
 
-const MODE_LABEL: Record<string, string> = {
-  serial: 'Connected',
-  simulated: 'Demo',
-  error: 'Disconnected',
-  loading: 'Connecting',
-};
-
 function TopBar({
   telemetry,
   leaseStatus,
@@ -365,11 +382,18 @@ function TopBar({
       </a>
       <div className="topbar-status">
         {leaseStatus && <LeaseChip status={leaseStatus} onLeave={onLeaveLease} />}
-        <StatusPill telemetry={telemetry} />
-        <span className="topbar-time" title="Time at the telescope (UTC)">
+        <button
+          type="button"
+          className="topbar-help"
+          onClick={() => startTour()}
+          title="Take a guided tour of the controls"
+        >
+          <HelpCircle size={14} /> Tour
+        </button>
+        <span className="topbar-time" title="Time at the telescope (EST)">
           <span className="topbar-time-label">Telescope time</span>
           {telemetry
-            ? `${new Date(telemetry.timestamp * 1000).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour12: false })} UTC`
+            ? `${new Date(telemetry.timestamp * 1000).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour12: false })} EST`
             : '—'}
         </span>
       </div>
@@ -377,64 +401,14 @@ function TopBar({
   );
 }
 
-function StatusPill({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const mode = telemetry?.connection?.mode ?? 'loading';
-  const poll = telemetry?.poll;
-
-  let pollLevel: 'ok' | 'warn' | 'bad' = 'ok';
-  if (poll) {
-    const ageMs = poll.last_tick_age_s != null ? poll.last_tick_age_s * 1000 : null;
-    const staleThresholdMs = (1000 / poll.target_hz) * 2;
-    const isStale = ageMs != null && ageMs > staleThresholdMs;
-    if (isStale || poll.actual_hz == null) pollLevel = 'bad';
-    else if (poll.actual_hz < poll.target_hz * 0.7) pollLevel = 'warn';
-    else if (poll.actual_hz < poll.target_hz * 0.4) pollLevel = 'bad';
-  }
-
-  const dotLevel = mode === 'error' ? 'bad' : mode === 'loading' ? 'loading' : pollLevel;
-
-  return (
-    <span className={`status-pill status-pill-${dotLevel}`}>
-      <span className="poll-dot" />
-      {MODE_LABEL[mode] ?? mode}
-      <span className="status-pill-popover">
-        <span className="status-pill-row">
-          <span className="status-pill-key">Connection</span>
-          <span className="status-pill-val">{mode}</span>
-        </span>
-        {poll && (
-          <>
-            <span className="status-pill-row">
-              <span className="status-pill-key">Poll rate</span>
-              <span className="status-pill-val">
-                {poll.actual_hz != null ? `${poll.actual_hz.toFixed(1)} Hz` : '— Hz'}
-                <span className="status-pill-muted"> / {poll.target_hz} Hz target</span>
-              </span>
-            </span>
-            {poll.last_tick_age_s != null && (
-              <span className="status-pill-row">
-                <span className="status-pill-key">Last tick</span>
-                <span className="status-pill-val">{poll.last_tick_age_s.toFixed(1)} s ago</span>
-              </span>
-            )}
-          </>
-        )}
-      </span>
-    </span>
-  );
-}
-
 // ─── Panel header ─────────────────────────────────────────────────────────────
 
-function PanelHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
+type HeaderAccent = 'amber' | 'teal' | 'peri' | 'crit';
+
+function PanelHeader({ icon, title, accent }: { icon: React.ReactNode; title: string; accent?: HeaderAccent }) {
+  const accentClass = accent ? ` head-${accent}` : '';
   return (
-    <h2 className="panel-header">
+    <h2 className={`panel-header${accentClass}`}>
       <span className="panel-header-icon">{icon}</span>
       {title}
     </h2>
@@ -484,19 +458,28 @@ function ErrorLog({ entries, onClear }: { entries: ErrorLogEntry[]; onClear: () 
 
 // ─── Telescope controls ───────────────────────────────────────────────────────
 
-function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt }: {
-  telemetry: RoboClawTelemetry | null;
+function JogControls({ runCommand }: {
   runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
-  stopAll: () => Promise<void>;
+}) {
+  const [slewSpeed, setSlewSpeed] = useState(40);
+  const speed = Math.round(slewSpeed * 127 / 100);
+  return (
+    <>
+      <PanelHeader icon={<Gauge size={14} />} title="Pointing" accent="teal" />
+      <div className="motion-card">
+        <PointingPad runCommand={runCommand} speed={speed} />
+        <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={setSlewSpeed} />
+      </div>
+    </>
+  );
+}
+function GotoForm({ gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt }: {
   gotoAltAz: (alt: number, az: number) => Promise<void>;
   targetAz: number;
   targetAlt: number;
   setTargetAz: (v: number) => void;
   setTargetAlt: (v: number) => void;
 }) {
-  const [slewSpeed, setSlewSpeed] = useState(40);
-  const speed = Math.round(slewSpeed * 127 / 100);
-
   const submitTarget = async (e: FormEvent) => {
     e.preventDefault();
     await gotoAltAz(targetAlt, targetAz);
@@ -504,54 +487,57 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, targetAz
 
   return (
     <>
-      <PanelHeader icon={<Gauge size={14} />} title="Pointing" />
-      <div className="controls-grid">
-        <AxisControl
-          title="Azimuth"
-          negativeLabel="West"
-          positiveLabel="East"
-          negativeIcon={<ChevronLeft size={20} />}
-          positiveIcon={<ChevronRight size={20} />}
-          motor={telemetry?.motors.m1}
-          onNegativeStart={() => runCommand('backward_m1', { speed })}
-          onNegativeStop={() => runCommand('backward_m1', { speed: 0 })}
-          onPositiveStart={() => runCommand('forward_m1', { speed })}
-          onPositiveStop={() => runCommand('forward_m1', { speed: 0 })}
-        />
-        <AxisControl
-          title="Elevation"
-          negativeLabel="Down"
-          positiveLabel="Up"
-          negativeIcon={<ChevronDown size={20} />}
-          positiveIcon={<ChevronUp size={20} />}
-          motor={telemetry?.motors.m2}
-          onNegativeStart={() => runCommand('backward_m2', { speed })}
-          onNegativeStop={() => runCommand('backward_m2', { speed: 0 })}
-          onPositiveStart={() => runCommand('forward_m2', { speed })}
-          onPositiveStop={() => runCommand('forward_m2', { speed: 0 })}
-        />
-        <div className="speed-control">
-          <label>
-            <span>Slew speed</span>
-            <strong>{slewSpeed}%</strong>
-            <input type="range" min={1} max={100} value={slewSpeed} onChange={(e) => setSlewSpeed(Number(e.target.value))} />
-          </label>
-          <button className="stop-button" onClick={() => void stopAll()}>
-            <Square size={14} fill="currentColor" /> Stop
-          </button>
-        </div>
-        <form className="target-form" onSubmit={submitTarget}>
-          <label><span>Azimuth °</span><input type="number" min={0} max={360} step={0.001} value={targetAz} onChange={(e) => setTargetAz(Number(e.target.value))} /></label>
-          <label><span>Altitude °</span><input type="number" min={0} max={90} step={0.001} value={targetAlt} onChange={(e) => setTargetAlt(Number(e.target.value))} /></label>
-          <button type="submit" className="action-button"><Navigation size={14} /> Slew </button>
-        </form>
-      </div>
+      <PanelHeader icon={<Navigation size={14} />} title="Manual GoTo" accent="teal" />
+      <form className="target-form" onSubmit={submitTarget}>
+        <label><span>Azimuth °</span><input type="number" min={0} max={360} step={0.001} value={targetAz} onChange={(e) => setTargetAz(Number(e.target.value))} /></label>
+        <label><span>Altitude °</span><input type="number" min={0} max={90} step={0.001} value={targetAlt} onChange={(e) => setTargetAlt(Number(e.target.value))} /></label>
+        <button type="submit" className="action-button"><Navigation size={14} /> Slew </button>
+      </form>
     </>
   );
 }
 
-// ─── Admin panel ─────────────────────────────────────────────────────────────
+const SPEED_PRESETS: { id: 'fine' | 'coarse' | 'slew'; label: string; value: number }[] = [
+  { id: 'slew',   label: 'Slew',   value: 85 },
+  { id: 'coarse', label: 'Coarse', value: 40 },
+  { id: 'fine',   label: 'Fine',   value: 10 },
+];
 
+function SpeedFader({ slewSpeed, setSlewSpeed }: {
+  slewSpeed: number;
+  setSlewSpeed: (n: number) => void;
+}) {
+  // Snap to the nearest preset for visual selection.
+  const active = SPEED_PRESETS.reduce((best, p) =>
+    Math.abs(p.value - slewSpeed) < Math.abs(best.value - slewSpeed) ? p : best,
+  SPEED_PRESETS[0]);
+
+  return (
+    <div className="speed-notch" role="radiogroup" aria-label="Slew speed">
+      <span className="speed-notch-label">Speed</span>
+      <div className="speed-notch-track">
+        {SPEED_PRESETS.map((p) => {
+          const selected = p.id === active.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              className={`speed-notch-step speed-notch-${p.id}${selected ? ' is-active' : ''}`}
+              onClick={() => setSlewSpeed(p.value)}
+            >
+              <span className="speed-notch-bar" aria-hidden />
+              <span className="speed-notch-text">{p.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Admin panel
 function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, zeroAltitude, targetAz, targetAlt }: {
   syncAltAz: (alt: number, az: number) => Promise<void>;
   homeElevation: () => Promise<void>;
@@ -568,7 +554,7 @@ function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, zeroAltitude, targe
   };
 
   return (
-    <details className="admin-panel">
+    <details className="admin-panel" data-tour="calibration">
       <summary className="admin-panel-summary">
         <Cpu size={13} /> Calibration &amp; Homing
       </summary>
@@ -701,7 +687,7 @@ function PidTuningPanel({ onNotice }: { onNotice: (msg: string | null) => void }
   };
 
   return (
-    <details className="admin-panel">
+    <details className="admin-panel" data-tour="pid">
       <summary className="admin-panel-summary">
         <Cpu size={13} /> PID Tuning
       </summary>
@@ -805,50 +791,39 @@ function PidAxis({
   );
 }
 
-// ─── Axis control ─────────────────────────────────────────────────────────────
+// ─── Pointing pad + axis status ───────────────────────────────────────────────
 
 // RoboClaw's firmware serial-timeout failsafe stops the motors if no command
 // arrives within ~1 s. Re-issuing the drive command at this cadence is safely
 // inside that window while still being light on the bus.
 const JOG_REPEAT_MS = 200;
 
-function AxisControl({ title, negativeLabel, positiveLabel, negativeIcon, positiveIcon, motor, onNegativeStart, onNegativeStop, onPositiveStart, onPositiveStop }: {
-  title: string;
-  negativeLabel: string;
-  positiveLabel: string;
-  negativeIcon: React.ReactNode;
-  positiveIcon: React.ReactNode;
-  motor: MotorSnapshot | undefined;
-  onNegativeStart: () => Promise<void>;
-  onNegativeStop: () => Promise<void>;
-  onPositiveStart: () => Promise<void>;
-  onPositiveStop: () => Promise<void>;
+function PointingPad({ runCommand, speed }: {
+  runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
+  speed: number;
 }) {
-  const currentCls = currentClass(motor?.current_a);
-  const negativeJog = useJog(onNegativeStart, onNegativeStop);
-  const positiveJog = useJog(onPositiveStart, onPositiveStop);
+  const west = useJog(() => runCommand('backward_m1', { speed }), () => runCommand('backward_m1', { speed: 0 }));
+  const east = useJog(() => runCommand('forward_m1',  { speed }), () => runCommand('forward_m1',  { speed: 0 }));
+  const down = useJog(() => runCommand('backward_m2', { speed }), () => runCommand('backward_m2', { speed: 0 }));
+  const up   = useJog(() => runCommand('forward_m2',  { speed }), () => runCommand('forward_m2',  { speed: 0 }));
 
   return (
-    <div className="axis-compact">
-      <div className="axis-title">
-        <h2>{title}</h2>
-        <span className={`axis-current ${currentCls}`}>
-          {motor?.current_a == null ? '—' : `${motor.current_a.toFixed(2)} A`}
-        </span>
-      </div>
-      <div className="axis-actions">
-        <button type="button" {...negativeJog} className={negativeJog.active ? 'jog-active' : ''}>{negativeIcon}{negativeLabel}</button>
-        <button type="button" {...positiveJog} className={positiveJog.active ? 'jog-active' : ''}>{positiveIcon}{positiveLabel}</button>
-      </div>
-      <DenseReadout rows={[
-        ['PWM output',       value(motor?.pwm)],
-        ['Encoder position', encoder(motor?.encoder)],
-        ['Encoder speed',    qpps(motor?.speed_qpps)],
-      ]} />
+    <div className="pointing-pad" role="group" aria-label="Pointing controls">
+      <button type="button" className={`pad-btn pad-up${up.active ? ' jog-active' : ''}`} {...up}>
+        <ChevronUp size={18} /><span>Up</span>
+      </button>
+      <button type="button" className={`pad-btn pad-west${west.active ? ' jog-active' : ''}`} {...west}>
+        <ChevronLeft size={18} /><span>West</span>
+      </button>
+      <button type="button" className={`pad-btn pad-east${east.active ? ' jog-active' : ''}`} {...east}>
+        <ChevronRight size={18} /><span>East</span>
+      </button>
+      <button type="button" className={`pad-btn pad-down${down.active ? ' jog-active' : ''}`} {...down}>
+        <ChevronDown size={18} /><span>Down</span>
+      </button>
     </div>
   );
 }
-
 // Hook: turn a button into a press-and-hold jog. Reissues `start` every
 // JOG_REPEAT_MS while pressed, sends `stop` on release / pointer-leave /
 // cancel / unmount. We avoid setPointerCapture so dragging off the button
@@ -895,10 +870,15 @@ function useJog(start: () => Promise<void>, stop: () => Promise<void>) {
 
 // ─── Telemetry dashboard ─────────────────────────────────────────────────────
 
-function TelemetryDashboard({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
+function TelemetryDashboard({ telemetry, compact = false }: { telemetry: RoboClawTelemetry | null; compact?: boolean }) {
   return (
     <>
-      <PanelHeader icon={<Activity size={14} />} title="Status" />
+      <PanelHeader icon={<Activity size={14} />} title="Status" accent="peri" />
+      {compact && (
+        <span className={`status-overlay-health ${telemetry?.connection?.connected === false ? 'bad' : 'ok'}`}>
+          {telemetry?.connection?.connected === false ? 'Issue' : 'Stable'}
+        </span>
+      )}
       <div className="telemetry-dense">
         <DenseReadout title="Power" icon={<Zap size={11} />} rows={[
           ['Battery',     volts(telemetry?.main_battery_v),   voltClass(telemetry?.main_battery_v)],
@@ -907,26 +887,23 @@ function TelemetryDashboard({ telemetry }: { telemetry: RoboClawTelemetry | null
         <DenseReadout title="Temperature" icon={<Thermometer size={11} />} rows={[
           ['Controller', celsius(telemetry?.temperature_c),   tempClass(telemetry?.temperature_c)],
           ['Driver',     celsius(telemetry?.temperature_2_c), tempClass(telemetry?.temperature_2_c)],
+          ['Raspberry Pi', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
         ]} />
-        <DenseReadout title="Raspberry Pi" icon={<Cpu size={11} />} rows={[
-          ['CPU temp', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
-          ['CPU load', load(telemetry)],
-          ['Memory',   percent(telemetry?.host.memory_used_percent)],
-          ['Disk',     disk(telemetry)],
-          ['Uptime',   duration(telemetry?.host.uptime_s)],
-        ]} />
-        <DenseReadout title="Azimuth Motor" rows={[
-          ['Encoder position', encoder(telemetry?.motors.m1?.encoder)],
-          ['Encoder speed',    qpps(telemetry?.motors.m1?.speed_qpps)],
-          ['PWM output',       value(telemetry?.motors.m1?.pwm)],
-          ['Motor current',    telemetry?.motors.m1?.current_a == null ? '—' : `${telemetry.motors.m1.current_a.toFixed(2)} A`],
-        ]} />
-        <DenseReadout title="Elevation Motor" rows={[
-          ['Encoder position', encoder(telemetry?.motors.m2?.encoder)],
-          ['Encoder speed',    qpps(telemetry?.motors.m2?.speed_qpps)],
-          ['PWM output',       value(telemetry?.motors.m2?.pwm)],
-          ['Motor current',    telemetry?.motors.m2?.current_a == null ? '—' : `${telemetry.motors.m2.current_a.toFixed(2)} A`],
-        ]} />
+        <DualReadout
+          title="Motors"
+          columns={['Azimuth', 'Elevation']}
+          rows={[
+            ['Angle',
+              telemetry?.azimuth_deg == null ? '—' : `${telemetry.azimuth_deg.toFixed(2)}°`,
+              telemetry?.altitude_deg == null ? '—' : `${telemetry.altitude_deg.toFixed(2)}°`],
+            ['Encoder position', encoder(telemetry?.motors.m1?.encoder), encoder(telemetry?.motors.m2?.encoder)],
+            ['Encoder speed',    qpps(telemetry?.motors.m1?.speed_qpps), qpps(telemetry?.motors.m2?.speed_qpps)],
+            ['PWM output',       value(telemetry?.motors.m1?.pwm),       value(telemetry?.motors.m2?.pwm)],
+            ['Motor current',
+              telemetry?.motors.m1?.current_a == null ? '—' : `${telemetry.motors.m1.current_a.toFixed(2)} A`,
+              telemetry?.motors.m2?.current_a == null ? '—' : `${telemetry.motors.m2.current_a.toFixed(2)} A`],
+          ]}
+        />
       </div>
     </>
   );
@@ -935,6 +912,28 @@ function TelemetryDashboard({ telemetry }: { telemetry: RoboClawTelemetry | null
 // ─── Dense readout ────────────────────────────────────────────────────────────
 
 type ReadoutRow = [label: string, value: string, valueClass?: string];
+
+type DualRow = [label: string, valueA: string, valueB: string];
+
+function DualReadout({ title, columns, rows }: { title: string; columns: [string, string]; rows: DualRow[] }) {
+  return (
+    <div className="dense-readout dense-readout-dual">
+      <h3>{title}</h3>
+      <div className="dual-grid">
+        <span className="dual-head" />
+        <span className="dual-head">{columns[0]}</span>
+        <span className="dual-head">{columns[1]}</span>
+        {rows.map(([label, a, b]) => (
+          <React.Fragment key={label}>
+            <span className="dual-label">{label}</span>
+            <span className="dual-val">{a}</span>
+            <span className="dual-val">{b}</span>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function DenseReadout({ title, icon, rows }: { title?: string; icon?: React.ReactNode; rows: ReadoutRow[] }) {
   return (
@@ -979,34 +978,6 @@ function qpps(input: number | null | undefined): string {
   return input == null ? '—' : input.toLocaleString();
 }
 
-function percent(input: number | null | undefined): string {
-  return input == null ? '—' : `${input.toFixed(1)}%`;
-}
-
-function load(telemetry: RoboClawTelemetry | null): string {
-  const host = telemetry?.host;
-  if (!host || host.load_1m == null) return '—';
-  const cores = host.cpu_count ? ` / ${host.cpu_count}c` : '';
-  return `${host.load_1m.toFixed(2)}${cores}`;
-}
-
-function disk(telemetry: RoboClawTelemetry | null): string {
-  const host = telemetry?.host;
-  if (!host || host.disk_used_percent == null || host.disk_free_gb == null) return '—';
-  return `${host.disk_used_percent.toFixed(1)}% · ${host.disk_free_gb.toFixed(1)} GB free`;
-}
-
-function duration(input: number | null | undefined): string {
-  if (input == null) return '—';
-  const mins = Math.floor(input / 60);
-  const days = Math.floor(mins / 1440);
-  const hours = Math.floor((mins % 1440) / 60);
-  const minutes = mins % 60;
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
 // ─── Status classifiers ──────────────────────────────────────────────────────
 
 function voltClass(v: number | null | undefined): string {
@@ -1020,13 +991,6 @@ function tempClass(c: number | null | undefined): string {
   if (c == null) return '';
   if (c > 75) return 'val-crit';
   if (c > 60) return 'val-warn';
-  return '';
-}
-
-function currentClass(a: number | null | undefined): string {
-  if (a == null) return '';
-  if (a > 5) return 'val-crit';
-  if (a > 3) return 'val-warn';
   return '';
 }
 
