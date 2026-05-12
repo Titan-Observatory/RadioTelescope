@@ -1,15 +1,15 @@
 [general]
 log_level = "INFO"
 
-# [hardware]
+[hardware]
 # Where the motors + SDR live relative to this process.
 #   local           — everything on one box (default; today's behaviour)
 #   gateway-server  — this box owns the hardware; web UI runs elsewhere
 #   gateway-client  — this box runs the web UI and DSP; hardware lives on a
 #                     remote gateway-server reachable on the LAN
-# mode = "local"
-# gateway_host = "10.0.27.2"
-# gateway_port = 8000
+mode = "gateway-client"
+gateway_host = "10.0.0.10"
+gateway_port = 8000
 
 [roboclaw]
 port = "/dev/ttyACM0"
@@ -90,7 +90,7 @@ allowed_clients = ["127.0.0.1", "::1", "10.0.27.1", "10.0.27.2", "10.0.207.217"]
 trusted_proxies = ["127.0.0.1", "::1"]
 
 [queue]
-enabled = true
+enabled = false
 max_session_seconds = 600   # 10 min hard cap on a control lease
 idle_timeout_seconds = 60   # release the lease after 60 s of no commands
 max_queue_size = 100

@@ -2,9 +2,21 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["spectrum"])
+
+
+class IntegrationUpdate(BaseModel):
+    frames: int = Field(ge=1, le=4096)
+
+
+def _service(request: Request):
+    service = getattr(request.app.state, "spectrum_service", None)
+    if service is None:
+        raise HTTPException(404, "Spectrum service is not running on this host")
+    return service
 
 
 @router.get("/api/spectrum/status")
@@ -22,6 +34,42 @@ async def spectrum_status(request: Request):
         "integration_frames": cfg.integration_frames,
         "publish_rate_hz": cfg.publish_rate_hz,
     }
+
+
+@router.get("/api/spectrum/baseline")
+async def get_baseline(request: Request):
+    service = _service(request)
+    baseline = service.load_baseline()
+    if baseline is None:
+        raise HTTPException(404, "No baseline has been captured yet")
+    return baseline
+
+
+@router.post("/api/spectrum/baseline")
+async def capture_baseline(request: Request):
+    service = _service(request)
+    baseline = service.capture_baseline()
+    if baseline is None:
+        raise HTTPException(409, "No spectrum frame is available yet to capture")
+    return baseline
+
+
+@router.post("/api/spectrum/integration")
+async def set_integration(body: IntegrationUpdate, request: Request):
+    n = _service(request).set_integration_frames(body.frames)
+    return {"integration_frames": n}
+
+
+@router.post("/api/spectrum/reset")
+async def reset_integration(request: Request):
+    _service(request).reset_integration()
+    return {"ok": True}
+
+
+@router.delete("/api/spectrum/baseline")
+async def clear_baseline(request: Request):
+    _service(request).clear_baseline()
+    return {"ok": True}
 
 
 @router.websocket("/ws/spectrum")

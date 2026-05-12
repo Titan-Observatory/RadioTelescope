@@ -7,14 +7,20 @@ subscribers over an asyncio.Queue (drop-oldest on full).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
-from typing import Iterable
+from pathlib import Path
+from typing import Any, Iterable
 
 import numpy as np
 
 from radiotelescope.config import SDRConfig
 from radiotelescope.hardware.sdr import SDRReceiver
+
+# Baseline cache lives next to where the server was launched so it survives
+# restarts. Small JSON file — a couple thousand floats.
+BASELINE_CACHE = Path("spectrum_baseline.json")
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +37,12 @@ class SpectrumService:
         self._subscribers: list[asyncio.Queue[SpectrumFrame]] = []
         self._latest: SpectrumFrame | None = None
         self._integrated: np.ndarray | None = None
+        self._frames_seen: int = 0
         self._window = np.hanning(cfg.fft_size).astype(np.float32)
         self._freqs_mhz = self._build_freq_axis()
+        # Duration of one FFT in seconds — `fft_size` samples at the configured
+        # sample rate. Used to translate frame counts into real time on the UI.
+        self._frame_duration_s: float = cfg.fft_size / cfg.sample_rate_hz
 
     def _build_freq_axis(self) -> np.ndarray:
         """FFT-shifted frequency axis in MHz, centred on `center_freq_hz`."""
@@ -77,9 +87,65 @@ class SpectrumService:
         except ValueError:
             pass
 
+    # ── Baseline capture / load / clear ──────────────────────────────────
+    #
+    # A captured baseline is a single integrated spectrum the user marks as
+    # "reference" — typically a cold-sky / off-source scan. The frontend
+    # subtracts it from the live trace to flatten the bandpass shape so the
+    # 21 cm line stands out. We just store it; the subtraction happens on
+    # the client side.
+
+    def capture_baseline(self) -> dict[str, Any] | None:
+        latest = self._latest
+        if latest is None:
+            return None
+        baseline = {
+            "captured_at": time.time(),
+            "center_freq_mhz": latest["center_freq_mhz"],
+            "sample_rate_mhz": latest["sample_rate_mhz"],
+            "integration_frames": latest["integration_frames"],
+            "freqs_mhz": list(latest["freqs_mhz"]),
+            "power_db": list(latest["power_db"]),
+        }
+        try:
+            BASELINE_CACHE.write_text(json.dumps(baseline))
+        except Exception:
+            logger.exception("Failed to persist baseline to %s", BASELINE_CACHE)
+        return baseline
+
+    def load_baseline(self) -> dict[str, Any] | None:
+        if not BASELINE_CACHE.exists():
+            return None
+        try:
+            return json.loads(BASELINE_CACHE.read_text())
+        except Exception:
+            logger.exception("Failed to read baseline from %s", BASELINE_CACHE)
+            return None
+
+    def clear_baseline(self) -> None:
+        try:
+            BASELINE_CACHE.unlink(missing_ok=True)
+        except Exception:
+            logger.exception("Failed to remove baseline cache %s", BASELINE_CACHE)
+
+    # ── Integration controls ─────────────────────────────────────────────
+    #
+    # The rolling EMA window can be changed live (changes the smoothing rate
+    # going forward; doesn't disturb the current accumulator). The frame
+    # counter and accumulator can be reset together to start a fresh
+    # integration.
+
+    def set_integration_frames(self, n: int) -> int:
+        n = max(1, min(int(n), 4096))
+        self._cfg.integration_frames = n
+        return n
+
+    def reset_integration(self) -> None:
+        self._integrated = None
+        self._frames_seen = 0
+
     async def _run(self) -> None:
         cfg = self._cfg
-        alpha = 1.0 / cfg.integration_frames
         publish_interval = 1.0 / cfg.publish_rate_hz
         last_publish = 0.0
         try:
@@ -92,10 +158,14 @@ class SpectrumService:
                 # Avoid log(0); the FFT magnitudes never quite hit zero in practice
                 # but a floor keeps the y-axis tidy when the gain is low.
                 power = np.maximum(power, 1e-12)
+                # Recompute alpha each iteration so live changes to
+                # `integration_frames` (from the UI) take effect immediately.
+                alpha = 1.0 / max(cfg.integration_frames, 1)
                 if self._integrated is None:
                     self._integrated = power
                 else:
                     self._integrated = (1.0 - alpha) * self._integrated + alpha * power
+                self._frames_seen += 1
 
                 now = time.monotonic()
                 if now - last_publish < publish_interval:
@@ -117,6 +187,9 @@ class SpectrumService:
             center_freq_mhz=self._cfg.center_freq_hz / 1e6,
             sample_rate_mhz=self._cfg.sample_rate_hz / 1e6,
             integration_frames=self._cfg.integration_frames,
+            frames_seen=self._frames_seen,
+            frame_duration_s=self._frame_duration_s,
+            integration_seconds=self._frames_seen * self._frame_duration_s,
             mode=self._rx.mode,
             freqs_mhz=self._freqs_mhz.tolist(),
             power_db=power_db.astype(np.float32).round(3).tolist(),

@@ -29,7 +29,10 @@ function CameraPip({ swapped, onToggleSwap }: { swapped: boolean; onToggleSwap: 
         className="cam-pip-feed"
         src="/api/camera/stream"
         alt="Camera feed"
-        onError={() => setError(true)}
+        onError={() => {
+          setError(true);
+          setEnabled(false);
+        }}
         onLoad={() => setError(false)}
       />
       {error ? (

@@ -474,20 +474,133 @@ input:focus-visible {
   padding-top: 16px;
   border-top: 1px solid var(--hairline);
 }
-.spectrum-section .panel-header { margin-bottom: 8px; }
-.spectrum-meta {
-  display: inline-flex;
-  gap: 6px;
-  margin-left: 8px;
-  font-size: 11px;
+.spectrum-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.spectrum-head .panel-header { margin: 0; }
+.spectrum-sub {
+  margin: 0;
+  font-size: 12px;
   font-weight: 400;
   color: var(--fg-subtle);
-  letter-spacing: 0;
 }
-.spectrum-disconnected { color: var(--crit); }
+.spectrum-disconnected {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--crit);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.spectrum-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(119, 203, 185, 0.10);
+  color: var(--ok);
+  letter-spacing: 0.02em;
+}
+.spectrum-tag-warn {
+  background: rgba(255, 188, 66, 0.10);
+  color: var(--warn);
+}
+
+.spectrum-integration {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--fg-subtle);
+  flex-wrap: wrap;
+}
+.spectrum-integration-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.spectrum-integration-input input {
+  width: 64px;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  /* Hide the increment/decrement spinners — they conflict visually with the
+     small inline form. The Reset button + keyboard typing cover the cases. */
+  -moz-appearance: textfield;
+}
+.spectrum-integration-input input::-webkit-outer-spin-button,
+.spectrum-integration-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.spectrum-integration-input input:focus {
+  border-color: var(--accent-line);
+  outline: none;
+}
+.spectrum-counter {
+  font-variant-numeric: tabular-nums;
+}
+.spectrum-counter-reset {
+  margin-left: auto;
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  background: var(--surface-2);
+  border-color: var(--hairline);
+  color: var(--fg-muted);
+  gap: 4px;
+}
+.spectrum-counter-reset:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.spectrum-counter-reset:disabled { opacity: 0.45; cursor: default; }
+
+.spectrum-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.spectrum-toolbar button {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border-color: var(--hairline);
+  color: var(--fg-muted);
+  gap: 4px;
+}
+.spectrum-toolbar button:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.spectrum-toolbar button:disabled { opacity: 0.45; cursor: default; }
+.spectrum-toolbar-spacer { flex: 1; }
+
+.spectrum-notice {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  margin: -4px 0 8px;
+  padding: 4px 8px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+}
+
 .spectrum-chart {
   width: 100%;
-  height: 220px;
+  height: 260px;
 }
 .spectrum-empty {
   height: 80px;

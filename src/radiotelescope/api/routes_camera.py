@@ -46,6 +46,15 @@ async def _frames(device: int, fps: int, width: int, height: int, request: Reque
         await loop.run_in_executor(None, cap.release)
 
 
+async def _camera_available(device: int) -> bool:
+    loop = asyncio.get_event_loop()
+    cap = await loop.run_in_executor(None, cv2.VideoCapture, device)
+    try:
+        return await loop.run_in_executor(None, cap.isOpened)
+    finally:
+        await loop.run_in_executor(None, cap.release)
+
+
 @router.get("/api/camera/stream")
 async def camera_stream(request: Request) -> StreamingResponse:
     cfg = getattr(request.app.state.config, "camera", None)
@@ -64,6 +73,8 @@ async def camera_stream(request: Request) -> StreamingResponse:
 async def camera_status(request: Request) -> Response:
     cfg = getattr(request.app.state.config, "camera", None)
     enabled = cfg is not None and cfg.enabled and _CV2
+    if enabled:
+        enabled = await _camera_available(cfg.device)
     import json
     return Response(
         content=json.dumps({"enabled": enabled, "label": cfg.label if cfg else "Cam A"}),
