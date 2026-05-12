@@ -11,6 +11,7 @@ import { createRoot } from 'react-dom/client';
 import { api, ApiError } from './api';
 import { BRAND } from './branding';
 import { SkyMap } from './components/SkyMap';
+import { SpectrumPanel } from './components/SpectrumPanel';
 import { QueuePage } from './components/QueuePage';
 import {
   fetchQueueConfig, fetchQueueStatus, joinQueue, leaveQueue,
@@ -295,6 +296,7 @@ function App() {
       <main className="dashboard">
         <section className="panel controls-panel">
           <TelescopeControls telemetry={telemetry} runCommand={runCommand} stopAll={stopAll} gotoAltAz={gotoAltAz} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
+          <SpectrumPanel />
           <AdminPanel syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} zeroAltitude={zeroAltitude} targetAz={targetAz} targetAlt={targetAlt} />
           <PidTuningPanel onNotice={setNotice} />
         </section>

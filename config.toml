@@ -54,6 +54,16 @@ dish_diameter_m = 2.286      # 90 inches
 observing_freq_hz = 1.42e9   # hydrogen line (21 cm)
 # beam_fwhm_deg = 7.0        # uncomment to override computed FWHM
 
+[sdr]
+enabled = true
+# RTL-SDR centred on the neutral hydrogen line (21 cm).
+center_freq_hz = 1.4204e9
+sample_rate_hz = 2.4e6
+fft_size = 2048
+# gain_db = 40       # uncomment to set a fixed tuner gain; default = "auto"
+integration_frames = 64    # rolling EMA window; bigger = smoother trace
+publish_rate_hz = 5
+
 [camera]
 enabled = true
 device = 0        # /dev/video0 (USB webcam index; increment if multiple cameras)

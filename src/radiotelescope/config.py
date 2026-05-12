@@ -130,6 +130,23 @@ class TurnstileConfig(BaseModel):
     secret_key: str = ""
 
 
+class SDRConfig(BaseModel):
+    enabled: bool = True
+    # RTL-SDR (R820T2/R828D) tuner range is roughly 24 MHz – 1.766 GHz; the
+    # hydrogen line at 1420.405 MHz sits comfortably inside it.
+    center_freq_hz: float = Field(default=1.4204e9, gt=0)
+    sample_rate_hz: float = Field(default=2.4e6, gt=0)
+    fft_size: int = Field(default=2048, ge=64)
+    # Tuner gain in dB; None lets the dongle pick automatically.
+    gain_db: float | None = None
+    # Rolling integration: number of FFT frames averaged exponentially before
+    # publishing. Larger = smoother but slower to react.
+    integration_frames: int = Field(default=32, ge=1, le=4096)
+    # Frames-per-second of WebSocket publications (FFTs are computed faster
+    # internally; this throttles the rate sent to clients).
+    publish_rate_hz: float = Field(default=5.0, gt=0)
+
+
 class GeneralConfig(BaseModel):
     log_level: str = "INFO"
 
@@ -142,6 +159,7 @@ class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     observer: ObserverConfig = Field(default_factory=ObserverConfig)
     camera: CameraConfig = Field(default_factory=CameraConfig)
+    sdr: SDRConfig = Field(default_factory=SDRConfig)
     queue: QueueConfig = Field(default_factory=QueueConfig)
     turnstile: TurnstileConfig = Field(default_factory=TurnstileConfig)
 
