@@ -19,6 +19,10 @@ dependencies = [
     # 0.3.0 works with stock librtlsdr; later builds depend on
     # rtlsdr_set_dithering which is missing from most system libs.
     "pyrtlsdr==0.3.0",
+    # Used by RemoteSDRReceiver (gateway-client mode). Already a transitive
+    # dep via uvicorn[standard]; pinned here so the import in
+    # hardware/remote.py is explicit.
+    "websockets>=12",
 ]
 
 [project.optional-dependencies]

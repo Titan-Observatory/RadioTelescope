@@ -147,12 +147,37 @@ class SDRConfig(BaseModel):
     publish_rate_hz: float = Field(default=5.0, gt=0)
 
 
+class HardwareConfig(BaseModel):
+    """Selects where motor + SDR hardware lives relative to this process.
+
+    - ``local`` (default): hardware is attached to this box; run everything
+      in one app. Today's behaviour.
+    - ``gateway-server``: this box owns the hardware but the web UI runs
+      elsewhere. Mounts hardware routes only; skips web UI, queue, and the
+      spectrum DSP pipeline (raw IQ is streamed instead).
+    - ``gateway-client``: this box runs the web UI and DSP but talks to a
+      remote ``gateway-server`` over the LAN for motor + SDR.
+    """
+    mode: Literal["local", "gateway-server", "gateway-client"] = "local"
+    gateway_host: str = "localhost"
+    gateway_port: int = 8000
+
+    @property
+    def base_url(self) -> str:
+        return f"http://{self.gateway_host}:{self.gateway_port}"
+
+    @property
+    def ws_base_url(self) -> str:
+        return f"ws://{self.gateway_host}:{self.gateway_port}"
+
+
 class GeneralConfig(BaseModel):
     log_level: str = "INFO"
 
 
 class AppConfig(BaseModel):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
+    hardware: HardwareConfig = Field(default_factory=HardwareConfig)
     roboclaw: RoboClawConfig = Field(default_factory=RoboClawConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     mount: MountConfig = Field(default_factory=MountConfig)

@@ -1,6 +1,16 @@
 [general]
 log_level = "INFO"
 
+# [hardware]
+# Where the motors + SDR live relative to this process.
+#   local           — everything on one box (default; today's behaviour)
+#   gateway-server  — this box owns the hardware; web UI runs elsewhere
+#   gateway-client  — this box runs the web UI and DSP; hardware lives on a
+#                     remote gateway-server reachable on the LAN
+# mode = "local"
+# gateway_host = "10.0.27.2"
+# gateway_port = 8000
+
 [roboclaw]
 port = "/dev/ttyACM0"
 baudrate = 57600

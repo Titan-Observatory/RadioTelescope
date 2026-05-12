@@ -10,12 +10,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from radiotelescope.api import routes_camera, routes_queue, routes_roboclaw, routes_spectrum
+from radiotelescope.api import (
+    routes_camera,
+    routes_camera_proxy,
+    routes_iq,
+    routes_queue,
+    routes_roboclaw,
+    routes_spectrum,
+)
 from radiotelescope.api.client_allowlist import ClientAllowlistMiddleware
 from radiotelescope.config import load_config
+from radiotelescope.hardware.remote import RemoteRoboClawClient, RemoteSDRReceiver
 from radiotelescope.hardware.roboclaw import make_client
 from radiotelescope.hardware.sdr import SDRReceiver
 from radiotelescope.pointing import compute_fwhm_deg, make_antenna
+from radiotelescope.services.iq_publisher import IQPublisher
 from radiotelescope.services.queue import QueueService
 from radiotelescope.services.roboclaw import RoboClawService
 from radiotelescope.services.spectrum import SpectrumService
@@ -26,7 +35,15 @@ logger = logging.getLogger("radiotelescope")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = app.state.config
-    client = make_client(cfg.roboclaw)
+    mode = cfg.hardware.mode
+
+    # ── Hardware clients: local serial/USB vs HTTP/WS to a remote gateway ──
+    if mode == "gateway-client":
+        client = RemoteRoboClawClient(cfg.hardware)
+        logger.info("RoboClaw running in gateway-client mode against %s", cfg.hardware.base_url)
+    else:
+        client = make_client(cfg.roboclaw)
+
     antenna = make_antenna(cfg.observer)
     app.state.antenna = antenna
     app.state.fwhm_deg = compute_fwhm_deg(cfg.observer)
@@ -40,17 +57,31 @@ async def lifespan(app: FastAPI):
     )
     app.state.queue_service = queue
 
+    # ── SDR pipeline: which end of the wire we're on decides what runs ──
     spectrum: SpectrumService | None = None
+    iq_publisher: IQPublisher | None = None
     if cfg.sdr.enabled:
-        spectrum = SpectrumService(SDRReceiver(cfg.sdr), cfg.sdr)
-        app.state.spectrum_service = spectrum
+        if mode == "gateway-server":
+            # Pi-side: hand raw IQ to LAN consumers; skip the FFT pipeline.
+            iq_publisher = IQPublisher(SDRReceiver(cfg.sdr))
+            app.state.iq_publisher = iq_publisher
+        else:
+            sdr = RemoteSDRReceiver(cfg.hardware, cfg.sdr) if mode == "gateway-client" else SDRReceiver(cfg.sdr)
+            spectrum = SpectrumService(sdr, cfg.sdr)
+            app.state.spectrum_service = spectrum
 
     await service.start()
     await queue.start()
     if spectrum is not None:
         await spectrum.start()
-    logger.info("RoboClaw controller started in %s mode", client.connection.mode)
+    if iq_publisher is not None:
+        await iq_publisher.start()
+
+    logger.info("RoboClaw controller started in %s mode (hardware=%s)", client.connection.mode, mode)
     yield
+
+    if iq_publisher is not None:
+        await iq_publisher.stop()
     if spectrum is not None:
         await spectrum.stop()
     await queue.stop()
@@ -60,6 +91,7 @@ async def lifespan(app: FastAPI):
 
 def create_app(config_path: str | Path = "config.toml") -> FastAPI:
     cfg = load_config(config_path)
+    mode = cfg.hardware.mode
 
     logging.basicConfig(
         level=getattr(logging, cfg.general.log_level),
@@ -81,10 +113,34 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         block_unknown=cfg.server.lan_only,
     )
 
+    # Motor + queue routes are needed in every mode — gateway-server uses
+    # them to accept commands from the host; gateway-client uses them to
+    # serve the dashboard.
     app.include_router(routes_roboclaw.router)
     app.include_router(routes_queue.router)
-    app.include_router(routes_camera.router)
-    app.include_router(routes_spectrum.router)
+
+    if mode == "gateway-client":
+        # Camera lives on the Pi; proxy through.
+        app.include_router(routes_camera_proxy.router)
+    else:
+        app.include_router(routes_camera.router)
+
+    if mode == "gateway-server":
+        # Raw IQ out to the LAN host; no DSP, no UI.
+        app.include_router(routes_iq.router)
+    else:
+        app.include_router(routes_spectrum.router)
+
+    if mode == "gateway-server":
+        # Pi is headless in this mode — return a status line on `/` instead
+        # of trying to find a built frontend.
+        @app.get("/")
+        async def gateway_index():
+            return PlainTextResponse(
+                "radiotelescope gateway-server: motors + SDR + camera are "
+                "exposed here. Point a gateway-client host at this address.",
+            )
+        return app
 
     frontend_dist = _find_frontend_dist()
     if frontend_dist.exists():
