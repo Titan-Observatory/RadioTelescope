@@ -700,6 +700,16 @@ h2.panel-header {
   border-color: var(--accent-line);
   background: var(--surface-3);
 }
+/* While the user is press-and-holding a jog button, keep a stronger visual
+   state than :hover so it's obvious the motor is actively being driven. */
+.axis-actions button.jog-active,
+.axis-actions button.jog-active:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+/* Pointer-driven jog should not select the label text on long-press. */
+.axis-actions button { touch-action: none; user-select: none; }
 
 /* Speed control — full width row spanning both axes */
 .speed-control {

@@ -513,8 +513,10 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, targetAz
           negativeIcon={<ChevronLeft size={20} />}
           positiveIcon={<ChevronRight size={20} />}
           motor={telemetry?.motors.m1}
-          negative={() => runCommand('backward_m1', { speed })}
-          positive={() => runCommand('forward_m1', { speed })}
+          onNegativeStart={() => runCommand('backward_m1', { speed })}
+          onNegativeStop={() => runCommand('backward_m1', { speed: 0 })}
+          onPositiveStart={() => runCommand('forward_m1', { speed })}
+          onPositiveStop={() => runCommand('forward_m1', { speed: 0 })}
         />
         <AxisControl
           title="Elevation"
@@ -523,8 +525,10 @@ function TelescopeControls({ telemetry, runCommand, stopAll, gotoAltAz, targetAz
           negativeIcon={<ChevronDown size={20} />}
           positiveIcon={<ChevronUp size={20} />}
           motor={telemetry?.motors.m2}
-          negative={() => runCommand('backward_m2', { speed })}
-          positive={() => runCommand('forward_m2', { speed })}
+          onNegativeStart={() => runCommand('backward_m2', { speed })}
+          onNegativeStop={() => runCommand('backward_m2', { speed: 0 })}
+          onPositiveStart={() => runCommand('forward_m2', { speed })}
+          onPositiveStop={() => runCommand('forward_m2', { speed: 0 })}
         />
         <div className="speed-control">
           <label>
@@ -604,7 +608,7 @@ function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, zeroAltitude, targe
           <span className="admin-label">Altitude zero</span>
           <button
             onClick={() => void zeroAltitude()}
-            title="Sets the current altitude position as the zero reference point"
+            title="Zeros the M2 encoder register at the current position. Reported altitude follows the calibration; any prior sync offset is preserved."
           >
             <Crosshair size={13} /> Zero Altitude
           </button>
@@ -803,17 +807,26 @@ function PidAxis({
 
 // ─── Axis control ─────────────────────────────────────────────────────────────
 
-function AxisControl({ title, negativeLabel, positiveLabel, negativeIcon, positiveIcon, motor, negative, positive }: {
+// RoboClaw's firmware serial-timeout failsafe stops the motors if no command
+// arrives within ~1 s. Re-issuing the drive command at this cadence is safely
+// inside that window while still being light on the bus.
+const JOG_REPEAT_MS = 200;
+
+function AxisControl({ title, negativeLabel, positiveLabel, negativeIcon, positiveIcon, motor, onNegativeStart, onNegativeStop, onPositiveStart, onPositiveStop }: {
   title: string;
   negativeLabel: string;
   positiveLabel: string;
   negativeIcon: React.ReactNode;
   positiveIcon: React.ReactNode;
   motor: MotorSnapshot | undefined;
-  negative: () => Promise<void>;
-  positive: () => Promise<void>;
+  onNegativeStart: () => Promise<void>;
+  onNegativeStop: () => Promise<void>;
+  onPositiveStart: () => Promise<void>;
+  onPositiveStop: () => Promise<void>;
 }) {
   const currentCls = currentClass(motor?.current_a);
+  const negativeJog = useJog(onNegativeStart, onNegativeStop);
+  const positiveJog = useJog(onPositiveStart, onPositiveStop);
 
   return (
     <div className="axis-compact">
@@ -824,8 +837,8 @@ function AxisControl({ title, negativeLabel, positiveLabel, negativeIcon, positi
         </span>
       </div>
       <div className="axis-actions">
-        <button onClick={() => void negative()}>{negativeIcon}{negativeLabel}</button>
-        <button onClick={() => void positive()}>{positiveIcon}{positiveLabel}</button>
+        <button type="button" {...negativeJog} className={negativeJog.active ? 'jog-active' : ''}>{negativeIcon}{negativeLabel}</button>
+        <button type="button" {...positiveJog} className={positiveJog.active ? 'jog-active' : ''}>{positiveIcon}{positiveLabel}</button>
       </div>
       <DenseReadout rows={[
         ['PWM output',       value(motor?.pwm)],
@@ -834,6 +847,50 @@ function AxisControl({ title, negativeLabel, positiveLabel, negativeIcon, positi
       ]} />
     </div>
   );
+}
+
+// Hook: turn a button into a press-and-hold jog. Reissues `start` every
+// JOG_REPEAT_MS while pressed, sends `stop` on release / pointer-leave /
+// cancel / unmount. We avoid setPointerCapture so dragging off the button
+// is treated as a release (matches what the user sees on touch too).
+function useJog(start: () => Promise<void>, stop: () => Promise<void>) {
+  const [active, setActive] = useState(false);
+  const timerRef = useRef<number | null>(null);
+  // Stash the latest callbacks so the interval always fires the current one
+  // even though we only set it up once per press.
+  const startRef = useRef(start);
+  const stopRef = useRef(stop);
+  startRef.current = start;
+  stopRef.current = stop;
+
+  const end = useCallback(() => {
+    if (timerRef.current == null) return;
+    window.clearInterval(timerRef.current);
+    timerRef.current = null;
+    setActive(false);
+    void stopRef.current();
+  }, []);
+
+  const begin = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return; // left-click only on mouse
+    if (timerRef.current != null) return;
+    setActive(true);
+    void startRef.current();
+    timerRef.current = window.setInterval(() => { void startRef.current(); }, JOG_REPEAT_MS);
+  }, []);
+
+  // If the component unmounts mid-press (e.g. queue revokes control and the
+  // page swaps to the spectator view), make sure we stop the motor.
+  useEffect(() => () => { if (timerRef.current != null) { window.clearInterval(timerRef.current); void stopRef.current(); } }, []);
+
+  return {
+    active,
+    onPointerDown: begin,
+    onPointerUp: end,
+    onPointerLeave: end,
+    onPointerCancel: end,
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  } as const;
 }
 
 // ─── Telemetry dashboard ─────────────────────────────────────────────────────

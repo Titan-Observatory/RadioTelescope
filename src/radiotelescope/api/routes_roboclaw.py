@@ -101,7 +101,14 @@ async def execute_command(command_id: str, body: CommandRequest, request: Reques
     spec = COMMANDS.get(command_id)
     if spec is None:
         raise HTTPException(status_code=404, detail=f"Unknown command: {command_id}")
-    if command_id not in OPERATOR_COMMAND_IDS:
+    # The operator allowlist keeps dangerous low-level commands (e.g.
+    # `set_encoder_m2`) out of the public web surface. When the queue is
+    # disabled this box is acting as a trusted LAN endpoint — typically a
+    # gateway-server fronting a gateway-client host that has already gated
+    # the request — so the allowlist would just block legitimate internal
+    # traffic. Same trust model as `require_control`.
+    queue_enabled = request.app.state.config.queue.enabled
+    if queue_enabled and command_id not in OPERATOR_COMMAND_IDS:
         raise HTTPException(status_code=404, detail=f"Command is not available from the web controller: {command_id}")
 
     client = _service(request).client
@@ -328,13 +335,20 @@ async def home_azimuth(request: Request):
 
 @router.post("/api/telescope/home/altitude", dependencies=[Depends(require_control)])
 async def home_altitude(request: Request):
-    """Zero the altitude encoder at whatever position the telescope is currently pointing."""
-    client = _service(request).client
-    result = await asyncio.to_thread(client.execute, "set_encoder_m2", {"value": 0})
+    """Zero the M2 encoder register at the current position.
+
+    Mirrors `home_azimuth`: we only touch the encoder count. The reported
+    altitude is then whatever the configured calibration maps `counts = 0`
+    to — any `alt_zero_count` offset from a prior `/sync` is preserved.
+    """
+    service = _service(request)
+    result = await asyncio.to_thread(service.client.execute, "set_encoder_m2", {"value": 0})
     if not result.ok:
         raise HTTPException(400, detail=f"Failed to zero altitude encoder: {result.error}")
-    request.app.state.config.mount.alt_zero_count = 0
-    await _service(request).refresh()
+    # Force a fresh snapshot so the encoder readout updates immediately rather
+    # than waiting up to one telemetry poll (≈200 ms locally, twice that in
+    # gateway-client mode).
+    await service.refresh()
     return {"status": "ok", "message": "Altitude encoder zeroed at current position"}
 
 
