@@ -191,6 +191,13 @@ class AppConfig(BaseModel):
 
 def load_config(path: Path | str = "config.toml") -> AppConfig:
     path = Path(path)
+    if not path.exists():
+        # `config.toml` is gitignored — only the `config.example.toml` template
+        # ships in the repo. Point the user at the obvious next step instead of
+        # letting `tomllib` raise a bare FileNotFoundError.
+        example = path.with_name("config.example.toml")
+        hint = f" Copy `{example.name}` to `{path.name}` and edit it." if example.exists() else ""
+        raise FileNotFoundError(f"Config file not found: {path}.{hint}")
     with path.open("rb") as f:
         raw = tomllib.load(f)
     return AppConfig.model_validate(raw)
