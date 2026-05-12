@@ -81,7 +81,12 @@ class SDRReceiver:
             pass
 
     async def stream(self) -> AsyncIterator[np.ndarray]:
-        """Yield successive IQ chunks of length `fft_size`."""
+        """Yield successive IQ chunks of length `fft_size` as complex64.
+
+        Used by `SpectrumService` for the local FFT pipeline. In gateway-server
+        mode the bytes-native `stream_bytes()` is preferred since it skips
+        an unnecessary uint8→complex64→uint8 round-trip on the Pi.
+        """
         n = self._cfg.fft_size
         if self.mode == "rtlsdr" and self._sdr is not None:
             async for samples in self._sdr.stream(num_samples_or_bytes=n, format="samples"):  # type: ignore[attr-defined]
@@ -89,6 +94,38 @@ class SDRReceiver:
         else:
             async for chunk in _simulated_stream(self._cfg):
                 yield chunk
+
+    async def stream_bytes(self) -> AsyncIterator[bytes]:
+        """Yield raw uint8 I/Q chunks (2 × `fft_size` bytes each).
+
+        Matches the RTL-SDR's native USB wire format. Letting pyrtlsdr deliver
+        bytes directly avoids the (x − 127.5) / 127.5 typecast on both ends —
+        on the Pi that's the difference between keeping up with 2.4 Msps and
+        dropping ~93 % of samples in the FFT loop.
+        """
+        n_bytes = 2 * self._cfg.fft_size
+        if self.mode == "rtlsdr" and self._sdr is not None:
+            async for buf in self._sdr.stream(num_samples_or_bytes=n_bytes, format="bytes"):  # type: ignore[attr-defined]
+                # pyrtlsdr may hand back a bytes, bytearray, or numpy uint8
+                # buffer depending on version — coerce to immutable bytes so
+                # the publisher can fan it out without copying per subscriber.
+                yield bytes(buf) if not isinstance(buf, bytes) else buf
+        else:
+            async for chunk in _simulated_stream(self._cfg):
+                yield _complex_to_uint8_bytes(chunk)
+
+
+def _complex_to_uint8_bytes(samples: np.ndarray) -> bytes:
+    """Encode centred complex64 samples back to RTL-SDR-native interleaved
+    uint8 I/Q. Only used in simulated mode — the real SDR delivers uint8
+    directly.
+    """
+    real = np.clip(samples.real * 127.5 + 127.5, 0.0, 255.0)
+    imag = np.clip(samples.imag * 127.5 + 127.5, 0.0, 255.0)
+    out = np.empty(samples.size * 2, dtype=np.uint8)
+    out[0::2] = real.astype(np.uint8)
+    out[1::2] = imag.astype(np.uint8)
+    return out.tobytes()
 
 
 async def _simulated_stream(cfg: SDRConfig) -> AsyncIterator[np.ndarray]:

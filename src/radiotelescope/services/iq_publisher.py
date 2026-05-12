@@ -2,16 +2,19 @@
 
 In `gateway-server` mode the Pi does not compute spectra — it just forwards
 raw `uint8` I/Q pairs over `/ws/iq` so the LAN host can run the FFT
-pipeline. This service mirrors the pub/sub shape of `SpectrumService`:
-drives `SDRReceiver.stream()` once, broadcasts each chunk to N subscribers,
-drop-oldest on full queue.
+pipeline. This service drives `SDRReceiver.stream_bytes()` (which gets the
+data straight out of pyrtlsdr without a numpy round-trip) and fans the
+chunks out to subscribers using drop-oldest on full queues.
+
+The default subscriber queue is sized to absorb one USB transfer's worth of
+chunks (pyrtlsdr typically delivers ~8 FFT-sized chunks per USB transfer at
+2.4 Msps with `fft_size = 2048`) so transient backpressure doesn't silently
+eat samples.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-
-import numpy as np
 
 from radiotelescope.hardware.sdr import SDRReceiver
 
@@ -43,7 +46,7 @@ class IQPublisher:
         await self._rx.close()
         logger.info("IQ publisher stopped")
 
-    def subscribe(self, maxsize: int = 4) -> asyncio.Queue[bytes]:
+    def subscribe(self, maxsize: int = 32) -> asyncio.Queue[bytes]:
         q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=maxsize)
         self._subscribers.append(q)
         return q
@@ -56,31 +59,15 @@ class IQPublisher:
 
     async def _run(self) -> None:
         try:
-            async for iq in self._rx.stream():
+            async for payload in self._rx.stream_bytes():
                 if not self._subscribers:
                     continue
-                payload = _complex_to_uint8_iq(iq)
                 for q in list(self._subscribers):
                     _put_latest(q, payload)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("IQ publisher loop crashed")
-
-
-def _complex_to_uint8_iq(samples: np.ndarray) -> bytes:
-    """Inverse of `_bytes_to_complex64` in hardware/remote.py.
-
-    Re-encodes centred complex64 samples back to RTL-SDR-native uint8 I/Q so
-    the wire format matches what the dongle would have produced. Clipping
-    keeps strong signals from wrapping around.
-    """
-    real = np.clip(samples.real * 127.5 + 127.5, 0.0, 255.0)
-    imag = np.clip(samples.imag * 127.5 + 127.5, 0.0, 255.0)
-    interleaved = np.empty(samples.size * 2, dtype=np.uint8)
-    interleaved[0::2] = real.astype(np.uint8)
-    interleaved[1::2] = imag.astype(np.uint8)
-    return interleaved.tobytes()
 
 
 def _put_latest(q: asyncio.Queue[bytes], payload: bytes) -> None:
