@@ -1,4 +1,25 @@
-import * as echarts from 'echarts';
+// Tree-shakable echarts import. Pulling from `echarts/core` plus only the
+// pieces we actually use keeps the bundle small enough that Rollup doesn't
+// OOM when building on the Raspberry Pi. Adding any new feature (e.g. a
+// scatter overlay, a legend, dataZoom) requires registering the matching
+// component here.
+import * as echarts from 'echarts/core';
+import { LineChart } from 'echarts/charts';
+import {
+  GridComponent,
+  MarkLineComponent,
+  TooltipComponent,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+import type { EChartsOption } from 'echarts';
+
+echarts.use([
+  LineChart,
+  GridComponent,
+  MarkLineComponent,
+  TooltipComponent,
+  CanvasRenderer,
+]);
 import { Radio } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -116,7 +137,7 @@ export function SpectrumPanel() {
   );
 }
 
-function baseOption(): echarts.EChartsOption {
+function baseOption(): EChartsOption {
   return {
     backgroundColor: 'transparent',
     animation: false,
