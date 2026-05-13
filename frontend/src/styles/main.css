@@ -2576,4 +2576,13 @@ h2.panel-header {
   .spectrum-doppler-lesson-grid { grid-template-columns: 1fr; }
 
   .banner, .error-log summary, .error-log-body { padding-left: 14px; padding-right: 14px; }
+
+  /* Hide GoTo mode — mobile users jog or tap on Aladin */
+  .motion-mode { display: none; }
+  .target-form-overlay { display: none; }
+
+  /* Survey switcher: only Hydrogen Line and optical (DSS2) on mobile */
+  .skymap-surveys-mobile .skymap-survey-btn:not(.hydrogen):not(.optical) {
+    display: none;
+  }
 }
