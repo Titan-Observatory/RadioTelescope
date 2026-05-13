@@ -21,6 +21,7 @@ from radiotelescope.api import (
 from radiotelescope.api.auth import AuthManager, PasswordAuthMiddleware
 from radiotelescope.api.auth import router as auth_router
 from radiotelescope.api.client_allowlist import ClientAllowlistMiddleware
+from radiotelescope.api.security_headers import SecurityHeadersMiddleware
 from radiotelescope.config import load_config
 from radiotelescope.hardware.remote import RemoteRoboClawClient, RemoteSDRReceiver
 from radiotelescope.hardware.roboclaw import make_client
@@ -112,6 +113,7 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
     )
     app.state.auth = auth
 
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.server.cors_origins,
@@ -164,9 +166,13 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         async def serve_index():
             return FileResponse(frontend_dist / "index.html")
 
+        _frontend_root = frontend_dist.resolve()
+
         @app.get("/{path:path}")
         async def serve_spa(path: str):
-            target = frontend_dist / path
+            target = (frontend_dist / path).resolve()
+            if not target.is_relative_to(_frontend_root):
+                return FileResponse(frontend_dist / "index.html")
             if target.is_file():
                 return FileResponse(target)
             return FileResponse(frontend_dist / "index.html")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import html
 import logging
 import secrets
 import time
@@ -21,6 +22,7 @@ logger = logging.getLogger("radiotelescope.auth")
 
 _COOKIE_NAME = "rt_auth"
 _EXEMPT_PATHS = frozenset({"/login", "/api/auth/login", "/api/auth/logout"})
+_MAX_IP_RECORDS = 10_000
 
 
 @dataclass
@@ -69,9 +71,13 @@ class AuthManager:
     # ── Password check ───────────────────────────────────────────────────────
 
     def check_password(self, password: str) -> bool:
-        # Compare against every stored password in constant time to prevent
-        # timing attacks that could enumerate valid passwords.
-        return any(hmac.compare_digest(password, p) for p in self._passwords)
+        # Iterate every stored password without short-circuiting so the loop
+        # duration doesn't reveal whether or how early a match was found.
+        matched = False
+        for p in self._passwords:
+            if hmac.compare_digest(password, p):
+                matched = True
+        return matched
 
     # ── Brute-force tracking ─────────────────────────────────────────────────
 
@@ -79,8 +85,17 @@ class AuthManager:
         rec = self._records[ip]
         return rec.locked_until > 0 and time.monotonic() < rec.locked_until
 
+    def _prune_records(self) -> None:
+        if len(self._records) < _MAX_IP_RECORDS:
+            return
+        now = time.monotonic()
+        expired = [k for k, v in self._records.items() if v.locked_until == 0 or now >= v.locked_until]
+        for k in expired:
+            del self._records[k]
+
     def record_failure(self, ip: str) -> bool:
         """Record a failed attempt. Returns True if the IP is now locked out."""
+        self._prune_records()
         rec = self._records[ip]
         if rec.locked_until and time.monotonic() >= rec.locked_until:
             rec.attempts = 0
@@ -280,7 +295,7 @@ _LOGIN_PAGE = """\
 
 
 def _login_html(error: str = "") -> str:
-    block = f'<p class="error">{error}</p>' if error else ""
+    block = f'<p class="error">{html.escape(error)}</p>' if error else ""
     return _LOGIN_PAGE.replace("ERROR_PLACEHOLDER", block)
 
 
