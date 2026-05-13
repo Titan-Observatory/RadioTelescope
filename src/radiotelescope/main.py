@@ -18,7 +18,10 @@ from radiotelescope.api import (
     routes_roboclaw,
     routes_spectrum,
 )
+from radiotelescope.api.auth import AuthManager, PasswordAuthMiddleware
+from radiotelescope.api.auth import router as auth_router
 from radiotelescope.api.client_allowlist import ClientAllowlistMiddleware
+from radiotelescope.api.security_headers import SecurityHeadersMiddleware
 from radiotelescope.config import load_config
 from radiotelescope.hardware.remote import RemoteRoboClawClient, RemoteSDRReceiver
 from radiotelescope.hardware.roboclaw import make_client
@@ -101,6 +104,16 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
     app = FastAPI(title="RoboClaw Controller", lifespan=lifespan)
     app.state.config = cfg
 
+    auth = AuthManager(
+        enabled=cfg.auth.enabled,
+        secret=cfg.auth.secret_key,
+        passwords_path=Path(cfg.auth.passwords_file),
+        max_attempts=cfg.auth.max_attempts,
+        lockout_seconds=cfg.auth.lockout_minutes * 60,
+    )
+    app.state.auth = auth
+
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cfg.server.cors_origins,
@@ -112,6 +125,9 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         allowed_clients=cfg.server.allowed_clients,
         block_unknown=cfg.server.lan_only,
     )
+    app.add_middleware(PasswordAuthMiddleware, auth=auth)
+
+    app.include_router(auth_router)
 
     # Motor + queue routes are needed in every mode — gateway-server uses
     # them to accept commands from the host; gateway-client uses them to
@@ -150,9 +166,13 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         async def serve_index():
             return FileResponse(frontend_dist / "index.html")
 
+        _frontend_root = frontend_dist.resolve()
+
         @app.get("/{path:path}")
         async def serve_spa(path: str):
-            target = frontend_dist / path
+            target = (frontend_dist / path).resolve()
+            if not target.is_relative_to(_frontend_root):
+                return FileResponse(frontend_dist / "index.html")
             if target.is_file():
                 return FileResponse(target)
             return FileResponse(frontend_dist / "index.html")
