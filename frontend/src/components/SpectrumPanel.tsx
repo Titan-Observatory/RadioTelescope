@@ -13,6 +13,9 @@ import {
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
 
+import { Camera, Eraser, FolderOpen, Maximize2, Radio, RotateCcw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 echarts.use([
   LineChart,
   GridComponent,
@@ -20,8 +23,59 @@ echarts.use([
   TooltipComponent,
   CanvasRenderer,
 ]);
-import { Camera, Eraser, FolderOpen, Maximize2, Radio, RotateCcw } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+// Plot-area insets for the spectrum line chart. The waterfall canvas uses the
+// same values so its frequency axis lines up perfectly with the trace above.
+const PLOT_LEFT_PX = 52;
+const PLOT_RIGHT_PX = 18;
+
+// How tall each new waterfall row is, in CSS pixels. The render multiplies
+// this by devicePixelRatio. 1 CSS px at 10 Hz would creep at 10 px/sec — too
+// slow for the eye to feel "live". 3 CSS px gives ~30 px/sec, filling a
+// 250 px canvas in about eight seconds, which feels responsive without
+// turning the trace into a smeared blur.
+const WATERFALL_ROW_PX = 3;
+
+// Inferno-style colormap stops. Low power fades to deep purple-black so the
+// panel background reads as "no signal"; high power blooms through magenta/
+// orange into a hot yellow-white that pops against the dark UI. Pre-expanded
+// to a 256-entry LUT below for one-lookup-per-pixel rendering.
+const WATERFALL_STOPS: Array<[number, number, number]> = [
+  [0x04, 0x02, 0x0a],
+  [0x1b, 0x0b, 0x3b],
+  [0x42, 0x0a, 0x68],
+  [0x6a, 0x17, 0x6e],
+  [0x93, 0x26, 0x67],
+  [0xbc, 0x37, 0x54],
+  [0xdd, 0x51, 0x3a],
+  [0xf3, 0x77, 0x1a],
+  [0xfb, 0xa4, 0x0a],
+  [0xfc, 0xff, 0xa4],
+];
+
+const WATERFALL_LUT: Uint8ClampedArray = buildColormapLUT(WATERFALL_STOPS, 256);
+
+function buildColormapLUT(
+  stops: Array<[number, number, number]>,
+  size: number,
+): Uint8ClampedArray {
+  const lut = new Uint8ClampedArray(size * 4);
+  const segments = stops.length - 1;
+  for (let i = 0; i < size; i++) {
+    const t = i / (size - 1);
+    const f = t * segments;
+    const a = Math.min(segments, Math.floor(f));
+    const b = Math.min(segments, a + 1);
+    const local = f - a;
+    const s0 = stops[a];
+    const s1 = stops[b];
+    lut[i * 4]     = s0[0] + (s1[0] - s0[0]) * local;
+    lut[i * 4 + 1] = s0[1] + (s1[1] - s0[1]) * local;
+    lut[i * 4 + 2] = s0[2] + (s1[2] - s0[2]) * local;
+    lut[i * 4 + 3] = 255;
+  }
+  return lut;
+}
 
 // 21 cm neutral-hydrogen line — the rolling integration is centred here.
 const H1_REST_MHZ = 1420.4058;
@@ -67,43 +121,22 @@ interface Baseline {
   power_db: number[];
 }
 
-interface SpectrumDebug {
-  statusError: string | null;
-  statusFetchedAt: number | null;
-  wsUrl: string | null;
-  wsState: 'idle' | 'connecting' | 'open' | 'closed' | 'error';
-  wsOpenedAt: number | null;
-  wsClosedAt: number | null;
-  wsCloseCode: number | null;
-  wsCloseReason: string;
-  wsError: string | null;
-  lastMessageAt: number | null;
-  lastFrameAt: number | null;
-  frameCount: number;
-  lastFrameSummary: string | null;
-  parseError: string | null;
-}
-
-const INITIAL_DEBUG: SpectrumDebug = {
-  statusError: null,
-  statusFetchedAt: null,
-  wsUrl: null,
-  wsState: 'idle',
-  wsOpenedAt: null,
-  wsClosedAt: null,
-  wsCloseCode: null,
-  wsCloseReason: '',
-  wsError: null,
-  lastMessageAt: null,
-  lastFrameAt: null,
-  frameCount: 0,
-  lastFrameSummary: null,
-  parseError: null,
-};
-
 export function SpectrumPanel() {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  // The waterfall is rendered straight to a 2D canvas: each tick we scroll the
+  // existing pixels down one row with drawImage(self) and paint the newest
+  // spectrum across the top row. That's far cheaper than rebuilding a heatmap
+  // dataset of tens of thousands of cells per frame.
+  const waterfallCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Signature of the current FFT layout. When the centre/sample-rate/bin count
+  // or baseline subtraction toggles, the dB scale shifts wholesale, so we wipe
+  // the canvas rather than render a mismatched colour-coded seam.
+  const waterfallSigRef = useRef<string>('');
+  // The last frame we actually painted. The draw effect also re-fires when
+  // yRange changes (Fit Y / Reset Y); a yRange-only change must not duplicate
+  // a row — it just relabels the colours we already drew (lossy, but cheap).
+  const lastWaterfallFrameRef = useRef<SpectrumFrame | null>(null);
   const [status, setStatus] = useState<SpectrumStatus | null>(null);
   const [frame, setFrame] = useState<SpectrumFrame | null>(null);
   const [connected, setConnected] = useState(false);
@@ -111,12 +144,6 @@ export function SpectrumPanel() {
   const [baseline, setBaseline] = useState<Baseline | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [debug, setDebug] = useState<SpectrumDebug>(INITIAL_DEBUG);
-  const [debugTick, setDebugTick] = useState(0);
-
-  const patchDebug = useCallback((patch: Partial<SpectrumDebug>) => {
-    setDebug((current) => ({ ...current, ...patch }));
-  }, []);
 
   // Baseline subtraction is what makes the H I line pop above the bandpass.
   // Only apply when the cached baseline matches the current FFT layout —
@@ -164,22 +191,14 @@ export function SpectrumPanel() {
         const s = await r.json() as SpectrumStatus;
         if (cancelled) return;
         setStatus(s);
-        patchDebug({ statusError: null, statusFetchedAt: Date.now() });
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        const message = (err as Error).message;
         setStatus({ enabled: false, mode: 'unavailable' });
-        patchDebug({ statusError: message, statusFetchedAt: Date.now() });
       }
     };
     void refresh();
     const id = window.setInterval(refresh, 3000);
     return () => { cancelled = true; window.clearInterval(id); };
-  }, [patchDebug]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setDebugTick((n) => n + 1), 1000);
-    return () => window.clearInterval(id);
   }, []);
 
   // WebSocket subscription. Each frame is a fully-integrated spectrum from
@@ -187,54 +206,20 @@ export function SpectrumPanel() {
   useEffect(() => {
     if (status && status.enabled === false) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/spectrum`;
-    const ws = new WebSocket(wsUrl);
-    patchDebug({
-      wsUrl,
-      wsState: 'connecting',
-      wsOpenedAt: null,
-      wsClosedAt: null,
-      wsCloseCode: null,
-      wsCloseReason: '',
-      wsError: null,
-      parseError: null,
-    });
-    ws.onopen = () => {
-      setConnected(true);
-      patchDebug({ wsState: 'open', wsOpenedAt: Date.now(), wsError: null });
-    };
-    ws.onclose = (event) => {
-      setConnected(false);
-      patchDebug({
-        wsState: 'closed',
-        wsClosedAt: Date.now(),
-        wsCloseCode: event.code,
-        wsCloseReason: event.reason,
-      });
-    };
-    ws.onerror = () => {
-      setConnected(false);
-      patchDebug({ wsState: 'error', wsError: 'Browser reported a WebSocket error.' });
-    };
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/spectrum`);
+    ws.onopen = () => setConnected(true);
+    ws.onclose = () => setConnected(false);
+    ws.onerror = () => setConnected(false);
     ws.onmessage = (event) => {
-      patchDebug({ lastMessageAt: Date.now() });
       try {
         const next = JSON.parse(event.data) as SpectrumFrame;
         setFrame(next);
-        setDebug((current) => ({
-          ...current,
-          lastFrameAt: Date.now(),
-          frameCount: current.frameCount + 1,
-          lastFrameSummary: `${next.power_db.length} bins, frames_seen=${next.frames_seen}, mode=${next.mode}`,
-          parseError: null,
-        }));
-      } catch (err) {
-        patchDebug({ parseError: (err as Error).message });
-      }
+      } catch { /* ignore malformed frames */ }
     };
     return () => ws.close();
-  }, [status?.enabled, patchDebug]);
+  }, [status?.enabled]);
 
+  // Update the spectrum line chart on each new frame / range change.
   useEffect(() => {
     const chart = chartInstance.current;
     if (!chart || !frame || !displayed) return;
@@ -244,6 +229,123 @@ export function SpectrumPanel() {
       series: [{ data }],
     });
   }, [frame, displayed, yRange]);
+
+  // Keep the waterfall canvas pixel-buffer in lockstep with its CSS box,
+  // scaled for devicePixelRatio so the inferno colours stay crisp on HiDPI.
+  // Resizes clear the buffer — there's no clean way to rescale a waterfall
+  // and pretending we can would just produce a smeared frame.
+  useEffect(() => {
+    const canvas = waterfallCanvasRef.current;
+    if (!canvas) return;
+    const sync = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+      const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        waterfallSigRef.current = ''; // force a clear+redraw on next frame
+      }
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, []);
+
+  // Paint one new row at the top of the waterfall per incoming frame.
+  useEffect(() => {
+    const canvas = waterfallCanvasRef.current;
+    if (!canvas || !frame || !displayed) return;
+
+    // Only paint genuine new frames. yRange changes re-fire this effect but
+    // shouldn't shove a duplicate row into the rolling history.
+    if (lastWaterfallFrameRef.current === frame) return;
+    lastWaterfallFrameRef.current = frame;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.width;
+    const h = canvas.height;
+    const plotLeft = Math.round(PLOT_LEFT_PX * dpr);
+    const plotRight = Math.round(PLOT_RIGHT_PX * dpr);
+    const plotW = Math.max(1, w - plotLeft - plotRight);
+    // Each frame moves the data down by rowH device pixels. The minimum of 1
+    // keeps very small canvases from stalling out at 0 px/frame.
+    const rowH = Math.max(1, Math.round(WATERFALL_ROW_PX * dpr));
+
+    // Reset the canvas when the FFT layout or baseline state changes — the
+    // colour scale jumps and stitching old rows onto new ones would lie
+    // about what the receiver was seeing.
+    const sig = [
+      w, h,
+      frame.freqs_mhz.length,
+      frame.center_freq_mhz.toFixed(6),
+      frame.sample_rate_mhz.toFixed(6),
+      baselineApplies ? 'baseline' : 'raw',
+    ].join('|');
+    if (sig !== waterfallSigRef.current) {
+      ctx.clearRect(0, 0, w, h);
+      waterfallSigRef.current = sig;
+    }
+
+    // Scroll the existing pixels down by rowH device-pixel rows. Drawing the
+    // canvas onto itself with a y-offset is the fastest way to do this — no
+    // ImageData round-trip, GPU-friendly under accelerated 2D contexts.
+    ctx.imageSmoothingEnabled = false;
+    if (h > rowH) {
+      ctx.drawImage(canvas, 0, 0, w, h - rowH, 0, rowH, w, h - rowH);
+    }
+
+    // Build the new top row directly in an ImageData buffer. Compute each
+    // column's colour once and replicate it down rowH rows so the new band
+    // is a solid stripe of constant colour per frequency.
+    const yMin = yRange[0];
+    const yMax = yRange[1];
+    const yScale = yMax > yMin ? 1 / (yMax - yMin) : 1;
+    const bins = displayed.length;
+    const binsMaxIdx = bins - 1;
+
+    const row = ctx.createImageData(plotW, rowH);
+    const rowData = row.data;
+    const lut = WATERFALL_LUT;
+    const lutMaxIdx = (lut.length / 4) - 1;
+    const stride = plotW * 4;
+
+    for (let px = 0; px < plotW; px++) {
+      const ratio = plotW === 1 ? 0 : px / (plotW - 1);
+      const binF = ratio * binsMaxIdx;
+      const i = Math.min(binsMaxIdx, Math.floor(binF));
+      const t = binF - i;
+      const a = displayed[i];
+      const b = displayed[Math.min(binsMaxIdx, i + 1)];
+      const v = a + (b - a) * t;
+      let norm = (v - yMin) * yScale;
+      if (norm < 0) norm = 0; else if (norm > 1) norm = 1;
+      const li = (norm * lutMaxIdx) | 0;
+      const off = li * 4;
+      const r = lut[off];
+      const g = lut[off + 1];
+      const bl = lut[off + 2];
+      // First row
+      const base = px * 4;
+      rowData[base]     = r;
+      rowData[base + 1] = g;
+      rowData[base + 2] = bl;
+      rowData[base + 3] = 255;
+      // Replicate down rowH-1 more rows for the same column
+      for (let yy = 1; yy < rowH; yy++) {
+        const off2 = base + yy * stride;
+        rowData[off2]     = r;
+        rowData[off2 + 1] = g;
+        rowData[off2 + 2] = bl;
+        rowData[off2 + 3] = 255;
+      }
+    }
+    ctx.putImageData(row, plotLeft, 0);
+  }, [frame, displayed, yRange, baselineApplies]);
 
   const fitY = useCallback(() => {
     if (!displayed || displayed.length === 0) return;
@@ -362,7 +464,6 @@ export function SpectrumPanel() {
           Spectrum
         </h2>
         <div className="spectrum-empty">SDR disabled in config.toml.</div>
-        <SpectrumDebugPanel status={status} debug={debug} frame={frame} tick={debugTick} />
       </section>
     );
   }
@@ -433,63 +534,12 @@ export function SpectrumPanel() {
 
       <div className="spectrum-chart-wrap">
         <div className="spectrum-chart" ref={chartRef} />
+        <canvas className="spectrum-waterfall" ref={waterfallCanvasRef} />
         {chartEmptyMessage && <div className="spectrum-chart-empty">{chartEmptyMessage}</div>}
       </div>
 
       {notice && <div className="spectrum-notice">{notice}</div>}
-      <SpectrumDebugPanel status={status} debug={debug} frame={frame} tick={debugTick} />
     </section>
-  );
-}
-
-function ageMs(timestamp: number | null, tick: number): string {
-  void tick;
-  if (timestamp == null) return 'never';
-  const seconds = Math.max(0, (Date.now() - timestamp) / 1000);
-  if (seconds < 1) return '<1 s ago';
-  if (seconds < 60) return `${seconds.toFixed(0)} s ago`;
-  return `${(seconds / 60).toFixed(1)} min ago`;
-}
-
-function valueOrDash(value: unknown): string {
-  if (value == null || value === '') return '-';
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '-';
-  return String(value);
-}
-
-function SpectrumDebugPanel({
-  status,
-  debug,
-  frame,
-  tick,
-}: {
-  status: SpectrumStatus | null;
-  debug: SpectrumDebug;
-  frame: SpectrumFrame | null;
-  tick: number;
-}) {
-  const latestStatusAge = status?.latest_frame_age_s == null ? '-' : `${status.latest_frame_age_s.toFixed(1)} s`;
-  return (
-    <details className="spectrum-debug" open={!frame || debug.wsState === 'error' || debug.statusError != null}>
-      <summary>Spectrum debug</summary>
-      <div className="spectrum-debug-grid">
-        <span>Status fetch</span><code>{debug.statusError ?? `ok (${ageMs(debug.statusFetchedAt, tick)})`}</code>
-        <span>Backend mode</span><code>{valueOrDash(status?.mode)}</code>
-        <span>Backend enabled</span><code>{valueOrDash(status?.enabled)}</code>
-        <span>Backend latest frame age</span><code>{latestStatusAge}</code>
-        <span>Backend frames seen</span><code>{valueOrDash(status?.latest_frames_seen)}</code>
-        <span>Backend subscribers</span><code>{valueOrDash(status?.subscriber_count)}</code>
-        <span>Config</span><code>{status ? `${status.center_freq_mhz?.toFixed(4) ?? '?'} MHz, ${status.sample_rate_mhz?.toFixed(3) ?? '?'} Msps, FFT ${status.fft_size ?? '?'}` : '-'}</code>
-        <span>WebSocket</span><code>{debug.wsState} {debug.wsUrl ? `(${debug.wsUrl})` : ''}</code>
-        <span>WS opened</span><code>{ageMs(debug.wsOpenedAt, tick)}</code>
-        <span>WS closed</span><code>{debug.wsClosedAt == null ? '-' : `${ageMs(debug.wsClosedAt, tick)} code=${debug.wsCloseCode ?? '?'} ${debug.wsCloseReason}`}</code>
-        <span>WS error</span><code>{valueOrDash(debug.wsError)}</code>
-        <span>Last message</span><code>{ageMs(debug.lastMessageAt, tick)}</code>
-        <span>Last parsed frame</span><code>{debug.lastFrameSummary ?? '-'}</code>
-        <span>Client frames</span><code>{debug.frameCount}</code>
-        <span>Parse error</span><code>{valueOrDash(debug.parseError)}</code>
-      </div>
-    </details>
   );
 }
 
@@ -504,10 +554,9 @@ function baseOption(yRange: [number, number]): EChartsOption {
     backgroundColor: 'transparent',
     animation: false,
     textStyle: { fontFamily: 'inherit' },
-    // Generous top padding gives the H I marker label room to sit above the
-    // plot area without crashing into the trace, and the wider bottom leaves
-    // breathing room beneath the tick labels.
-    grid: { left: 52, right: 18, top: 26, bottom: 30, containLabel: false },
+    // Insets here must match PLOT_LEFT_PX / PLOT_RIGHT_PX so the waterfall
+    // canvas painted below the chart shares the same frequency-axis pixels.
+    grid: { left: PLOT_LEFT_PX, right: PLOT_RIGHT_PX, top: 26, bottom: 30, containLabel: false },
     xAxis: {
       type: 'value',
       axisLine: { lineStyle: { color: lineColor } },

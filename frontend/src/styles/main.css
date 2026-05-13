@@ -606,10 +606,10 @@ input:focus-visible {
 .dashboard-rightcol > .panel { padding: 14px 16px; }
 .dashboard-rightcol .spectrum-panel-host { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .dashboard-rightcol .spectrum-panel-host .spectrum-section { margin-bottom: 0; padding-bottom: 0; border-bottom: none; display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap { flex: 1; min-height: 0; margin-bottom: 0; }
-.dashboard-rightcol .spectrum-panel-host .spectrum-chart { height: 100%; }
-.dashboard-rightcol .goto-panel { flex: 0 0 auto; }
-.dashboard-rightcol .goto-panel .target-form { padding-top: 8px; }
+.dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap { flex: 1; min-height: 0; margin-bottom: 0; height: auto; }
+/* In the right-column layout the wrap fills the available vertical space.
+   The line chart keeps its fixed height; the waterfall expands to consume
+   whatever's left. */
 
 .panel {
   min-width: 0;
@@ -673,65 +673,76 @@ input:focus-visible {
   pointer-events: auto;
   flex: 0 0 min(280px, 42%);
 }
-.skymap-overlay-controls .panel-header { margin: 0 0 10px; }
-.skymap-overlay-controls .motion-card { padding: 10px; gap: 10px; }
-.skymap-overlay-controls .pad-btn { min-height: 48px; font-size: 11px; }
+.skymap-overlay-controls .motion-card { padding: 10px; gap: 8px; }
+.skymap-overlay-controls .pad-btn { min-height: 48px; }
 
-.status-overlay-toggle {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* Tab strip — two plain buttons with an underline indicator on the active
+   tab. Lives at the top of the floating pointing overlay. */
+.motion-mode {
+  display: flex;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 10px;
+}
+.motion-mode-step {
+  flex: 1;
+  padding: 5px 0;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--fg-subtle);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.motion-mode-step[aria-checked="true"] { color: var(--fg); border-bottom-color: var(--sect-teal); }
+.motion-mode-step:hover { color: var(--fg); }
+.motion-mode-step:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+/* GoTo form when it lives inside the floating overlay — stack vertically,
+   inputs span full width, big amber action button anchored at the bottom.
+   The base .target-form is a 3-column horizontal layout used by the older
+   panel-section variant; this override is purely additive. */
+.target-form-overlay {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 10px;
+  border: none;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+}
+.target-form-overlay label span {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.target-form-overlay input {
+  height: 34px;
+  font-size: 13px;
+}
+.target-form-overlay .action-button {
+  width: 100%;
+  margin-top: 2px;
+}
+
+/* Status panel — always-visible section below the waterfall in the right column */
+.status-side-panel {
   flex: 0 0 auto;
-  border-radius: var(--r-md);
-  border: 1px solid var(--hairline-strong);
-  background: rgba(16, 18, 30, 0.86);
-  color: var(--fg-muted);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(6px);
-  pointer-events: auto;
+  padding: 14px 16px 16px;
 }
-.status-overlay-toggle:hover {
-  color: var(--fg);
-  border-color: var(--sect-peri);
-  background: rgba(25, 28, 45, 0.9);
-}
-
-.status-overlay-panel {
-  display: none;
-  position: relative;
-  min-width: 0;
-  max-height: min(260px, calc(var(--viewer-row-height) - 32px));
-  overflow: auto;
-  flex: 1 1 auto;
-  padding: 12px 14px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--r-md);
-  background: rgba(16, 18, 30, 0.9);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-  pointer-events: auto;
-}
-.skymap-bottom-dock.status-open .status-overlay-panel {
-  display: block;
-}
-.status-overlay-panel .panel-header {
-  margin: 0 0 10px;
-}
-.status-overlay-panel .telemetry-dense {
-  grid-template-columns: repeat(3, minmax(160px, 1fr));
+.status-side-panel .panel-header { margin-bottom: 10px; }
+.status-side-panel .telemetry-dense {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
 }
-.status-overlay-panel .dense-readout {
-  padding: 10px 12px;
-  background: rgba(11, 13, 22, 0.74);
-}
 .status-overlay-health {
-  position: absolute;
-  top: 12px;
-  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 8px;
   padding: 3px 9px;
   border-radius: 999px;
   font-size: 10px;
@@ -863,8 +874,24 @@ input:focus-visible {
 .spectrum-chart-wrap {
   position: relative;
   margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 420px;
 }
-.spectrum-chart { width: 100%; height: 260px; }
+/* The spectrum line plot owns the top of the stack; the waterfall canvas
+   takes the rest. Both span the full container width so their plot regions
+   line up — the chart's grid insets (PLOT_LEFT_PX / PLOT_RIGHT_PX) are
+   mirrored by the canvas drawing offsets. */
+.spectrum-chart { width: 100%; height: 170px; flex: 0 0 auto; }
+.spectrum-waterfall {
+  display: block;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Match the panel surface so the empty area below the data reads as part
+     of the section rather than a separate black box. */
+  background: var(--surface-1);
+}
 .spectrum-chart-empty {
   position: absolute;
   inset: 0;
@@ -911,37 +938,6 @@ input:focus-visible {
   background: var(--surface-2);
   border-radius: var(--r-sm);
   border-left: 2px solid var(--sect-amber);
-}
-
-.spectrum-debug {
-  margin-top: 10px;
-  border-top: 1px solid var(--hairline);
-  padding-top: 8px;
-}
-.spectrum-debug summary {
-  cursor: pointer;
-  color: var(--fg-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.spectrum-debug-grid {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 4px 12px;
-  margin-top: 8px;
-  font-size: 11px;
-}
-.spectrum-debug-grid span {
-  color: var(--fg-subtle);
-}
-.spectrum-debug-grid code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--fg-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
 }
 
 .spectrum-empty {
@@ -1022,11 +1018,6 @@ h2.panel-header {
   border-radius: var(--r-md);
   padding: 14px 16px;
 }
-.goto-panel .target-form {
-  grid-template-columns: 1fr;
-  padding-top: 8px;
-}
-.goto-panel .target-form .action-button { width: 100%; }
 
 .spectrum-host { padding: 14px 16px; }
 .spectrum-host .spectrum-section {
@@ -1046,25 +1037,37 @@ h2.panel-header {
    the pad.
    ========================================================================= */
 .motion-card {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: stretch;
-  gap: 14px;
-  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
   border-radius: var(--r-md);
   background: var(--surface-2);
 }
 
+/* Compact 3×3 grid with the stop button removed — the centre cell is just
+   empty space, which gives the cross more breathing room and makes the four
+   directions read as a single instrument rather than four separate buttons.
+   The empty centre is filled by a subtle hairline ring drawn on .pointing-pad
+   so the eye still registers a coherent shape. */
 .pointing-pad {
+  position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  grid-template-rows: 1fr 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 6px;
   min-width: 0;
+}
+.pointing-pad::before {
+  content: "";
+  position: absolute;
+  inset: calc(33.333% + 2px);
+  border-radius: 50%;
+  border: 1px dashed var(--hairline);
+  pointer-events: none;
 }
 .pad-up    { grid-column: 2; grid-row: 1; }
 .pad-west  { grid-column: 1; grid-row: 2; }
-.pad-stop  { grid-column: 2; grid-row: 2; }
 .pad-east  { grid-column: 3; grid-row: 2; }
 .pad-down  { grid-column: 2; grid-row: 3; }
 
@@ -1073,42 +1076,54 @@ h2.panel-header {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  min-height: 64px;
-  font-size: 12px;
-  font-weight: 500;
+  gap: 1px;
+  min-height: 58px;
+  padding: 6px 4px;
   color: var(--fg-muted);
-  background: var(--surface-3);
-  border: 1px solid var(--hairline-strong);
+  background: var(--surface-1);
+  border: 1px solid transparent;
   border-radius: var(--r-md);
-  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  cursor: pointer;
+  transition:
+    background var(--t-fast),
+    color var(--t-fast),
+    border-color var(--t-fast),
+    transform var(--t-fast);
   touch-action: none;
   user-select: none;
 }
+.pad-btn > svg {
+  color: var(--fg-subtle);
+  transition: color var(--t-fast), transform var(--t-fast);
+}
+.pad-btn-label {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--fg-subtle);
+  transition: color var(--t-fast);
+}
 .pad-btn:hover {
   color: var(--sect-teal);
-  border-color: var(--sect-teal);
   background: var(--sect-teal-soft);
 }
+.pad-btn:hover > svg,
+.pad-btn:hover .pad-btn-label {
+  color: var(--sect-teal);
+}
+.pad-btn:active { transform: scale(0.97); }
+
+/* Jog-active = pointer is held down and we're streaming commands. Slightly
+   stronger fill plus a tinted hairline so the lit-up button stands out from
+   the resting trio without screaming. */
 .pad-btn.jog-active,
 .pad-btn.jog-active:hover {
   color: var(--sect-teal);
-  border-color: var(--sect-teal);
   background: var(--sect-teal-soft);
+  border-color: rgba(119, 203, 185, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(119, 203, 185, 0.18);
 }
-
-/* Stop button — distinctly different colour family (crimson) from the jog
-   buttons (teal hover) so the centre never gets confused for a direction. */
-.pad-btn.pad-stop {
-  color: var(--crit);
-  border-color: rgba(216, 17, 89, 0.45);
-  background: var(--surface-3);
-}
-.pad-btn.pad-stop:hover {
-  color: #fff;
-  background: var(--crit);
-  border-color: var(--crit);
-}
+.pad-btn.jog-active > svg { color: var(--sect-teal); transform: scale(1.08); }
+.pad-btn.jog-active .pad-btn-label { color: var(--sect-teal); }
 
 /* =========================================================================
    Speed fader — vertical range input styled as an instrument-panel slider.
@@ -1188,103 +1203,60 @@ h2.panel-header {
 }
 
 /* =========================================================================
-   Notched speed selector — discrete Fine / Coarse / Slew presets stacked
-   vertically. Each step's bar grows in width and warms in color so the
-   selector reads as an instrument-panel throttle.
+   Segmented speed toggle — horizontal pill matching the sky-map survey
+   switcher. Three discrete presets (Slew / Coarse / Fine) in a single row.
    ========================================================================= */
-.speed-notch {
+.speed-toggle {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 72px;
-}
-.speed-notch-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
-.speed-notch-track {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 100%;
-  padding: 6px;
-  gap: 4px;
-  background: var(--surface-1);
-  border: 1px solid var(--hairline);
+  padding: 3px;
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--r-md);
+  background: var(--surface-1);
+  gap: 2px;
 }
-.speed-notch-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 8px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  color: var(--fg-subtle);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
-  min-height: 0;
-}
-.speed-notch-step:hover { color: var(--fg); background: var(--surface-2); }
-.speed-notch-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.speed-notch-bar {
+.speed-toggle-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.speed-toggle-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.speed-toggle-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+.speed-toggle-bar {
   display: block;
-  height: 4px;
-  border-radius: 2px;
+  height: 2px;
+  border-radius: 1px;
   flex-shrink: 0;
   background: var(--hairline-strong);
   transition: background var(--t-fast), box-shadow var(--t-fast);
 }
-.speed-notch-slew   .speed-notch-bar { width: 32px; }
-.speed-notch-coarse .speed-notch-bar { width: 22px; }
-.speed-notch-fine   .speed-notch-bar { width: 12px; }
+.speed-toggle-slew   .speed-toggle-bar { width: 20px; }
+.speed-toggle-coarse .speed-toggle-bar { width: 13px; }
+.speed-toggle-fine   .speed-toggle-bar { width: 7px; }
 
-.speed-notch-text { flex: 1; text-align: left; }
-
-/* Active state — each preset gets its own color so the progression Fine →
-   Coarse → Slew reads at a glance: cool seafoam through amber to a hot
-   golden accent. */
-.speed-notch-step.is-active {
+.speed-toggle-btn.is-active {
   background: var(--surface-3);
-  border-color: var(--hairline-strong);
-}
-.speed-notch-fine.is-active {
-  color: var(--sect-teal);
-  border-color: rgba(119, 203, 185, 0.45);
-  background: var(--sect-teal-soft);
-}
-.speed-notch-fine.is-active   .speed-notch-bar {
-  background: var(--sect-teal);
-  box-shadow: 0 0 6px rgba(119, 203, 185, 0.6);
-}
-.speed-notch-coarse.is-active {
   color: var(--accent);
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
 }
-.speed-notch-coarse.is-active .speed-notch-bar {
+.speed-toggle-btn.is-active .speed-toggle-bar {
   background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-soft);
-}
-.speed-notch-slew.is-active {
-  color: #0b0d16;
-  background: var(--accent);
-  border-color: var(--accent-strong);
-}
-.speed-notch-slew.is-active   .speed-notch-bar {
-  background: #0b0d16;
-  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 5px rgba(255, 188, 66, 0.4);
 }
 /* =========================================================================
    Axis status — two-column readout sitting next to the d-pad. Same height
@@ -1551,16 +1523,19 @@ h2.panel-header {
   position: absolute;
   top: 10px;
   left: 10px;
+  right: 10px;
   z-index: 40;
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  pointer-events: none;
 }
 
 .skymap-layer-control {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 .skymap-control-label {
@@ -1581,6 +1556,8 @@ h2.panel-header {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   cursor: pointer;
+  pointer-events: auto;
+  flex: 0 0 auto;
 }
 .skymap-control-label:hover,
 .skymap-control-label.active {
@@ -1620,6 +1597,9 @@ h2.panel-header {
   color: var(--accent);
   box-shadow: none;
 }
+.skymap-survey-btn.radio { color: rgba(255, 218, 124, 0.85); }
+.skymap-survey-btn.radio:hover:not(:disabled) { color: var(--accent); }
+.skymap-survey-btn.radio.active { color: var(--accent); }
 .skymap-survey-btn:disabled { opacity: 0.4; }
 .skymap-surveys-mobile { display: none; }
 
@@ -1639,6 +1619,7 @@ h2.panel-header {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
+  pointer-events: auto;
 }
 .skymap-tooltip-toggle:hover { color: var(--fg); }
 .skymap-tooltip-toggle.active { color: var(--accent); border-color: var(--accent-line); }
@@ -1655,9 +1636,10 @@ h2.panel-header {
 
 .skymap-spectrum-selector {
   position: relative;
-  width: min(640px, calc(100vw - 160px));
-  min-width: 360px;
-  padding: 10px 12px 12px;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  padding: 10px 12px 10px;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--r-md);
   background: rgba(11, 13, 22, 0.88);
@@ -1666,6 +1648,8 @@ h2.panel-header {
   -webkit-backdrop-filter: blur(10px);
   color: var(--fg-muted);
   pointer-events: auto;
+  display: flex;
+  flex-direction: column;
 }
 .skymap-spectrum-selector.disabled { opacity: 0.55; pointer-events: none; }
 
@@ -1682,65 +1666,22 @@ h2.panel-header {
   display: block;
 }
 
-.skymap-spectrum-markers {
-  position: relative;
-  left: 44px;
-  right: 16px;
-  width: calc(100% - 60px);
-  height: 94px;
-  margin-bottom: 2px;
-  pointer-events: none;
+.skymap-survey-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 0 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-.skymap-spectrum-preset {
-  position: absolute;
-  transform: translateX(-50%);
-  min-height: 28px;
-  max-width: 92px;
-  padding: 0 8px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--hairline-strong);
-  background: rgba(65, 93, 150, 0.26);
-  color: rgba(218, 229, 255, 0.94);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  pointer-events: auto;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32);
-}
-.skymap-spectrum-preset.radio {
-  background: rgba(255, 188, 66, 0.09);
-  color: rgba(255, 218, 124, 0.94);
-}
-.skymap-spectrum-preset.optical {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 241, 184, 0.94);
-}
-.skymap-spectrum-preset:hover:not(:disabled),
-.skymap-spectrum-preset:focus-visible {
-  border-color: var(--accent-line);
-  background: rgba(72, 99, 170, 0.42);
-  outline: none;
-}
-.skymap-spectrum-preset.radio:hover:not(:disabled),
-.skymap-spectrum-preset.radio:focus-visible {
-  background: rgba(255, 188, 66, 0.15);
-}
-.skymap-spectrum-preset.optical:hover:not(:disabled),
-.skymap-spectrum-preset.optical:focus-visible {
-  background: rgba(255, 255, 255, 0.14);
-}
-.skymap-spectrum-preset.active {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px rgba(255, 188, 66, 0.25);
-}
-.skymap-spectrum-preset:disabled {
-  cursor: default;
-  opacity: 0.5;
+.skymap-spectrum-desc {
+  margin: 0;
+  padding: 6px 2px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(155, 158, 206, 0.75);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  min-height: 1.6em;
 }
 
 .skymap-horizon-canvas {
@@ -1980,6 +1921,19 @@ h2.panel-header {
 .skymap-altaz-target {
   color: var(--accent);
   font-weight: 500;
+}
+
+/* When the user is on an exploration-only survey (anything other than HI4PI)
+   the click handler drops target selection. The chip below the map flips to
+   an "Explore" label so the silent no-op clicks aren't mysterious, and the
+   Aladin canvas gets a slightly muted hover treatment to reinforce that
+   pointing is locked. */
+.skymap-wrapper-explore .skymap-altaz-chip { color: var(--fg-subtle); }
+.skymap-explore-badge {
+  margin-left: 6px;
+  color: var(--fg-faint);
+  font-size: 10px;
+  font-weight: 400;
 }
 
 .skymap-confirm {
@@ -2330,15 +2284,7 @@ h2.panel-header {
     flex-wrap: wrap;
   }
   .skymap-overlay-controls {
-    flex-basis: min(280px, calc(100% - 46px));
-  }
-  .status-overlay-panel {
-    flex-basis: 100%;
-    max-height: 240px;
-    order: -1;
-  }
-  .status-overlay-panel .telemetry-dense {
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    flex-basis: min(280px, calc(100% - 28px));
   }
 }
 

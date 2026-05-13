@@ -2,7 +2,7 @@ import './styles/main.css';
 
 import {
   Activity, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Cpu, Crosshair, Download, Gauge, HelpCircle, Home, LogOut, Navigation,
+  Cpu, Crosshair, Download, HelpCircle, Home, Info, LogOut, Navigation,
   Thermometer, Upload, Zap,
 } from 'lucide-react';
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -54,8 +54,10 @@ function App() {
   const [queueConfig, setQueueConfig] = useState<QueueConfig | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
-  const [statusOverlayOpen, setStatusOverlayOpen] = useState(false);
+  const [tooltipsEnabled, setTooltipsEnabled] = useState(true);
   const nextErrorId = useRef(1);
+  const prevIsActiveRef = useRef<boolean | null>(null);
+  const lastLeaseRemainingRef = useRef<number | null>(null);
 
   const logEvent = (source: string, message: string) => {
     const now = new Date();
@@ -141,6 +143,31 @@ function App() {
       ws.close();
     };
   }, [queueStatus?.position === -1, queueStatus == null]);
+
+  // Track the last known lease time so we can distinguish lease expiry from
+  // idle timeout when the session drops.
+  useEffect(() => {
+    if (queueStatus?.lease_remaining_s != null) {
+      lastLeaseRemainingRef.current = queueStatus.lease_remaining_s;
+    }
+  }, [queueStatus?.lease_remaining_s]);
+
+  // Auto-refresh only on hard lease expiry with an empty queue. An idle
+  // timeout leaves plenty of lease time remaining, so lastLeaseRemainingRef
+  // will still be high — correctly skipping the reload in that case.
+  useEffect(() => {
+    const wasActive = prevIsActiveRef.current;
+    prevIsActiveRef.current = queueStatus?.is_active ?? null;
+    if (
+      wasActive === true &&
+      queueStatus?.is_active === false &&
+      queueStatus.queue_length === 0 &&
+      lastLeaseRemainingRef.current != null &&
+      lastLeaseRemainingRef.current < 15
+    ) {
+      window.location.reload();
+    }
+  }, [queueStatus?.is_active, queueStatus?.queue_length]);
 
   const handleJoin = async (turnstileToken: string | null) => {
     setJoining(true);
@@ -295,36 +322,42 @@ function App() {
 
       <main className="dashboard">
         <section className="panel skymap-panel">
-          <SkyMap telemetry={telemetry} config={telescopeConfig} onNotice={setNotice} onTarget={handleMapTarget} />
-          <div className={`skymap-bottom-dock${statusOverlayOpen ? ' status-open' : ''}`}>
+          <SkyMap
+            telemetry={telemetry}
+            config={telescopeConfig}
+            onNotice={setNotice}
+            onTarget={handleMapTarget}
+            tooltipsEnabled={tooltipsEnabled}
+          />
+          <div className="skymap-bottom-dock">
             <div className="skymap-overlay-controls">
-              <JogControls runCommand={runCommand} />
+              <MotionControls
+                runCommand={runCommand}
+                gotoAltAz={gotoAltAz}
+                targetAz={targetAz}
+                targetAlt={targetAlt}
+                setTargetAz={setTargetAz}
+                setTargetAlt={setTargetAlt}
+              />
             </div>
             <button
               type="button"
-              className="status-overlay-toggle"
-              onClick={() => setStatusOverlayOpen((open) => !open)}
-              aria-expanded={statusOverlayOpen}
-              aria-controls="skymap-status-overlay"
-              title={statusOverlayOpen ? 'Collapse status panel' : 'Expand status panel'}
+              className={`skymap-tooltip-toggle${tooltipsEnabled ? ' active' : ''}`}
+              onClick={() => setTooltipsEnabled((enabled) => !enabled)}
+              title={tooltipsEnabled ? 'Hide hover tooltips' : 'Show hover tooltips'}
+              aria-pressed={tooltipsEnabled}
             >
-              {statusOverlayOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+              <Info size={13} />
+              Tooltips
             </button>
-            <section
-              id="skymap-status-overlay"
-              className="status-overlay-panel"
-              aria-hidden={!statusOverlayOpen}
-            >
-              <TelemetryDashboard telemetry={telemetry} compact />
-            </section>
           </div>
         </section>
         <div className="dashboard-rightcol">
           <section className="panel spectrum-panel-host">
             <SpectrumPanel />
           </section>
-          <section className="panel goto-panel">
-            <GotoForm gotoAltAz={gotoAltAz} targetAz={targetAz} targetAlt={targetAlt} setTargetAz={setTargetAz} setTargetAlt={setTargetAlt} />
+          <section className="panel status-side-panel">
+            <TelemetryDashboard telemetry={telemetry} compact />
           </section>
         </div>
         <section className="panel controls-panel">
@@ -458,28 +491,23 @@ function ErrorLog({ entries, onClear }: { entries: ErrorLogEntry[]; onClear: () 
 
 // ─── Telescope controls ───────────────────────────────────────────────────────
 
-function JogControls({ runCommand }: {
+// Combined floating control surface. A sliding segmented toggle picks between
+// the press-and-hold jog pad and the numeric GoTo form so a single overlay
+// holds both interaction modes without doubling the on-screen real estate.
+function MotionControls({
+  runCommand, gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt,
+}: {
   runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
-}) {
-  const [slewSpeed, setSlewSpeed] = useState(40);
-  const speed = Math.round(slewSpeed * 127 / 100);
-  return (
-    <>
-      <PanelHeader icon={<Gauge size={14} />} title="Pointing" accent="teal" />
-      <div className="motion-card">
-        <PointingPad runCommand={runCommand} speed={speed} />
-        <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={setSlewSpeed} />
-      </div>
-    </>
-  );
-}
-function GotoForm({ gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt }: {
   gotoAltAz: (alt: number, az: number) => Promise<void>;
   targetAz: number;
   targetAlt: number;
   setTargetAz: (v: number) => void;
   setTargetAlt: (v: number) => void;
 }) {
+  const [mode, setMode] = useState<'jog' | 'goto'>('jog');
+  const [slewSpeed, setSlewSpeed] = useState(40);
+  const speed = Math.round(slewSpeed * 127 / 100);
+
   const submitTarget = async (e: FormEvent) => {
     e.preventDefault();
     await gotoAltAz(targetAlt, targetAz);
@@ -487,12 +515,54 @@ function GotoForm({ gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt }:
 
   return (
     <>
-      <PanelHeader icon={<Navigation size={14} />} title="Manual GoTo" accent="teal" />
-      <form className="target-form" onSubmit={submitTarget}>
-        <label><span>Azimuth °</span><input type="number" min={0} max={360} step={0.001} value={targetAz} onChange={(e) => setTargetAz(Number(e.target.value))} /></label>
-        <label><span>Altitude °</span><input type="number" min={0} max={90} step={0.001} value={targetAlt} onChange={(e) => setTargetAlt(Number(e.target.value))} /></label>
-        <button type="submit" className="action-button"><Navigation size={14} /> Slew </button>
-      </form>
+      <div className="motion-mode" role="radiogroup" aria-label="Control mode">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === 'jog'}
+          className="motion-mode-step"
+          onClick={() => setMode('jog')}
+        >
+          Jog
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === 'goto'}
+          className="motion-mode-step"
+          onClick={() => setMode('goto')}
+        >
+          GoTo
+        </button>
+      </div>
+      {mode === 'jog' ? (
+        <div className="motion-card">
+          <PointingPad runCommand={runCommand} speed={speed} />
+          <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={setSlewSpeed} />
+        </div>
+      ) : (
+        <form className="target-form target-form-overlay" onSubmit={submitTarget}>
+          <label>
+            <span>Azimuth °</span>
+            <input
+              type="number" min={0} max={360} step={0.001}
+              value={targetAz}
+              onChange={(e) => setTargetAz(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            <span>Altitude °</span>
+            <input
+              type="number" min={0} max={90} step={0.001}
+              value={targetAlt}
+              onChange={(e) => setTargetAlt(Number(e.target.value))}
+            />
+          </label>
+          <button type="submit" className="action-button">
+            <Navigation size={14} /> Slew
+          </button>
+        </form>
+      )}
     </>
   );
 }
@@ -507,32 +577,28 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
   slewSpeed: number;
   setSlewSpeed: (n: number) => void;
 }) {
-  // Snap to the nearest preset for visual selection.
   const active = SPEED_PRESETS.reduce((best, p) =>
     Math.abs(p.value - slewSpeed) < Math.abs(best.value - slewSpeed) ? p : best,
   SPEED_PRESETS[0]);
 
   return (
-    <div className="speed-notch" role="radiogroup" aria-label="Slew speed">
-      <span className="speed-notch-label">Speed</span>
-      <div className="speed-notch-track">
-        {SPEED_PRESETS.map((p) => {
-          const selected = p.id === active.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              className={`speed-notch-step speed-notch-${p.id}${selected ? ' is-active' : ''}`}
-              onClick={() => setSlewSpeed(p.value)}
-            >
-              <span className="speed-notch-bar" aria-hidden />
-              <span className="speed-notch-text">{p.label}</span>
-            </button>
-          );
-        })}
-      </div>
+    <div className="speed-toggle" role="radiogroup" aria-label="Slew speed">
+      {SPEED_PRESETS.map((p) => {
+        const selected = p.id === active.id;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            className={`speed-toggle-btn speed-toggle-${p.id}${selected ? ' is-active' : ''}`}
+            onClick={() => setSlewSpeed(p.value)}
+          >
+            <span className="speed-toggle-bar" aria-hidden />
+            <span>{p.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -809,17 +875,17 @@ function PointingPad({ runCommand, speed }: {
 
   return (
     <div className="pointing-pad" role="group" aria-label="Pointing controls">
-      <button type="button" className={`pad-btn pad-up${up.active ? ' jog-active' : ''}`} {...up}>
-        <ChevronUp size={18} /><span>Up</span>
+      <button type="button" className={`pad-btn pad-up${up.active ? ' jog-active' : ''}`} {...up} aria-label="Up">
+        <ChevronUp size={22} strokeWidth={1.75} />
       </button>
-      <button type="button" className={`pad-btn pad-west${west.active ? ' jog-active' : ''}`} {...west}>
-        <ChevronLeft size={18} /><span>West</span>
+      <button type="button" className={`pad-btn pad-west${west.active ? ' jog-active' : ''}`} {...west} aria-label="West">
+        <ChevronLeft size={22} strokeWidth={1.75} />
       </button>
-      <button type="button" className={`pad-btn pad-east${east.active ? ' jog-active' : ''}`} {...east}>
-        <ChevronRight size={18} /><span>East</span>
+      <button type="button" className={`pad-btn pad-east${east.active ? ' jog-active' : ''}`} {...east} aria-label="East">
+        <ChevronRight size={22} strokeWidth={1.75} />
       </button>
-      <button type="button" className={`pad-btn pad-down${down.active ? ' jog-active' : ''}`} {...down}>
-        <ChevronDown size={18} /><span>Down</span>
+      <button type="button" className={`pad-btn pad-down${down.active ? ' jog-active' : ''}`} {...down} aria-label="Down">
+        <ChevronDown size={22} strokeWidth={1.75} />
       </button>
     </div>
   );

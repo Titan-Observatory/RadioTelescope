@@ -4,7 +4,7 @@ import { GridComponent } from 'echarts/components';
 import * as echarts from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
-import { Info, Layers, Maximize2, Telescope } from 'lucide-react';
+import { Layers, Maximize2, Telescope } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { AltAzPoint, RaDecTarget, RoboClawTelemetry, SkyOverlay, TelescopeConfig } from '../types';
@@ -345,8 +345,8 @@ const SURVEYS = [
     label: 'Haslam 408 MHz',
     shortLabel: 'Haslam 408',
     title: 'Haslam 408 MHz reprocessed all-sky radio survey',
+    description: 'Synchrotron continuum at 408 MHz — galactic non-thermal emission reference.',
     spectrumMhz: 408,
-    markerLane: 1,
     markerLeft: 7,
   },
   {
@@ -354,8 +354,8 @@ const SURVEYS = [
     label: '21cm Hydrogen Line',
     shortLabel: 'H I 1420',
     title: 'HI4PI 21cm neutral hydrogen column density',
+    description: 'Neutral hydrogen column density at 1420 MHz — the telescope\'s primary science target.',
     spectrumMhz: 1420.4058,
-    markerLane: 2,
     markerLeft: 42,
   },
   {
@@ -363,8 +363,8 @@ const SURVEYS = [
     label: 'AKARI FIS',
     shortLabel: 'AKARI',
     title: 'AKARI FIS far-infrared all-sky color survey',
+    description: 'Far-infrared (65–160 µm) — cold dust, molecular clouds, and star-forming regions.',
     spectrumMhz: 3_100_000,
-    markerLane: 0,
     markerLeft: 58,
   },
   {
@@ -372,8 +372,8 @@ const SURVEYS = [
     label: 'IRIS',
     shortLabel: 'IRIS',
     title: 'IRIS infrared all-sky color survey',
+    description: 'Mid-to-far infrared (12–100 µm) — warm dust emission and galactic infrared cirrus.',
     spectrumMhz: 5_000_000,
-    markerLane: 1,
     markerLeft: 65,
   },
   {
@@ -381,8 +381,8 @@ const SURVEYS = [
     label: 'AllWISE',
     shortLabel: 'AllWISE',
     title: 'AllWISE infrared all-sky color survey',
+    description: 'Near/mid-infrared (3.4–22 µm) — stellar populations, AGN, and dusty galaxies.',
     spectrumMhz: 25_000_000,
-    markerLane: 2,
     markerLeft: 72,
   },
   {
@@ -390,36 +390,36 @@ const SURVEYS = [
     label: '2MASS',
     shortLabel: '2MASS',
     title: '2MASS near-infrared color survey',
+    description: 'Near-infrared JHK (1.2–2.2 µm) — stars, the galactic bulge, and nearby galaxies.',
     spectrumMhz: 187_000_000,
-    markerLane: 0,
-    markerLeft: 84,
+    markerLeft: 79,
   },
   {
     id: 'CDS/P/Finkbeiner',
     label: 'H-alpha',
     shortLabel: 'H-alpha',
     title: 'Finkbeiner H-alpha composite survey',
+    description: 'Ionized hydrogen (656 nm) — HII regions, planetary nebulae, and the warm ISM.',
     spectrumMhz: 456_800_000,
-    markerLane: 1,
-    markerLeft: 89,
-  },
-  {
-    id: 'CDS/P/DSS2/color',
-    label: 'DSS2 Color',
-    shortLabel: 'DSS2',
-    title: 'DSS2 optical color all-sky survey',
-    spectrumMhz: 599_000_000,
-    markerLane: 0,
-    markerLeft: 95,
+    markerLeft: 86,
   },
   {
     id: 'CDS/P/Mellinger/color',
     label: 'Visible Light',
     shortLabel: 'Visible',
     title: 'Mellinger visible-light color all-sky survey',
+    description: 'Full-color optical panorama (RGB) — the sky as seen by the naked eye.',
     spectrumMhz: 545_000_000,
-    markerLane: 2,
-    markerLeft: 91,
+    markerLeft: 92.5,
+  },
+  {
+    id: 'CDS/P/DSS2/color',
+    label: 'DSS2 Color',
+    shortLabel: 'DSS2',
+    title: 'DSS2 optical color all-sky survey',
+    description: 'Deep optical atlas (B/R/I, ~1″ resolution) digitized from photographic plates.',
+    spectrumMhz: 599_000_000,
+    markerLeft: 98,
   },
 ] as const;
 
@@ -449,10 +449,6 @@ function surveyLogFreq(survey: (typeof SURVEYS)[number]): number {
   return Math.log10(survey.spectrumMhz);
 }
 
-function surveyMarkerLeftPercent(survey: (typeof SURVEYS)[number]): number {
-  if ('markerLeft' in survey) return survey.markerLeft;
-  return Math.min(96, Math.max(4, logFreqToRatio(surveyLogFreq(survey)) * 100));
-}
 
 function surveyToneClass(survey: (typeof SURVEYS)[number]): string {
   if (survey.spectrumMhz >= VISIBLE_LOW_MHZ) return ' optical';
@@ -643,18 +639,19 @@ function LightSpectrumSurveySelector({
     });
   }, [hoverLogFreq, activeSurvey]);
 
+  const activeDef = surveyDefinition(activeSurvey);
+
   return (
     <div id="skymap-spectrum-selector" className={`skymap-spectrum-selector${disabled ? ' disabled' : ''}`}>
-      <div className="skymap-spectrum-markers" aria-label="Survey presets">
+      <div className="skymap-spectrum-chart" ref={chartHostRef} role="button" aria-label="Select sky survey by frequency" />
+      <div className="skymap-survey-list" role="radiogroup" aria-label="Survey presets">
         {SURVEYS.map((survey) => (
           <button
             key={survey.id}
             type="button"
-            className={`skymap-spectrum-preset${surveyToneClass(survey)}${activeSurvey === survey.id ? ' active' : ''}`}
-            style={{
-              left: `${surveyMarkerLeftPercent(survey)}%`,
-              top: `${survey.markerLane * 32}px`,
-            }}
+            role="radio"
+            aria-checked={activeSurvey === survey.id}
+            className={`skymap-survey-btn${surveyToneClass(survey)}${activeSurvey === survey.id ? ' active' : ''}`}
             onClick={() => onSelectSurvey(survey.id)}
             disabled={disabled}
             title={survey.title}
@@ -663,7 +660,7 @@ function LightSpectrumSurveySelector({
           </button>
         ))}
       </div>
-      <div className="skymap-spectrum-chart" ref={chartHostRef} role="button" aria-label="Select sky survey by frequency" />
+      <p className="skymap-spectrum-desc">{activeDef.description}</p>
     </div>
   );
 }
@@ -679,10 +676,11 @@ interface SkyMapProps {
   config: TelescopeConfig | null;
   onNotice: (msg: string | null) => void;
   onTarget: (az: number, alt: number) => void;
+  tooltipsEnabled: boolean;
   overlays?: SkyOverlay[];
 }
 
-export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }: SkyMapProps) {
+export function SkyMap({ telemetry, config, onNotice, onTarget, tooltipsEnabled, overlays = [] }: SkyMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const aladinRef = useRef<ReturnType<typeof A.aladin> | null>(null);
   const configRef       = useRef<TelescopeConfig | null>(null);
@@ -700,10 +698,12 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
   const targetCatalogRef = useRef<ReturnType<typeof A.catalog> | null>(null);
   const initializedRef = useRef(false);
   const onTargetRef = useRef<((az: number, alt: number) => void) | null>(null);
+  // Latest selected survey, mirrored into a ref so the click handler (attached
+  // once in the init effect) can check it without being rebuilt.
+  const surveyRef = useRef<SurveyId>('CDS/P/HI4PI/NHI');
   const [ready, setReady] = useState(false);
   const [pending, setPending] = useState<RaDecTarget | null>(null);
   const [survey, setSurvey] = useState<SurveyId>('CDS/P/HI4PI/NHI');
-  const [tooltipsEnabled, setTooltipsEnabled] = useState(true);
   const [viewSelectorOpen, setViewSelectorOpen] = useState(false);
   const [cameraSwapped, setCameraSwapped] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<
@@ -715,6 +715,10 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
   useEffect(() => { telemetryRef.current = telemetry; }, [telemetry]);
   useEffect(() => { pendingRef.current   = pending;   }, [pending]);
   useEffect(() => { onTargetRef.current  = onTarget;  }, [onTarget]);
+  useEffect(() => { surveyRef.current    = survey;    }, [survey]);
+  useEffect(() => {
+    if (!tooltipsEnabled) setHoverTooltip(null);
+  }, [tooltipsEnabled]);
 
   // Initialise Aladin Lite once
   useEffect(() => {
@@ -875,6 +879,12 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
           suppressClickUntil = 0;
           if (shouldSuppress) return;
         }
+
+        // Non-hydrogen surveys are exploration-only — the telescope is a 21 cm
+        // instrument and pointing at, say, an infrared source would just put
+        // the beam somewhere meaningless. Drop the click silently rather than
+        // setting a target the user can't actually observe.
+        if (surveyRef.current !== 'CDS/P/HI4PI/NHI') return;
 
         const rect = container.getBoundingClientRect();
         const coords = aladin.pix2world(e.clientX - rect.left, e.clientY - rect.top);
@@ -1456,7 +1466,9 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
 
   return (
     <div
-      className={`skymap-wrapper${cameraSwapped ? ' skymap-wrapper-swapped' : ''}`}
+      className={`skymap-wrapper${cameraSwapped ? ' skymap-wrapper-swapped' : ''}${
+        survey !== 'CDS/P/HI4PI/NHI' ? ' skymap-wrapper-explore' : ''
+      }`}
       onMouseMove={handleSolarHover}
       onMouseLeave={handleSkyMapLeave}
     >
@@ -1494,19 +1506,6 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
             ))}
           </div>
         </div>
-        <button
-          type="button"
-          className={`skymap-tooltip-toggle${tooltipsEnabled ? ' active' : ''}`}
-          onClick={() => {
-            setTooltipsEnabled((v) => !v);
-            setHoverTooltip(null);
-          }}
-          title={tooltipsEnabled ? 'Hide hover tooltips' : 'Show hover tooltips'}
-          aria-pressed={tooltipsEnabled}
-        >
-          <Info size={13} />
-          Tooltips
-        </button>
       </div>
 
       {(pendingAltAz || (telemetry?.altitude_deg != null && telemetry.azimuth_deg != null)) && (
@@ -1515,6 +1514,11 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, overlays = [] }:
             <span className="skymap-altaz-target">{fmtAltAz(pendingAltAz.altitude_deg, pendingAltAz.azimuth_deg)}</span>
           ) : (
             <span>{fmtAltAz(telemetry!.altitude_deg!, telemetry!.azimuth_deg!)}</span>
+          )}
+          {survey !== 'CDS/P/HI4PI/NHI' && (
+            <span className="skymap-explore-badge" title="Pointing is locked on exploration surveys — switch to H I 1420 to set a target.">
+              Explore only
+            </span>
           )}
         </div>
       )}
