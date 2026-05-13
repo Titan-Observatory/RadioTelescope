@@ -248,7 +248,8 @@ input:focus-visible {
   flex-shrink: 0;
 }
 
-.topbar-help {
+.topbar-help,
+.topbar-tooltips {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -260,7 +261,16 @@ input:focus-visible {
   color: var(--text-2);
   cursor: pointer;
 }
-.topbar-help:hover { color: var(--text-1); border-color: var(--text-2); }
+.topbar-help:hover,
+.topbar-tooltips:hover {
+  color: var(--text-1);
+  border-color: var(--text-2);
+}
+.topbar-tooltips.active {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
 
 /* Driver.js popover — match app surface colors.
    Driver's stylesheet loads after ours, so selectors here are scoped under
@@ -676,30 +686,72 @@ input:focus-visible {
 .skymap-overlay-controls .motion-card { padding: 10px; gap: 8px; }
 .skymap-overlay-controls .pad-btn { min-height: 48px; }
 
+.motion-controls-title {
+  margin: 0 0 8px;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.skymap-slew-target {
+  align-self: flex-end;
+  min-width: 168px;
+  min-height: 48px;
+  flex-direction: row;
+  gap: 8px;
+  padding: 0 20px;
+  border-color: rgba(255, 188, 66, 0.48);
+  background: linear-gradient(180deg, rgba(255, 188, 66, 0.25), rgba(255, 188, 66, 0.15));
+  color: var(--accent-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+.skymap-slew-target span {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+.skymap-slew-target:hover:not(:disabled) {
+  border-color: rgba(255, 188, 66, 0.7);
+  background: linear-gradient(180deg, rgba(255, 188, 66, 0.34), rgba(255, 188, 66, 0.2));
+  color: #fff3d1;
+}
+
 /* Tab strip — two plain buttons with an underline indicator on the active
    tab. Lives at the top of the floating pointing overlay. */
 .motion-mode {
   display: flex;
-  border-bottom: 1px solid var(--hairline);
-  margin-bottom: 10px;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 2px;
+  border-radius: var(--r-md);
+  background: var(--surface-1);
 }
 .motion-mode-step {
   flex: 1;
-  padding: 5px 0;
+  min-height: 32px;
+  padding: 0 10px;
   background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  color: var(--fg-subtle);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   text-align: center;
-  transition: color var(--t-fast), border-color var(--t-fast);
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
 }
-.motion-mode-step[aria-checked="true"] { color: var(--fg); border-bottom-color: var(--sect-teal); }
+.motion-mode-step[aria-checked="true"] {
+  background: var(--surface-3);
+  border-color: var(--hairline-strong);
+  color: var(--fg);
+}
 .motion-mode-step:hover { color: var(--fg); }
-.motion-mode-step:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.motion-mode-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* GoTo form when it lives inside the floating overlay — stack vertically,
    inputs span full width, big amber action button anchored at the bottom.
@@ -739,22 +791,6 @@ input:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
 }
-.status-overlay-health {
-  display: inline-flex;
-  align-items: center;
-  margin-bottom: 8px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--ok);
-  background: rgba(119, 203, 185, 0.12);
-}
-.status-overlay-health.bad {
-  color: var(--crit);
-  background: rgba(216, 17, 89, 0.12);
-}
-
 /* =========================================================================
    Generic ghost button — used by spectrum toolbar, integration reset, etc.
    The intent is: tertiary controls that should read as “utility” next to
@@ -790,26 +826,12 @@ input:focus-visible {
 .spectrum-head {
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
   column-gap: 14px;
-  row-gap: 4px;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
-.spectrum-head .panel-header { grid-row: 1; grid-column: 1; margin: 0; }
-.spectrum-summary {
-  grid-row: 2; grid-column: 1;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--fg-subtle);
-}
-.spectrum-summary-sep { color: var(--fg-faint); }
+.spectrum-head .panel-header { grid-column: 1; margin: 0; }
 .spectrum-status {
-  grid-row: 1 / span 2;
   grid-column: 2;
   display: inline-flex;
   align-items: center;
@@ -841,39 +863,13 @@ input:focus-visible {
   color: var(--crit);
 }
 
-.spectrum-integration-input {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--fg-muted);
-}
-.spectrum-integration-input input {
-  width: 56px;
-  height: 24px;
-  padding: 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  background: var(--surface-2);
-  color: var(--fg);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-sm);
-  -moz-appearance: textfield;
-}
-.spectrum-integration-input input::-webkit-outer-spin-button,
-.spectrum-integration-input input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.spectrum-integration-input input:focus {
-  border-color: var(--header-accent, var(--accent-line));
-  background: var(--surface-3);
-  outline: none;
-}
-
 .spectrum-counter { font-variant-numeric: tabular-nums; }
 
 .spectrum-chart-wrap {
+  --plot-left: 52px;
+  --plot-right: 18px;
   position: relative;
-  margin-bottom: 12px;
+  margin: 10px 0 12px;
   display: flex;
   flex-direction: column;
   height: 420px;
@@ -892,6 +888,46 @@ input:focus-visible {
      of the section rather than a separate black box. */
   background: var(--surface-1);
 }
+.spectrum-hydrogen-guide {
+  position: absolute;
+  inset: 26px var(--plot-right) 0 var(--plot-left);
+  z-index: 2;
+  pointer-events: none;
+}
+.spectrum-hydrogen-band,
+.spectrum-hydrogen-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.spectrum-hydrogen-band {
+  left: var(--h1-band-left);
+  right: calc(100% - var(--h1-band-right));
+  background:
+    linear-gradient(90deg, rgba(119, 203, 185, 0.02), rgba(119, 203, 185, 0.14), rgba(119, 203, 185, 0.02));
+  border-left: 1px solid rgba(119, 203, 185, 0.2);
+  border-right: 1px solid rgba(119, 203, 185, 0.2);
+}
+.spectrum-hydrogen-line {
+  left: var(--h1-line-left);
+  width: 0;
+  border-left: 2px solid rgba(119, 203, 185, 0.9);
+  box-shadow: 0 0 18px rgba(119, 203, 185, 0.34);
+}
+.spectrum-hydrogen-line > small {
+  position: absolute;
+  top: 10px;
+  left: 9px;
+  padding: 4px 7px;
+  border: 1px solid rgba(119, 203, 185, 0.2);
+  border-radius: 999px;
+  background: rgba(16, 18, 30, 0.8);
+  color: rgba(119, 203, 185, 0.86);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  line-height: 1;
+  white-space: nowrap;
+}
 .spectrum-chart-empty {
   position: absolute;
   inset: 0;
@@ -904,12 +940,284 @@ input:focus-visible {
   pointer-events: none;
 }
 
+.spectrum-observation-panel {
+  margin: 8px 0 0;
+}
+.spectrum-observation-primary {
+  position: relative;
+  padding: 4px 0 2px;
+}
+.spectrum-observation-primary p {
+  max-width: 1040px;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.spectrum-observation-primary p strong {
+  color: var(--fg);
+  font-weight: 700;
+}
+.spectrum-doppler-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.spectrum-doppler-term {
+  display: inline;
+  min-height: 0;
+  padding: 0 2px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: inherit;
+  font-weight: 800;
+  line-height: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 188, 66, 0.46);
+  text-underline-offset: 3px;
+}
+.spectrum-doppler-term:hover,
+.spectrum-doppler-term[aria-expanded="true"] {
+  background: transparent;
+  color: var(--accent-strong);
+  text-decoration-color: var(--accent);
+}
+.spectrum-doppler-preview {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  transform: translate(-50%, 4px);
+  width: 330px;
+  padding: 9px 11px 11px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(180deg, rgba(16, 18, 30, 0.98) 72%, rgba(16, 18, 30, 0)),
+    rgba(16, 18, 30, 0.92);
+  color: var(--fg-muted);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t-fast), transform var(--t-fast), visibility var(--t-fast);
+}
+.spectrum-doppler-preview::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 1px solid var(--accent-line);
+  border-bottom: 1px solid var(--accent-line);
+  background: rgba(16, 18, 30, 0.86);
+}
+.spectrum-doppler-wrap:hover .spectrum-doppler-preview,
+.spectrum-doppler-wrap:focus-within .spectrum-doppler-preview {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+.spectrum-doppler-popup {
+  position: absolute;
+  z-index: 5;
+  left: 14px;
+  right: 14px;
+  top: calc(100% - 8px);
+  padding: 18px 44px 18px 18px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(180deg, rgba(29, 32, 50, 0.98), rgba(16, 18, 30, 0.98));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.56);
+  color: var(--fg-muted);
+}
+.spectrum-doppler-popup strong {
+  display: block;
+  color: var(--accent);
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.spectrum-doppler-popup p {
+  margin: 0;
+  max-width: 760px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.spectrum-doppler-lesson-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.spectrum-doppler-lesson-grid span {
+  padding: 9px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: rgba(11, 13, 22, 0.62);
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.spectrum-doppler-close {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
 .spectrum-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-left: auto;
+}
+.spectrum-toolbar-above {
+  display: block;
+  margin: 10px 0 0;
+}
+.spectrum-control-block {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: rgba(16, 18, 30, 0.68);
+}
+.spectrum-control-label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+}
+.spectrum-control-label strong {
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.spectrum-control-label span {
+  color: var(--fg-subtle);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.spectrum-baseline-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.spectrum-baseline-term {
+  display: inline;
+  min-height: 0;
+  padding: 0 2px 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: inherit;
+  font-weight: 750;
+  line-height: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 188, 66, 0.46);
+  text-underline-offset: 3px;
+}
+.spectrum-baseline-term:hover,
+.spectrum-baseline-term[aria-expanded="true"] {
+  background: transparent;
+  color: var(--accent-strong);
+  text-decoration-color: var(--accent);
+}
+.spectrum-baseline-preview {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  transform: translate(-50%, 4px);
+  width: 310px;
+  padding: 9px 11px 11px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(180deg, rgba(16, 18, 30, 0.98) 72%, rgba(16, 18, 30, 0)),
+    rgba(16, 18, 30, 0.92);
+  color: var(--fg-muted);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t-fast), transform var(--t-fast), visibility var(--t-fast);
+}
+.spectrum-baseline-preview::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 1px solid var(--accent-line);
+  border-bottom: 1px solid var(--accent-line);
+  background: rgba(16, 18, 30, 0.86);
+}
+.spectrum-baseline-wrap:hover .spectrum-baseline-preview,
+.spectrum-baseline-wrap:focus-within .spectrum-baseline-preview {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+.spectrum-baseline-popup {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  padding: 15px 42px 15px 16px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, rgba(29, 32, 50, 0.98), rgba(16, 18, 30, 0.98));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.56);
+  color: var(--fg-muted);
+}
+.spectrum-baseline-popup strong {
+  display: block;
+  color: var(--accent);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.spectrum-baseline-popup p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.spectrum-baseline-close {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  font-size: 16px;
+  line-height: 1;
 }
 .spectrum-tool-group {
   display: inline-flex;
@@ -1076,12 +1384,12 @@ h2.panel-header {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 2px;
   min-height: 58px;
   padding: 6px 4px;
-  color: var(--fg-muted);
+  color: var(--fg);
   background: var(--surface-1);
-  border: 1px solid transparent;
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--r-md);
   cursor: pointer;
   transition:
@@ -1093,24 +1401,28 @@ h2.panel-header {
   user-select: none;
 }
 .pad-btn > svg {
-  color: var(--fg-subtle);
+  color: var(--fg-muted);
   transition: color var(--t-fast), transform var(--t-fast);
 }
 .pad-btn-label {
   font-size: 10px;
-  font-weight: 400;
-  color: var(--fg-subtle);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--fg-muted);
   transition: color var(--t-fast);
 }
 .pad-btn:hover {
   color: var(--sect-teal);
-  background: var(--sect-teal-soft);
+  background: var(--surface-3);
+  border-color: rgba(119, 203, 185, 0.38);
 }
 .pad-btn:hover > svg,
 .pad-btn:hover .pad-btn-label {
   color: var(--sect-teal);
 }
-.pad-btn:active { transform: scale(0.97); }
+.pad-btn:active {
+  transform: translateY(1px) scale(0.98);
+}
 
 /* Jog-active = pointer is held down and we're streaming commands. Slightly
    stronger fill plus a tinted hairline so the lit-up button stands out from
@@ -1119,8 +1431,7 @@ h2.panel-header {
 .pad-btn.jog-active:hover {
   color: var(--sect-teal);
   background: var(--sect-teal-soft);
-  border-color: rgba(119, 203, 185, 0.35);
-  box-shadow: inset 0 0 0 1px rgba(119, 203, 185, 0.18);
+  border-color: rgba(119, 203, 185, 0.5);
 }
 .pad-btn.jog-active > svg { color: var(--sect-teal); transform: scale(1.08); }
 .pad-btn.jog-active .pad-btn-label { color: var(--sect-teal); }
@@ -1207,56 +1518,52 @@ h2.panel-header {
    switcher. Three discrete presets (Slew / Coarse / Fine) in a single row.
    ========================================================================= */
 .speed-toggle {
-  display: flex;
-  padding: 3px;
+  display: grid;
+  grid-template-columns: auto repeat(3, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  min-height: 36px;
+  padding: 4px 4px 4px 12px;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--r-md);
   background: var(--surface-1);
-  gap: 2px;
+}
+
+.speed-toggle-heading {
+  padding: 0 10px 0 0;
+  border-right: 1px solid var(--hairline);
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .speed-toggle-btn {
-  flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   min-height: 28px;
   padding: 0 8px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--fg-muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
-  transition: background var(--t-fast), color var(--t-fast);
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
 }
 .speed-toggle-btn:hover:not(:disabled) {
-  background: var(--surface-3);
   color: var(--fg);
 }
-.speed-toggle-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
-
-.speed-toggle-bar {
-  display: block;
-  height: 2px;
-  border-radius: 1px;
-  flex-shrink: 0;
-  background: var(--hairline-strong);
-  transition: background var(--t-fast), box-shadow var(--t-fast);
-}
-.speed-toggle-slew   .speed-toggle-bar { width: 20px; }
-.speed-toggle-coarse .speed-toggle-bar { width: 13px; }
-.speed-toggle-fine   .speed-toggle-bar { width: 7px; }
+.speed-toggle-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .speed-toggle-btn.is-active {
   background: var(--surface-3);
+  border-color: var(--hairline-strong);
   color: var(--accent);
-}
-.speed-toggle-btn.is-active .speed-toggle-bar {
-  background: var(--accent);
-  box-shadow: 0 0 5px rgba(255, 188, 66, 0.4);
 }
 /* =========================================================================
    Axis status — two-column readout sitting next to the d-pad. Same height
@@ -1419,75 +1726,6 @@ h2.panel-header {
   line-height: 1.4;
 }
 
-.pid-axis {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-sm);
-  background: var(--surface-1);
-}
-
-.pid-axis-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.pid-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.pid-section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--fg-muted);
-}
-
-.pid-section-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.pid-section-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  padding: 2px 8px;
-  min-height: 22px;
-}
-
-.pid-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-  gap: 4px 8px;
-}
-
-.pid-fields label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 10px;
-  color: var(--fg-muted);
-}
-
-.pid-fields input {
-  font-size: 12px;
-  padding: 3px 6px;
-  background: var(--bg);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-xs, 3px);
-  color: var(--fg);
-}
-
 .admin-row {
   display: flex;
   align-items: center;
@@ -1597,32 +1835,23 @@ h2.panel-header {
   color: var(--accent);
   box-shadow: none;
 }
+.skymap-survey-btn.hydrogen {
+  color: #7fb4ff;
+}
+.skymap-survey-btn.hydrogen:hover:not(:disabled) {
+  color: #bcd8ff;
+  background: rgba(78, 143, 255, 0.14);
+}
+.skymap-survey-btn.hydrogen.active {
+  color: #eaf3ff;
+  background: linear-gradient(180deg, rgba(78, 143, 255, 0.34), rgba(78, 143, 255, 0.18));
+  box-shadow: inset 0 0 0 1px rgba(126, 180, 255, 0.38), 0 0 18px rgba(78, 143, 255, 0.18);
+}
 .skymap-survey-btn.radio { color: rgba(255, 218, 124, 0.85); }
 .skymap-survey-btn.radio:hover:not(:disabled) { color: var(--accent); }
 .skymap-survey-btn.radio.active { color: var(--accent); }
 .skymap-survey-btn:disabled { opacity: 0.4; }
 .skymap-surveys-mobile { display: none; }
-
-.skymap-tooltip-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--r-md);
-  background: rgba(11, 13, 22, 0.82);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: var(--fg-muted);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  pointer-events: auto;
-}
-.skymap-tooltip-toggle:hover { color: var(--fg); }
-.skymap-tooltip-toggle.active { color: var(--accent); border-color: var(--accent-line); }
 
 .skymap-aladin {
   flex: 1;
@@ -1653,6 +1882,19 @@ h2.panel-header {
 }
 .skymap-spectrum-selector.disabled { opacity: 0.55; pointer-events: none; }
 
+.skymap-spectrum-capability {
+  margin: 0 2px 8px;
+  max-width: 860px;
+  color: rgba(199, 210, 246, 0.84);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.skymap-spectrum-chart-shell {
+  position: relative;
+  width: 100%;
+}
+
 .skymap-spectrum-chart {
   display: block;
   width: 100%;
@@ -1664,6 +1906,44 @@ h2.panel-header {
 .skymap-spectrum-chart > div,
 .skymap-spectrum-chart canvas {
   display: block;
+}
+
+.skymap-hydrogen-line-marker {
+  position: absolute;
+  top: 8px;
+  bottom: 39px;
+  width: 0;
+  transform: translateX(-50%);
+  border-left: 2px solid rgba(126, 180, 255, 0.95);
+  filter: drop-shadow(0 0 8px rgba(80, 145, 255, 0.7));
+  pointer-events: none;
+}
+
+.skymap-hydrogen-line-marker::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  transform: translateX(-50%) rotate(45deg);
+  background: #9cc7ff;
+  box-shadow: 0 0 14px rgba(126, 180, 255, 0.8);
+}
+
+.skymap-hydrogen-line-marker span {
+  position: absolute;
+  top: -2px;
+  left: 10px;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: rgba(16, 28, 54, 0.86);
+  color: #dbeaff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgba(126, 180, 255, 0.24);
 }
 
 .skymap-survey-list {
@@ -2003,34 +2283,6 @@ h2.panel-header {
   color: var(--accent);
 }
 
-.dual-grid {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) minmax(0, 1fr);
-  gap: 6px 14px;
-  align-items: baseline;
-}
-.dual-head {
-  color: var(--fg-muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-align: right;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--hairline);
-}
-.dual-label {
-  color: var(--fg-subtle);
-  font-size: 12px;
-}
-.dual-val {
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
 .dense-readout dl {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -2310,6 +2562,18 @@ h2.panel-header {
   .pad-btn { min-height: 52px; }
   .target-form { grid-template-columns: 1fr 1fr; }
   .target-form button[type="submit"] { grid-column: 1 / -1; }
+  .spectrum-control-block {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .spectrum-tool-group {
+    justify-content: stretch;
+  }
+  .spectrum-tool-group .ghost-btn,
+  .spectrum-control-block > .ghost-btn {
+    flex: 1 1 auto;
+  }
+  .spectrum-doppler-lesson-grid { grid-template-columns: 1fr; }
 
   .banner, .error-log summary, .error-log-body { padding-left: 14px; padding-right: 14px; }
 }

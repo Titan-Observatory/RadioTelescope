@@ -2,8 +2,7 @@ import './styles/main.css';
 
 import {
   Activity, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Cpu, Crosshair, Download, HelpCircle, Home, Info, LogOut, Navigation,
-  Thermometer, Upload, Zap,
+  Cpu, Crosshair, HelpCircle, Home, Info, LogOut, Navigation, Zap,
 } from 'lucide-react';
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -50,6 +49,7 @@ function App() {
   const [errorLog, setErrorLog] = useState<ErrorLogEntry[]>([]);
   const [targetAz, setTargetAz] = useState(0);
   const [targetAlt, setTargetAlt] = useState(45);
+  const [hasMapTarget, setHasMapTarget] = useState(false);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [queueConfig, setQueueConfig] = useState<QueueConfig | null>(null);
   const [joining, setJoining] = useState(false);
@@ -261,6 +261,7 @@ function App() {
   const handleMapTarget = useCallback((az: number, alt: number) => {
     setTargetAz(Math.round(az * 1000) / 1000);
     setTargetAlt(Math.round(alt * 1000) / 1000);
+    setHasMapTarget(true);
   }, []);
 
   const controllerIssue = explainControllerError(telemetry?.last_error ?? null);
@@ -298,6 +299,8 @@ function App() {
         telemetry={telemetry}
         leaseStatus={queueEnabled && queueStatus?.is_active ? queueStatus : null}
         onLeaveLease={() => void handleLeave()}
+        tooltipsEnabled={tooltipsEnabled}
+        onToggleTooltips={() => setTooltipsEnabled((enabled) => !enabled)}
       />
 
       {telemetry?.connection.mode === 'error' && (
@@ -340,16 +343,17 @@ function App() {
                 setTargetAlt={setTargetAlt}
               />
             </div>
-            <button
-              type="button"
-              className={`skymap-tooltip-toggle${tooltipsEnabled ? ' active' : ''}`}
-              onClick={() => setTooltipsEnabled((enabled) => !enabled)}
-              title={tooltipsEnabled ? 'Hide hover tooltips' : 'Show hover tooltips'}
-              aria-pressed={tooltipsEnabled}
-            >
-              <Info size={13} />
-              Tooltips
-            </button>
+            {hasMapTarget && (
+              <button
+                type="button"
+                className="skymap-slew-target"
+                onClick={() => void gotoAltAz(targetAlt, targetAz)}
+                title={`Slew to Az ${targetAz.toFixed(3)} deg, Alt ${targetAlt.toFixed(3)} deg`}
+              >
+                <Navigation size={24} />
+                <span>Slew</span>
+              </button>
+            )}
           </div>
         </section>
         <div className="dashboard-rightcol">
@@ -357,12 +361,11 @@ function App() {
             <SpectrumPanel />
           </section>
           <section className="panel status-side-panel">
-            <TelemetryDashboard telemetry={telemetry} compact />
+            <TelemetryDashboard telemetry={telemetry} />
           </section>
         </div>
         <section className="panel controls-panel">
           <AdminPanel syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} zeroAltitude={zeroAltitude} targetAz={targetAz} targetAlt={targetAlt} />
-          <PidTuningPanel onNotice={setNotice} />
         </section>
       </main>
     </div>
@@ -399,10 +402,14 @@ function TopBar({
   telemetry,
   leaseStatus,
   onLeaveLease,
+  tooltipsEnabled,
+  onToggleTooltips,
 }: {
   telemetry: RoboClawTelemetry | null;
   leaseStatus: QueueStatus | null;
   onLeaveLease: () => void;
+  tooltipsEnabled: boolean;
+  onToggleTooltips: () => void;
 }) {
   return (
     <header className="topbar">
@@ -415,6 +422,15 @@ function TopBar({
       </a>
       <div className="topbar-status">
         {leaseStatus && <LeaseChip status={leaseStatus} onLeave={onLeaveLease} />}
+        <button
+          type="button"
+          className={`topbar-tooltips${tooltipsEnabled ? ' active' : ''}`}
+          onClick={onToggleTooltips}
+          title={tooltipsEnabled ? 'Hide hover tooltips' : 'Show hover tooltips'}
+          aria-pressed={tooltipsEnabled}
+        >
+          <Info size={14} /> Tooltips
+        </button>
         <button
           type="button"
           className="topbar-help"
@@ -431,20 +447,6 @@ function TopBar({
         </span>
       </div>
     </header>
-  );
-}
-
-// ─── Panel header ─────────────────────────────────────────────────────────────
-
-type HeaderAccent = 'amber' | 'teal' | 'peri' | 'crit';
-
-function PanelHeader({ icon, title, accent }: { icon: React.ReactNode; title: string; accent?: HeaderAccent }) {
-  const accentClass = accent ? ` head-${accent}` : '';
-  return (
-    <h2 className={`panel-header${accentClass}`}>
-      <span className="panel-header-icon">{icon}</span>
-      {title}
-    </h2>
   );
 }
 
@@ -515,6 +517,9 @@ function MotionControls({
 
   return (
     <>
+      <div className="motion-controls-title">
+        Motion
+      </div>
       <div className="motion-mode" role="radiogroup" aria-label="Control mode">
         <button
           type="button"
@@ -568,9 +573,9 @@ function MotionControls({
 }
 
 const SPEED_PRESETS: { id: 'fine' | 'coarse' | 'slew'; label: string; value: number }[] = [
-  { id: 'slew',   label: 'Slew',   value: 85 },
-  { id: 'coarse', label: 'Coarse', value: 40 },
   { id: 'fine',   label: 'Fine',   value: 10 },
+  { id: 'coarse', label: 'Coarse', value: 40 },
+  { id: 'slew',   label: 'Slew',   value: 85 },
 ];
 
 function SpeedFader({ slewSpeed, setSlewSpeed }: {
@@ -583,6 +588,7 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
 
   return (
     <div className="speed-toggle" role="radiogroup" aria-label="Slew speed">
+      <span className="speed-toggle-heading">Speed</span>
       {SPEED_PRESETS.map((p) => {
         const selected = p.id === active.id;
         return (
@@ -594,8 +600,7 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
             className={`speed-toggle-btn speed-toggle-${p.id}${selected ? ' is-active' : ''}`}
             onClick={() => setSlewSpeed(p.value)}
           >
-            <span className="speed-toggle-bar" aria-hidden />
-            <span>{p.label}</span>
+            {p.label}
           </button>
         );
       })}
@@ -670,193 +675,6 @@ function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, zeroAltitude, targe
   );
 }
 
-// ─── PID tuning ───────────────────────────────────────────────────────────────
-
-const POSITION_FIELDS = ['p', 'i', 'd', 'i_max', 'deadzone', 'min', 'max'] as const;
-const VELOCITY_FIELDS = ['p', 'i', 'd', 'qpps'] as const;
-type PositionField = (typeof POSITION_FIELDS)[number];
-type VelocityField = (typeof VELOCITY_FIELDS)[number];
-
-const POSITION_LABELS: Record<PositionField, string> = {
-  p: 'P', i: 'I', d: 'D', i_max: 'Max I', deadzone: 'Deadzone', min: 'Min Pos', max: 'Max Pos',
-};
-const VELOCITY_LABELS: Record<VelocityField, string> = {
-  p: 'P', i: 'I', d: 'D', qpps: 'QPPS',
-};
-
-// RoboClaw stores P/I/D as fixed-point integers; BasicMicro Motion Studio
-// (and most users) work in the floating-point form. Position is Q22.10
-// (×1024); velocity is Q16.16 (×65536). Other fields are plain integers.
-const POSITION_SCALE: Record<PositionField, number> = {
-  p: 1024, i: 1024, d: 1024, i_max: 1024, deadzone: 1, min: 1, max: 1,
-};
-const VELOCITY_SCALE: Record<VelocityField, number> = {
-  p: 65536, i: 65536, d: 65536, qpps: 1,
-};
-
-function emptyPosition(): Record<PositionField, number> {
-  return { p: 0, i: 0, d: 0, i_max: 0, deadzone: 0, min: 0, max: 0 };
-}
-function emptyVelocity(): Record<VelocityField, number> {
-  return { p: 0, i: 0, d: 0, qpps: 0 };
-}
-
-function PidTuningPanel({ onNotice }: { onNotice: (msg: string | null) => void }) {
-  const [m1Pos, setM1Pos] = useState(emptyPosition);
-  const [m2Pos, setM2Pos] = useState(emptyPosition);
-  const [m1Vel, setM1Vel] = useState(emptyVelocity);
-  const [m2Vel, setM2Vel] = useState(emptyVelocity);
-  const [busy, setBusy] = useState(false);
-
-  const run = async <T,>(label: string, fn: () => Promise<T>): Promise<T | null> => {
-    setBusy(true);
-    onNotice(null);
-    try { return await fn(); }
-    catch (err) { onNotice(`${label}: ${errorMessage(err)}`); return null; }
-    finally { setBusy(false); }
-  };
-
-  const readPosition = (motor: 'm1' | 'm2') => async () => {
-    const r = await run(`Read ${motor} position PID`, () => api.execute(`read_${motor}_position_pid`, {}));
-    if (!r?.ok) return;
-    const raw = { ...emptyPosition(), ...(r.response as Record<PositionField, number>) };
-    const next = Object.fromEntries(
-      POSITION_FIELDS.map((k) => [k, raw[k] / POSITION_SCALE[k]]),
-    ) as Record<PositionField, number>;
-    (motor === 'm1' ? setM1Pos : setM2Pos)(next);
-  };
-
-  const readVelocity = (motor: 'm1' | 'm2') => async () => {
-    const r = await run(`Read ${motor} velocity PID`, () => api.execute(`read_${motor}_velocity_pid`, {}));
-    if (!r?.ok) return;
-    const raw = { ...emptyVelocity(), ...(r.response as Record<VelocityField, number>) };
-    const next = Object.fromEntries(
-      VELOCITY_FIELDS.map((k) => [k, raw[k] / VELOCITY_SCALE[k]]),
-    ) as Record<VelocityField, number>;
-    (motor === 'm1' ? setM1Vel : setM2Vel)(next);
-  };
-
-  const writePosition = (motor: 'm1' | 'm2', values: Record<PositionField, number>) => async () => {
-    if (!confirm(`Write Position PID to ${motor.toUpperCase()}? This changes controller flash settings.`)) return;
-    const scaled = Object.fromEntries(
-      POSITION_FIELDS.map((k) => [k, Math.round(values[k] * POSITION_SCALE[k])]),
-    ) as Record<PositionField, number>;
-    await run(`Write ${motor} position PID`, () => api.execute(`set_${motor}_position_pid`, scaled));
-  };
-
-  const writeVelocity = (motor: 'm1' | 'm2', values: Record<VelocityField, number>) => async () => {
-    if (!confirm(`Write Velocity PID to ${motor.toUpperCase()}? This changes controller flash settings.`)) return;
-    const scaled = Object.fromEntries(
-      VELOCITY_FIELDS.map((k) => [k, Math.round(values[k] * VELOCITY_SCALE[k])]),
-    ) as Record<VelocityField, number>;
-    await run(`Write ${motor} velocity PID`, () => api.execute(`set_${motor}_velocity_pid`, scaled));
-  };
-
-  return (
-    <details className="admin-panel" data-tour="pid">
-      <summary className="admin-panel-summary">
-        <Cpu size={13} /> PID Tuning
-      </summary>
-      <div className="admin-panel-body">
-        <p className="admin-panel-note">
-          Reads from / writes to the RoboClaw flash. Values persist across power cycles.
-          Use with care — incorrect PID can cause runaway motion.
-        </p>
-        <PidAxis
-          title="M1 — Azimuth"
-          position={m1Pos} setPosition={setM1Pos}
-          velocity={m1Vel} setVelocity={setM1Vel}
-          onReadPos={readPosition('m1')} onWritePos={writePosition('m1', m1Pos)}
-          onReadVel={readVelocity('m1')} onWriteVel={writeVelocity('m1', m1Vel)}
-          busy={busy}
-        />
-        <PidAxis
-          title="M2 — Altitude"
-          position={m2Pos} setPosition={setM2Pos}
-          velocity={m2Vel} setVelocity={setM2Vel}
-          onReadPos={readPosition('m2')} onWritePos={writePosition('m2', m2Pos)}
-          onReadVel={readVelocity('m2')} onWriteVel={writeVelocity('m2', m2Vel)}
-          busy={busy}
-        />
-      </div>
-    </details>
-  );
-}
-
-function PidAxis({
-  title, position, setPosition, velocity, setVelocity,
-  onReadPos, onWritePos, onReadVel, onWriteVel, busy,
-}: {
-  title: string;
-  position: Record<PositionField, number>;
-  setPosition: (v: Record<PositionField, number>) => void;
-  velocity: Record<VelocityField, number>;
-  setVelocity: (v: Record<VelocityField, number>) => void;
-  onReadPos: () => Promise<void>;
-  onWritePos: () => Promise<void>;
-  onReadVel: () => Promise<void>;
-  onWriteVel: () => Promise<void>;
-  busy: boolean;
-}) {
-  return (
-    <div className="pid-axis">
-      <div className="pid-axis-title">{title}</div>
-      <div className="pid-section">
-        <div className="pid-section-header">
-          <span>Position</span>
-          <div className="pid-section-actions">
-            <button type="button" disabled={busy} onClick={() => void onReadPos()} title="Read from controller">
-              <Download size={12} /> Read
-            </button>
-            <button type="button" disabled={busy} onClick={() => void onWritePos()} title="Write to controller flash">
-              <Upload size={12} /> Write
-            </button>
-          </div>
-        </div>
-        <div className="pid-fields">
-          {POSITION_FIELDS.map((k) => (
-            <label key={k}>
-              <span>{POSITION_LABELS[k]}</span>
-              <input
-                type="number"
-                step="any"
-                value={position[k]}
-                onChange={(e) => setPosition({ ...position, [k]: Number(e.target.value) })}
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-      <div className="pid-section">
-        <div className="pid-section-header">
-          <span>Velocity</span>
-          <div className="pid-section-actions">
-            <button type="button" disabled={busy} onClick={() => void onReadVel()} title="Read from controller">
-              <Download size={12} /> Read
-            </button>
-            <button type="button" disabled={busy} onClick={() => void onWriteVel()} title="Write to controller flash">
-              <Upload size={12} /> Write
-            </button>
-          </div>
-        </div>
-        <div className="pid-fields">
-          {VELOCITY_FIELDS.map((k) => (
-            <label key={k}>
-              <span>{VELOCITY_LABELS[k]}</span>
-              <input
-                type="number"
-                step="any"
-                value={velocity[k]}
-                onChange={(e) => setVelocity({ ...velocity, [k]: Number(e.target.value) })}
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Pointing pad + axis status ───────────────────────────────────────────────
 
 // RoboClaw's firmware serial-timeout failsafe stops the motors if no command
@@ -876,16 +694,20 @@ function PointingPad({ runCommand, speed }: {
   return (
     <div className="pointing-pad" role="group" aria-label="Pointing controls">
       <button type="button" className={`pad-btn pad-up${up.active ? ' jog-active' : ''}`} {...up} aria-label="Up">
-        <ChevronUp size={22} strokeWidth={1.75} />
+        <ChevronUp size={24} strokeWidth={2.15} />
+        <span className="pad-btn-label">Up</span>
       </button>
       <button type="button" className={`pad-btn pad-west${west.active ? ' jog-active' : ''}`} {...west} aria-label="West">
-        <ChevronLeft size={22} strokeWidth={1.75} />
+        <ChevronLeft size={24} strokeWidth={2.15} />
+        <span className="pad-btn-label">West</span>
       </button>
       <button type="button" className={`pad-btn pad-east${east.active ? ' jog-active' : ''}`} {...east} aria-label="East">
-        <ChevronRight size={22} strokeWidth={1.75} />
+        <ChevronRight size={24} strokeWidth={2.15} />
+        <span className="pad-btn-label">East</span>
       </button>
       <button type="button" className={`pad-btn pad-down${down.active ? ' jog-active' : ''}`} {...down} aria-label="Down">
-        <ChevronDown size={22} strokeWidth={1.75} />
+        <ChevronDown size={24} strokeWidth={2.15} />
+        <span className="pad-btn-label">Down</span>
       </button>
     </div>
   );
@@ -936,40 +758,32 @@ function useJog(start: () => Promise<void>, stop: () => Promise<void>) {
 
 // ─── Telemetry dashboard ─────────────────────────────────────────────────────
 
-function TelemetryDashboard({ telemetry, compact = false }: { telemetry: RoboClawTelemetry | null; compact?: boolean }) {
+function TelemetryDashboard({ telemetry }: { telemetry: RoboClawTelemetry | null }) {
+  const systemPower = minReading(telemetry?.main_battery_v, telemetry?.logic_battery_v);
+  const roboclawTemp = maxReading(telemetry?.temperature_c, telemetry?.temperature_2_c);
+  const motorOutput = maxAbsReading(telemetry?.motors.m1?.pwm, telemetry?.motors.m2?.pwm);
+  const motorSpeed = maxAbsReading(telemetry?.motors.m1?.speed_qpps, telemetry?.motors.m2?.speed_qpps);
+
   return (
     <>
-      <PanelHeader icon={<Activity size={14} />} title="Status" accent="peri" />
-      {compact && (
-        <span className={`status-overlay-health ${telemetry?.connection?.connected === false ? 'bad' : 'ok'}`}>
-          {telemetry?.connection?.connected === false ? 'Issue' : 'Stable'}
-        </span>
-      )}
       <div className="telemetry-dense">
-        <DenseReadout title="Power" icon={<Zap size={11} />} rows={[
-          ['Battery',     volts(telemetry?.main_battery_v),   voltClass(telemetry?.main_battery_v)],
-          ['Electronics', volts(telemetry?.logic_battery_v),  voltClass(telemetry?.logic_battery_v)],
+        <DenseReadout title="System" icon={<Activity size={11} />} rows={[
+          ['Connection', telemetry?.connection?.connected === false ? 'Issue' : 'Stable', telemetry?.connection?.connected === false ? 'val-crit' : 'val-ok'],
+          ['Power', volts(systemPower), voltClass(systemPower)],
+          ['RoboClaw temp', celsius(roboclawTemp), tempClass(roboclawTemp)],
+          ['Pi temp', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
         ]} />
-        <DenseReadout title="Temperature" icon={<Thermometer size={11} />} rows={[
-          ['Controller', celsius(telemetry?.temperature_c),   tempClass(telemetry?.temperature_c)],
-          ['Driver',     celsius(telemetry?.temperature_2_c), tempClass(telemetry?.temperature_2_c)],
-          ['Raspberry Pi', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
+        <DenseReadout title="Pointing" icon={<Navigation size={11} />} rows={[
+          ['Azimuth', telemetry?.azimuth_deg == null ? '—' : `${telemetry.azimuth_deg.toFixed(2)}°`],
+          ['Elevation', telemetry?.altitude_deg == null ? '—' : `${telemetry.altitude_deg.toFixed(2)}°`],
         ]} />
-        <DualReadout
-          title="Motors"
-          columns={['Azimuth', 'Elevation']}
-          rows={[
-            ['Angle',
-              telemetry?.azimuth_deg == null ? '—' : `${telemetry.azimuth_deg.toFixed(2)}°`,
-              telemetry?.altitude_deg == null ? '—' : `${telemetry.altitude_deg.toFixed(2)}°`],
-            ['Encoder position', encoder(telemetry?.motors.m1?.encoder), encoder(telemetry?.motors.m2?.encoder)],
-            ['Encoder speed',    qpps(telemetry?.motors.m1?.speed_qpps), qpps(telemetry?.motors.m2?.speed_qpps)],
-            ['PWM output',       value(telemetry?.motors.m1?.pwm),       value(telemetry?.motors.m2?.pwm)],
-            ['Motor current',
-              telemetry?.motors.m1?.current_a == null ? '—' : `${telemetry.motors.m1.current_a.toFixed(2)} A`,
-              telemetry?.motors.m2?.current_a == null ? '—' : `${telemetry.motors.m2.current_a.toFixed(2)} A`],
-          ]}
-        />
+        <DenseReadout title="Drive" icon={<Zap size={11} />} rows={[
+          ['State', motorState(motorSpeed, motorOutput)],
+          ['Azimuth amps', amps(telemetry?.motors.m1?.current_a)],
+          ['Elevation amps', amps(telemetry?.motors.m2?.current_a)],
+          ['Azimuth encoder', encoder(telemetry?.motors.m1?.encoder)],
+          ['Elevation encoder', encoder(telemetry?.motors.m2?.encoder)],
+        ]} />
       </div>
     </>
   );
@@ -978,28 +792,6 @@ function TelemetryDashboard({ telemetry, compact = false }: { telemetry: RoboCla
 // ─── Dense readout ────────────────────────────────────────────────────────────
 
 type ReadoutRow = [label: string, value: string, valueClass?: string];
-
-type DualRow = [label: string, valueA: string, valueB: string];
-
-function DualReadout({ title, columns, rows }: { title: string; columns: [string, string]; rows: DualRow[] }) {
-  return (
-    <div className="dense-readout dense-readout-dual">
-      <h3>{title}</h3>
-      <div className="dual-grid">
-        <span className="dual-head" />
-        <span className="dual-head">{columns[0]}</span>
-        <span className="dual-head">{columns[1]}</span>
-        {rows.map(([label, a, b]) => (
-          <React.Fragment key={label}>
-            <span className="dual-label">{label}</span>
-            <span className="dual-val">{a}</span>
-            <span className="dual-val">{b}</span>
-          </React.Fragment>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function DenseReadout({ title, icon, rows }: { title?: string; icon?: React.ReactNode; rows: ReadoutRow[] }) {
   return (
@@ -1024,14 +816,6 @@ function DenseReadout({ title, icon, rows }: { title?: string; icon?: React.Reac
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
-function value(input: number | null | undefined): string {
-  return input == null ? '—' : String(input);
-}
-
-function encoder(input: number | null | undefined): string {
-  return input == null ? '—' : input.toLocaleString();
-}
-
 function volts(input: number | null | undefined): string {
   return input == null ? '—' : `${input.toFixed(2)} V`;
 }
@@ -1040,8 +824,32 @@ function celsius(input: number | null | undefined): string {
   return input == null ? '—' : `${input.toFixed(1)} °C`;
 }
 
-function qpps(input: number | null | undefined): string {
+function amps(input: number | null | undefined): string {
+  return input == null ? '—' : `${Math.abs(input).toFixed(2)} A`;
+}
+
+function encoder(input: number | null | undefined): string {
   return input == null ? '—' : input.toLocaleString();
+}
+
+function minReading(...values: Array<number | null | undefined>): number | null {
+  const present = values.filter((v): v is number => v != null);
+  return present.length === 0 ? null : Math.min(...present);
+}
+
+function maxReading(...values: Array<number | null | undefined>): number | null {
+  const present = values.filter((v): v is number => v != null);
+  return present.length === 0 ? null : Math.max(...present);
+}
+
+function maxAbsReading(...values: Array<number | null | undefined>): number | null {
+  const present = values.filter((v): v is number => v != null).map(Math.abs);
+  return present.length === 0 ? null : Math.max(...present);
+}
+
+function motorState(speed: number | null, output: number | null): string {
+  if (speed == null && output == null) return '—';
+  return (speed ?? 0) > 0 || (output ?? 0) > 0 ? 'Moving' : 'Idle';
 }
 
 // ─── Status classifiers ──────────────────────────────────────────────────────

@@ -97,7 +97,7 @@ export function startTour() {
         popover: {
           title: 'Spectrum',
           description:
-            'Live FFT from the SDR. Use the rolling-average input to smooth noise and watch for the hydrogen line near 1420 MHz.',
+            'Live FFT from the SDR. The rolling average is configured on the server; watch for the hydrogen line near 1420 MHz.',
           side: 'right',
         },
       },

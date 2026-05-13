@@ -138,15 +138,9 @@ class SpectrumService:
 
     # ── Integration controls ─────────────────────────────────────────────
     #
-    # The rolling EMA window can be changed live (changes the smoothing rate
-    # going forward; doesn't disturb the current accumulator). The frame
-    # counter and accumulator can be reset together to start a fresh
+    # The rolling EMA window is configured through `sdr.integration_frames`.
+    # The counter and accumulator can be reset together to start a fresh
     # integration.
-
-    def set_integration_frames(self, n: int) -> int:
-        n = max(1, min(int(n), 4096))
-        self._cfg.integration_frames = n
-        return n
 
     def reset_integration(self) -> None:
         self._integrated = None
@@ -166,8 +160,6 @@ class SpectrumService:
                 # Avoid log(0); the FFT magnitudes never quite hit zero in practice
                 # but a floor keeps the y-axis tidy when the gain is low.
                 power = np.maximum(power, 1e-12)
-                # Recompute alpha each iteration so live changes to
-                # `integration_frames` (from the UI) take effect immediately.
                 alpha = 1.0 / max(cfg.integration_frames, 1)
                 if self._integrated is None:
                     self._integrated = power

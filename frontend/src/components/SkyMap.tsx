@@ -341,15 +341,6 @@ function isInsideTriangle(point: AltAzPoint, triangle: AltAzPoint[]): boolean {
 // â”€â”€â”€ Survey definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SURVEYS = [
   {
-    id: 'CDS/P/Haslam408/v2',
-    label: 'Haslam 408 MHz',
-    shortLabel: 'Haslam 408',
-    title: 'Haslam 408 MHz reprocessed all-sky radio survey',
-    description: 'Synchrotron continuum at 408 MHz — galactic non-thermal emission reference.',
-    spectrumMhz: 408,
-    markerLeft: 7,
-  },
-  {
     id: 'CDS/P/HI4PI/NHI',
     label: '21cm Hydrogen Line',
     shortLabel: 'H I 1420',
@@ -359,6 +350,24 @@ const SURVEYS = [
     markerLeft: 42,
   },
   {
+    id: 'CDS/P/PLANCK/R3/LFI/color',
+    label: 'Planck LFI',
+    shortLabel: 'Planck LFI',
+    title: 'Planck R3 LFI 30/44/70 GHz color composition',
+    description: 'Microwave sky at 30-70 GHz - synchrotron, free-free emission, and CMB foreground structure.',
+    spectrumMhz: 44_000,
+    markerLeft: 49,
+  },
+  {
+    id: 'CDS/P/PLANCK/R3/HFI/color',
+    label: 'Planck HFI',
+    shortLabel: 'Planck HFI',
+    title: 'Planck R3 HFI 353/545/857 GHz color composition',
+    description: 'Submillimeter sky at 353-857 GHz - thermal dust emission and cold galactic clouds.',
+    spectrumMhz: 545_000,
+    markerLeft: 55,
+  },
+  {
     id: 'CDS/P/AKARI/FIS/Color',
     label: 'AKARI FIS',
     shortLabel: 'AKARI',
@@ -366,15 +375,6 @@ const SURVEYS = [
     description: 'Far-infrared (65–160 µm) — cold dust, molecular clouds, and star-forming regions.',
     spectrumMhz: 3_100_000,
     markerLeft: 58,
-  },
-  {
-    id: 'CDS/P/IRIS/color',
-    label: 'IRIS',
-    shortLabel: 'IRIS',
-    title: 'IRIS infrared all-sky color survey',
-    description: 'Mid-to-far infrared (12–100 µm) — warm dust emission and galactic infrared cirrus.',
-    spectrumMhz: 5_000_000,
-    markerLeft: 65,
   },
   {
     id: 'CDS/P/allWISE/color',
@@ -395,31 +395,22 @@ const SURVEYS = [
     markerLeft: 79,
   },
   {
-    id: 'CDS/P/Finkbeiner',
-    label: 'H-alpha',
-    shortLabel: 'H-alpha',
-    title: 'Finkbeiner H-alpha composite survey',
-    description: 'Ionized hydrogen (656 nm) — HII regions, planetary nebulae, and the warm ISM.',
-    spectrumMhz: 456_800_000,
-    markerLeft: 86,
-  },
-  {
-    id: 'CDS/P/Mellinger/color',
-    label: 'Visible Light',
-    shortLabel: 'Visible',
-    title: 'Mellinger visible-light color all-sky survey',
-    description: 'Full-color optical panorama (RGB) — the sky as seen by the naked eye.',
-    spectrumMhz: 545_000_000,
-    markerLeft: 92.5,
-  },
-  {
     id: 'CDS/P/DSS2/color',
     label: 'DSS2 Color',
     shortLabel: 'DSS2',
     title: 'DSS2 optical color all-sky survey',
     description: 'Deep optical atlas (B/R/I, ~1″ resolution) digitized from photographic plates.',
     spectrumMhz: 599_000_000,
-    markerLeft: 98,
+    markerLeft: 92,
+  },
+  {
+    id: 'CDS/P/GALEXGR6/AIS/color',
+    label: 'GALEX AIS',
+    shortLabel: 'GALEX',
+    title: 'GALEX GR6 AIS ultraviolet color survey',
+    description: 'Ultraviolet sky (FUV/NUV, about 150-230 nm) - hot young stars, star-forming regions, and UV-bright galaxies.',
+    spectrumMhz: 1_950_000_000,
+    markerLeft: 99.2,
   },
 ] as const;
 
@@ -451,25 +442,42 @@ function surveyLogFreq(survey: (typeof SURVEYS)[number]): number {
 
 
 function surveyToneClass(survey: (typeof SURVEYS)[number]): string {
+  if (survey.id === 'CDS/P/HI4PI/NHI') return ' hydrogen';
   if (survey.spectrumMhz >= VISIBLE_LOW_MHZ) return ' optical';
   if (survey.spectrumMhz <= 500) return ' radio';
   return '';
 }
 
+function surveySpectrumColor(survey: (typeof SURVEYS)[number]): string {
+  if (survey.spectrumMhz <= 500) return 'rgba(255, 188, 66, 0.96)';
+  if (survey.spectrumMhz < 2_000_000) return 'rgba(104, 158, 255, 0.96)';
+  if (survey.spectrumMhz < 400_000_000) return 'rgba(220, 114, 255, 0.96)';
+  if (survey.spectrumMhz <= VISIBLE_HIGH_MHZ) return 'rgba(255, 113, 82, 0.98)';
+  return 'rgba(184, 91, 255, 0.92)';
+}
+
+function formatAxisNumber(value: number, digits = 3): string {
+  const rounded = Number(value.toPrecision(digits));
+  return rounded.toLocaleString('en-US', {
+    maximumFractionDigits: Math.max(0, digits - Math.floor(Math.log10(Math.abs(rounded || 1))) - 1),
+  });
+}
+
 function freqLabelFromLog(value: number): string {
   const mhz = 10 ** value;
-  if (mhz >= 1_000_000) return `${(mhz / 1_000_000).toPrecision(2)} THz`;
-  if (mhz >= 1_000) return `${(mhz / 1_000).toPrecision(3)} GHz`;
-  return `${mhz.toPrecision(3)} MHz`;
+  if (mhz >= 1_000_000_000) return `${formatAxisNumber(mhz / 1_000_000_000)} PHz`;
+  if (mhz >= 1_000_000) return `${formatAxisNumber(mhz / 1_000_000)} THz`;
+  if (mhz >= 1_000) return `${formatAxisNumber(mhz / 1_000)} GHz`;
+  return `${formatAxisNumber(mhz)} MHz`;
 }
 
 function wavelengthLabelFromLog(value: number): string {
   const hz = (10 ** value) * 1_000_000;
   const meters = 299_792_458 / hz;
-  if (meters >= 1) return `${meters.toPrecision(3)} m`;
-  if (meters >= 0.001) return `${(meters * 1000).toPrecision(3)} mm`;
-  if (meters >= 0.000001) return `${(meters * 1_000_000).toPrecision(3)} um`;
-  return `${(meters * 1_000_000_000).toPrecision(3)} nm`;
+  if (meters >= 1) return `${formatAxisNumber(meters)} m`;
+  if (meters >= 0.001) return `${formatAxisNumber(meters * 1000)} mm`;
+  if (meters >= 0.000001) return `${formatAxisNumber(meters * 1_000_000)} um`;
+  return `${formatAxisNumber(meters * 1_000_000_000)} nm`;
 }
 
 function spectrumWaveData(focusLogFreq: number): [number, number][] {
@@ -483,9 +491,10 @@ function spectrumWaveData(focusLogFreq: number): [number, number][] {
     const cyclesPerUnit = 1.4 + Math.pow(ratio, 1.85) * 24;
     phase += dx * cyclesPerUnit * Math.PI * 2;
     const distance = Math.abs(logFreq - focusLogFreq);
-    const selected = Math.exp(-(distance * distance) / (2 * 0.12 * 0.12));
-    const amplitude = 0.18 + selected * 0.08;
-    return [logFreq, 0.5 + Math.sin(phase) * amplitude];
+    const selected = Math.exp(-(distance * distance) / (2 * 0.14 * 0.14));
+    const amplitude = 0.16 + selected * 0.11;
+    const focusLift = selected * 0.055;
+    return [logFreq, 0.5 + focusLift + Math.sin(phase) * amplitude];
   });
 }
 
@@ -497,18 +506,28 @@ function nearestSurveyForLogFreq(logFreq: number): SurveyId {
   }, SURVEYS[0]).id;
 }
 
-function buildSpectrumOption(hoverLogFreq: number | null, activeSurvey: SurveyId): EChartsOption {
-  const focus = hoverLogFreq ?? surveyLogFreq(surveyDefinition(activeSurvey));
+function buildSpectrumOption(
+  hoverLogFreq: number | null,
+  activeSurvey: SurveyId,
+  animatedFocusLogFreq: number,
+): EChartsOption {
+  const activeDef = surveyDefinition(activeSurvey);
+  const targetLogFreq = surveyLogFreq(activeDef);
+  const focus = hoverLogFreq ?? animatedFocusLogFreq;
   const baseData = spectrumWaveData(focus);
   const hoverData = hoverLogFreq == null
     ? []
     : baseData.map(([x, y]) => (Math.abs(x - hoverLogFreq) <= 0.18 ? [x, y] : [x, null]));
+  const selectionData = baseData.map(([x, y]) => (Math.abs(x - animatedFocusLogFreq) <= 0.22 ? [x, y] : [x, null]));
+  const targetGlowData = baseData.map(([x, y]) => (Math.abs(x - targetLogFreq) <= 0.1 ? [x, y] : [x, null]));
   const visibleStart = logFreqToRatio(VISIBLE_LOW_LOG_FREQ);
   const visibleEnd = logFreqToRatio(VISIBLE_HIGH_LOG_FREQ);
+  const activeColor = surveySpectrumColor(activeDef);
 
   return {
     animation: true,
-    animationDurationUpdate: 120,
+    animationDurationUpdate: 80,
+    animationEasingUpdate: 'cubicOut',
     grid: { left: 32, right: 12, top: 6, bottom: 42 },
     xAxis: {
       type: 'value',
@@ -533,7 +552,7 @@ function buildSpectrumOption(hoverLogFreq: number | null, activeSurvey: SurveyId
         smooth: 0.38,
         symbol: 'none',
         lineStyle: {
-          width: 4,
+          width: 5,
           opacity: 1,
           color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
             { offset: 0.00, color: 'rgba(76, 172, 255, 0.42)' },
@@ -567,6 +586,49 @@ function buildSpectrumOption(hoverLogFreq: number | null, activeSurvey: SurveyId
       },
       {
         type: 'line',
+        data: selectionData,
+        smooth: 0.44,
+        connectNulls: false,
+        symbol: 'none',
+        lineStyle: {
+          width: 10,
+          opacity: 0.72,
+          color: activeColor,
+          shadowBlur: 18,
+          shadowColor: activeColor,
+        },
+        silent: true,
+      },
+      {
+        type: 'line',
+        data: targetGlowData,
+        smooth: 0.44,
+        connectNulls: false,
+        symbol: 'none',
+        lineStyle: {
+          width: 5,
+          opacity: 0.98,
+          color: 'rgba(255, 255, 255, 0.86)',
+          shadowBlur: 14,
+          shadowColor: activeColor,
+        },
+        silent: true,
+      },
+      {
+        type: 'line',
+        data: [[animatedFocusLogFreq, 0.12], [animatedFocusLogFreq, 0.9]],
+        symbol: 'none',
+        lineStyle: {
+          width: 2,
+          opacity: 0.76,
+          color: activeColor,
+          shadowBlur: 16,
+          shadowColor: activeColor,
+        },
+        silent: true,
+      },
+      {
+        type: 'line',
         data: [[HYDROGEN_LOG_FREQ, 0.18], [HYDROGEN_LOG_FREQ, 0.82]],
         symbol: 'none',
         lineStyle: { width: 1.5, color: 'rgba(255, 188, 66, 0.9)', type: 'dashed' },
@@ -591,6 +653,7 @@ function LightSpectrumSurveySelector({
   const disabledRef = useRef(disabled);
   const onSelectSurveyRef = useRef(onSelectSurvey);
   const [hoverLogFreq, setHoverLogFreq] = useState<number | null>(null);
+  const [animatedFocusLogFreq, setAnimatedFocusLogFreq] = useState(() => surveyLogFreq(surveyDefinition(activeSurvey)));
 
   useEffect(() => { activeSurveyRef.current = activeSurvey; }, [activeSurvey]);
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
@@ -601,7 +664,7 @@ function LightSpectrumSurveySelector({
     if (!host) return;
     const chart = echarts.init(host, undefined, { renderer: 'canvas' });
     chartRef.current = chart;
-    chart.setOption(buildSpectrumOption(null, activeSurveyRef.current));
+    chart.setOption(buildSpectrumOption(null, activeSurveyRef.current, surveyLogFreq(surveyDefinition(activeSurveyRef.current))));
 
     const updateHover = (offsetX: number) => {
       const value = chart.convertFromPixel({ gridIndex: 0 }, [offsetX, 0]) as [number, number] | undefined;
@@ -620,7 +683,10 @@ function LightSpectrumSurveySelector({
 
     const frame = requestAnimationFrame(() => {
       chart.resize();
-      chart.setOption(buildSpectrumOption(null, activeSurveyRef.current), { notMerge: true });
+      chart.setOption(
+        buildSpectrumOption(null, activeSurveyRef.current, surveyLogFreq(surveyDefinition(activeSurveyRef.current))),
+        { notMerge: true },
+      );
     });
     const resizeObserver = new ResizeObserver(() => chart.resize());
     resizeObserver.observe(host);
@@ -633,17 +699,45 @@ function LightSpectrumSurveySelector({
   }, []);
 
   useEffect(() => {
-    chartRef.current?.setOption(buildSpectrumOption(hoverLogFreq, activeSurvey), {
+    const target = surveyLogFreq(surveyDefinition(activeSurvey));
+    let frame = 0;
+    let start = 0;
+    const from = animatedFocusLogFreq;
+    const duration = Math.min(950, Math.max(520, Math.abs(target - from) * 110));
+    const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+    const step = (time: number) => {
+      if (start === 0) start = time;
+      const progress = Math.min(1, (time - start) / duration);
+      setAnimatedFocusLogFreq(from + (target - from) * ease(progress));
+      if (progress < 1) frame = requestAnimationFrame(step);
+    };
+
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [activeSurvey]);
+
+  useEffect(() => {
+    chartRef.current?.setOption(buildSpectrumOption(hoverLogFreq, activeSurvey, animatedFocusLogFreq), {
       notMerge: true,
       lazyUpdate: true,
     });
-  }, [hoverLogFreq, activeSurvey]);
+  }, [hoverLogFreq, activeSurvey, animatedFocusLogFreq]);
 
   const activeDef = surveyDefinition(activeSurvey);
+  const hydrogenMarkerLeft = `calc(32px + ${logFreqToRatio(HYDROGEN_LOG_FREQ) * 100}% - ${logFreqToRatio(HYDROGEN_LOG_FREQ) * 44}px)`;
 
   return (
     <div id="skymap-spectrum-selector" className={`skymap-spectrum-selector${disabled ? ' disabled' : ''}`}>
-      <div className="skymap-spectrum-chart" ref={chartHostRef} role="button" aria-label="Select sky survey by frequency" />
+      <p className="skymap-spectrum-capability">
+        This telescope is only capable of observing at the 21cm hydrogen line. Surveys in other wavelengths of light are available for exploration.
+      </p>
+      <div className="skymap-spectrum-chart-shell">
+        <div className="skymap-spectrum-chart" ref={chartHostRef} role="button" aria-label="Select sky survey by frequency" />
+        <div className="skymap-hydrogen-line-marker" style={{ left: hydrogenMarkerLeft }} aria-hidden="true">
+          <span>21cm</span>
+        </div>
+      </div>
       <div className="skymap-survey-list" role="radiogroup" aria-label="Survey presets">
         {SURVEYS.map((survey) => (
           <button
@@ -1496,7 +1590,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, tooltipsEnabled,
               <button
                 key={s.id}
                 type="button"
-                className={`skymap-survey-btn${survey === s.id ? ' active' : ''}`}
+                className={`skymap-survey-btn${surveyToneClass(s)}${survey === s.id ? ' active' : ''}`}
                 onClick={() => setSurvey(s.id)}
                 title={s.title}
                 disabled={!ready}

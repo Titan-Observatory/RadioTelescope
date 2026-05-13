@@ -4,13 +4,8 @@ import asyncio
 import time
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["spectrum"])
-
-
-class IntegrationUpdate(BaseModel):
-    frames: int = Field(ge=1, le=4096)
 
 
 def _service(request: Request):
@@ -59,12 +54,6 @@ async def capture_baseline(request: Request):
     if baseline is None:
         raise HTTPException(409, "No spectrum frame is available yet to capture")
     return baseline
-
-
-@router.post("/api/spectrum/integration")
-async def set_integration(body: IntegrationUpdate, request: Request):
-    n = _service(request).set_integration_frames(body.frames)
-    return {"integration_frames": n}
 
 
 @router.post("/api/spectrum/reset")

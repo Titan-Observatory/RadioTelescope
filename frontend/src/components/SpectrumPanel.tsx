@@ -7,19 +7,17 @@ import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import {
   GridComponent,
-  MarkLineComponent,
   TooltipComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
 
-import { Camera, Eraser, FolderOpen, Maximize2, Radio, RotateCcw } from 'lucide-react';
+import { Camera, FolderOpen } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 echarts.use([
   LineChart,
   GridComponent,
-  MarkLineComponent,
   TooltipComponent,
   CanvasRenderer,
 ]);
@@ -79,10 +77,10 @@ function buildColormapLUT(
 
 // 21 cm neutral-hydrogen line — the rolling integration is centred here.
 const H1_REST_MHZ = 1420.4058;
+const H1_SEARCH_HALF_WIDTH_MHZ = 0.18;
 
 // Default locked y-range, chosen so the median-subtracted trace fits a
-// freshly-tuned RTL-SDR's typical noise floor without clipping. Hit "Fit Y"
-// to recompute around what's actually on screen.
+// freshly-tuned RTL-SDR's typical noise floor without clipping.
 const DEFAULT_Y_RANGE: [number, number] = [-8, 8];
 
 interface SpectrumFrame {
@@ -134,16 +132,18 @@ export function SpectrumPanel() {
   // the canvas rather than render a mismatched colour-coded seam.
   const waterfallSigRef = useRef<string>('');
   // The last frame we actually painted. The draw effect also re-fires when
-  // yRange changes (Fit Y / Reset Y); a yRange-only change must not duplicate
+  // display scale changes; those must not duplicate
   // a row — it just relabels the colours we already drew (lossy, but cheap).
   const lastWaterfallFrameRef = useRef<SpectrumFrame | null>(null);
   const [status, setStatus] = useState<SpectrumStatus | null>(null);
   const [frame, setFrame] = useState<SpectrumFrame | null>(null);
   const [connected, setConnected] = useState(false);
-  const [yRange, setYRange] = useState<[number, number]>(DEFAULT_Y_RANGE);
+  const [yRange] = useState<[number, number]>(DEFAULT_Y_RANGE);
   const [baseline, setBaseline] = useState<Baseline | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [dopplerOpen, setDopplerOpen] = useState(false);
+  const [baselineOpen, setBaselineOpen] = useState(false);
 
   // Baseline subtraction is what makes the H I line pop above the bandpass.
   // Only apply when the cached baseline matches the current FFT layout —
@@ -347,23 +347,6 @@ export function SpectrumPanel() {
     ctx.putImageData(row, plotLeft, 0);
   }, [frame, displayed, yRange, baselineApplies]);
 
-  const fitY = useCallback(() => {
-    if (!displayed || displayed.length === 0) return;
-    let min = Infinity, max = -Infinity;
-    for (const v of displayed) {
-      if (Number.isFinite(v)) {
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-    }
-    if (!Number.isFinite(min) || !Number.isFinite(max)) return;
-    const span = Math.max(max - min, 1);
-    const pad = span * 0.1;
-    setYRange([Math.floor((min - pad) * 10) / 10, Math.ceil((max + pad) * 10) / 10]);
-  }, [displayed]);
-
-  const resetY = useCallback(() => setYRange(DEFAULT_Y_RANGE), []);
-
   const captureBaseline = useCallback(async () => {
     setBusy(true); setNotice(null);
     try {
@@ -393,75 +376,29 @@ export function SpectrumPanel() {
     }
   }, []);
 
-  // Editable integration depth. The committed value is the server's truth;
-  // the draft is what the user is typing. We mirror the server value into
-  // the draft whenever it changes underneath us (e.g. another client).
-  const serverFrames = frame?.integration_frames ?? status?.integration_frames ?? null;
-  const [framesDraft, setFramesDraft] = useState<string>('');
-  useEffect(() => {
-    if (serverFrames != null) setFramesDraft(String(serverFrames));
-  }, [serverFrames]);
-
-  const commitIntegration = useCallback(async () => {
-    const n = parseInt(framesDraft, 10);
-    if (!Number.isFinite(n) || n === serverFrames) {
-      if (serverFrames != null) setFramesDraft(String(serverFrames));
-      return;
-    }
-    const clamped = Math.max(1, Math.min(n, 4096));
-    setBusy(true); setNotice(null);
-    try {
-      const r = await fetch('/api/spectrum/integration', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ frames: clamped }),
-      });
-      if (!r.ok) throw new Error((await r.json()).detail ?? r.statusText);
-    } catch (err) {
-      setNotice(`Could not update integration: ${(err as Error).message}`);
-      if (serverFrames != null) setFramesDraft(String(serverFrames));
-    } finally {
-      setBusy(false);
-    }
-  }, [framesDraft, serverFrames]);
-
-  const resetIntegration = useCallback(async () => {
-    setBusy(true); setNotice(null);
-    try {
-      const r = await fetch('/api/spectrum/reset', { method: 'POST' });
-      if (!r.ok) throw new Error(r.statusText);
-    } catch (err) {
-      setNotice(`Reset failed: ${(err as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const clearBaseline = useCallback(async () => {
-    setBusy(true); setNotice(null);
-    try {
-      await fetch('/api/spectrum/baseline', { method: 'DELETE' });
-      setBaseline(null);
-      setNotice('Baseline cleared.');
-    } catch (err) {
-      setNotice(`Clear failed: ${(err as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
   const chartEmptyMessage = !connected
     ? 'Spectrum websocket is offline.'
     : !frame
       ? 'Waiting for first spectrum frame from SDR service.'
       : null;
-
+  const hydrogenGuide = useMemo(() => {
+    if (!frame || frame.freqs_mhz.length < 2) return null;
+    const min = frame.freqs_mhz[0];
+    const max = frame.freqs_mhz[frame.freqs_mhz.length - 1];
+    const span = max - min;
+    if (span <= 0 || H1_REST_MHZ < min || H1_REST_MHZ > max) return null;
+    const toPct = (mhz: number) => `${Math.max(0, Math.min(100, ((mhz - min) / span) * 100))}%`;
+    return {
+      lineLeft: toPct(H1_REST_MHZ),
+      bandLeft: toPct(H1_REST_MHZ - H1_SEARCH_HALF_WIDTH_MHZ),
+      bandRight: toPct(H1_REST_MHZ + H1_SEARCH_HALF_WIDTH_MHZ),
+    };
+  }, [frame]);
   if (status && !status.enabled) {
     return (
       <section className="spectrum-section">
         <h2 className="panel-header head-amber">
-          <span className="panel-header-icon"><Radio size={14} /></span>
-          Spectrum
+          Hydrogen line observation
         </h2>
         <div className="spectrum-empty">SDR disabled in config.toml.</div>
       </section>
@@ -472,59 +409,8 @@ export function SpectrumPanel() {
     <section className="spectrum-section">
       <header className="spectrum-head">
         <h2 className="panel-header head-amber">
-          <span className="panel-header-icon"><Radio size={14} /></span>
-          Spectrum
+          Hydrogen line observation
         </h2>
-        <div className="spectrum-summary">
-          <label className="spectrum-integration-input">
-            Rolling
-            <input
-              type="number"
-              min={1}
-              max={4096}
-              step={1}
-              value={framesDraft}
-              disabled={busy}
-              onChange={(e) => setFramesDraft(e.target.value)}
-              onBlur={() => void commitIntegration()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                if (e.key === 'Escape' && serverFrames != null) setFramesDraft(String(serverFrames));
-              }}
-            />
-            frame average
-          </label>
-          <div className="spectrum-toolbar">
-            <div className="spectrum-tool-group" role="group" aria-label="Y axis">
-              <button type="button" className="ghost-btn" onClick={fitY} disabled={!frame} title="Rescale y-axis to fit the current spectrum">
-                <Maximize2 size={12} /> Fit Y
-              </button>
-              <button type="button" className="ghost-btn" onClick={resetY} title="Reset y-axis to default range">
-                Reset Y
-              </button>
-            </div>
-            <div className="spectrum-tool-group" role="group" aria-label="Baseline">
-              <button type="button" className="ghost-btn" onClick={() => void captureBaseline()} disabled={busy || !frame} title="Save the current spectrum as a baseline (persists on the server)">
-                <Camera size={12} /> Capture
-              </button>
-              <button type="button" className="ghost-btn" onClick={() => void loadBaseline()} disabled={busy} title="Load the saved baseline from the server">
-                <FolderOpen size={12} /> Load
-              </button>
-              <button type="button" className="ghost-btn" onClick={() => void clearBaseline()} disabled={busy || !baseline} title="Clear the active baseline and remove the saved cache">
-                <Eraser size={12} /> Clear
-              </button>
-            </div>
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={() => void resetIntegration()}
-              disabled={busy}
-              title="Reset the running integration and counter"
-            >
-              <RotateCcw size={12} /> Reset integration
-            </button>
-          </div>
-        </div>
         <div className="spectrum-status">
           {baseline && baselineApplies && <span className="spectrum-tag">baseline subtracted</span>}
           {baseline && !baselineApplies && <span className="spectrum-tag spectrum-tag-warn">baseline mismatched</span>}
@@ -532,7 +418,130 @@ export function SpectrumPanel() {
         </div>
       </header>
 
+      <div className="spectrum-observation-panel" aria-label="Hydrogen line observation guide">
+        <div className="spectrum-observation-primary">
+          <p>
+            Neutral hydrogen emits radio energy at <strong>1420.4058 MHz</strong>. Observe several
+            different spots in the sky and compare where the received line appears relative to the H I
+            marker. Gas moving toward or away from the telescope shifts the signal slightly by the{' '}
+            <span className="spectrum-doppler-wrap">
+              <button
+                type="button"
+                className="spectrum-doppler-term"
+                onClick={() => setDopplerOpen((open) => !open)}
+                aria-expanded={dopplerOpen}
+                aria-controls="spectrum-doppler-popup"
+                aria-describedby={dopplerOpen ? undefined : 'spectrum-doppler-preview'}
+              >
+                Doppler effect
+              </button>
+              {!dopplerOpen && (
+                <span className="spectrum-doppler-preview" id="spectrum-doppler-preview" role="tooltip">
+                  The H I marker shows the expected rest frequency. If hydrogen gas is moving relative
+                  to the telescope, the received peak shifts left or right from that marker. Click for the lesson.
+                </span>
+              )}
+            </span>
+            . Look for a narrow bump in the yellow trace that persists as a vertical feature in the waterfall.
+          </p>
+          {dopplerOpen && (
+            <div className="spectrum-doppler-popup" id="spectrum-doppler-popup" role="status">
+              <button
+                type="button"
+                className="spectrum-doppler-close"
+                onClick={() => setDopplerOpen(false)}
+                aria-label="Close Doppler effect explainer"
+              >
+                ×
+              </button>
+              <strong>Doppler effect lesson</strong>
+              <p>
+                This lesson will walk through why motion changes the received hydrogen-line frequency,
+                how to compare the observed peak against the H I rest marker, and how observations in
+                different sky directions reveal relative motion in neutral hydrogen gas.
+              </p>
+              <div className="spectrum-doppler-lesson-grid">
+                <span>1. Rest frequency</span>
+                <span>2. Shifted signal</span>
+                <span>3. Sky comparison</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="spectrum-toolbar spectrum-toolbar-above" aria-label="Spectrum processing controls">
+        <div className="spectrum-control-block">
+          <div className="spectrum-control-label">
+            <strong>Capture baseline</strong>
+            <span>
+              Save the current buffer to perform{' '}
+              <span className="spectrum-baseline-wrap">
+                <button
+                  type="button"
+                  className="spectrum-baseline-term"
+                  onClick={() => setBaselineOpen((open) => !open)}
+                  aria-expanded={baselineOpen}
+                  aria-controls="spectrum-baseline-popup"
+                  aria-describedby={baselineOpen ? undefined : 'spectrum-baseline-preview'}
+                >
+                  Baseline subtraction
+                </button>
+                {!baselineOpen && (
+                  <span className="spectrum-baseline-preview" id="spectrum-baseline-preview" role="tooltip">
+                    Subtract a saved reference trace so small hydrogen-line features stand out. Click for the full explainer.
+                  </span>
+                )}
+              </span>
+              , helping signals stand out.
+            </span>
+            {baselineOpen && (
+              <div className="spectrum-baseline-popup" id="spectrum-baseline-popup" role="status">
+                <button
+                  type="button"
+                  className="spectrum-baseline-close"
+                  onClick={() => setBaselineOpen(false)}
+                  aria-label="Close baseline subtraction explainer"
+                >
+                  ×
+                </button>
+                <strong>Baseline subtraction lesson</strong>
+                <p>
+                  Receivers and antennas have their own frequency response, so the raw spectrum often
+                  slopes or curves. A baseline is a saved reference trace. Subtracting it flattens the
+                  display so narrow features, like the hydrogen line, are easier to compare.
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="spectrum-tool-group" role="group" aria-label="Baseline controls">
+            <button type="button" className="ghost-btn" onClick={() => void captureBaseline()} disabled={busy || !frame} title="Save the current spectrum as a baseline (persists on the server)">
+              <Camera size={12} /> Capture
+            </button>
+            <button type="button" className="ghost-btn" onClick={() => void loadBaseline()} disabled={busy} title="Load the saved baseline from the server">
+              <FolderOpen size={12} /> Load
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="spectrum-chart-wrap">
+        {hydrogenGuide && (
+          <div
+            className="spectrum-hydrogen-guide"
+            style={{
+              '--h1-line-left': hydrogenGuide.lineLeft,
+              '--h1-band-left': hydrogenGuide.bandLeft,
+              '--h1-band-right': hydrogenGuide.bandRight,
+            } as React.CSSProperties}
+            aria-hidden
+          >
+            <span className="spectrum-hydrogen-band" />
+            <span className="spectrum-hydrogen-line">
+              <small>{H1_REST_MHZ.toFixed(4)} MHz</small>
+            </span>
+          </div>
+        )}
         <div className="spectrum-chart" ref={chartRef} />
         <canvas className="spectrum-waterfall" ref={waterfallCanvasRef} />
         {chartEmptyMessage && <div className="spectrum-chart-empty">{chartEmptyMessage}</div>}
@@ -607,19 +616,6 @@ function baseOption(yRange: [number, number]): EChartsOption {
         sampling: 'lttb',
         lineStyle: { color: '#ffbc42', width: 1 },
         areaStyle: { color: 'rgba(255, 188, 66, 0.08)' },
-        markLine: {
-          symbol: 'none',
-          silent: true,
-          label: {
-            formatter: 'H I',
-            color: '#77cbb9',
-            fontSize: 10,
-            position: 'end',
-            distance: [6, 4],
-          },
-          lineStyle: { color: 'rgba(119, 203, 185, 0.55)', type: 'dashed', width: 1 },
-          data: [{ xAxis: H1_REST_MHZ }],
-        },
         data: [] as [number, number][],
       },
     ],
