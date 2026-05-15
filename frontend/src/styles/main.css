@@ -2370,6 +2370,56 @@ h2.panel-header {
 
 .cf-turnstile { min-height: 65px; }
 
+/* Captcha popup */
+
+.captcha-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.captcha-modal {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  padding: 24px 28px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.captcha-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.captcha-modal-header h2 { margin: 0; font-size: 18px; }
+
+.captcha-modal-close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: var(--r-sm);
+}
+
+.captcha-modal-close:hover { color: var(--text-1); }
+
+.captcha-modal-body { margin: 0; font-size: 14px; color: var(--text-2); }
+
 /* In-queue waiting page */
 
 .queue-waiting {

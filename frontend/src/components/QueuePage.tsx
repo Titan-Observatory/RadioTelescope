@@ -35,10 +35,16 @@ interface Props {
 
 export function QueuePage({ status, joining, joinError, siteKey, turnstileEnabled, onJoin }: Props) {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const widgetRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
   const autoJoinedTokenRef = useRef<string | null>(null);
   const inQueue = (status?.position ?? -1) >= 0;
+
+  // Open the modal automatically once we know turnstile is required.
+  useEffect(() => {
+    if (turnstileEnabled && !inQueue) setModalOpen(true);
+  }, [turnstileEnabled, inQueue]);
 
   // Auto-join as soon as the captcha is solved — no button click needed.
   // Guarded by the token value so a re-render doesn't re-submit.
@@ -61,8 +67,9 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
     }
   }, [joinError, turnstileEnabled]);
 
+  // Load Turnstile and render widget inside the modal when it opens.
   useEffect(() => {
-    if (inQueue || !turnstileEnabled || !siteKey) return;
+    if (!modalOpen || inQueue || !turnstileEnabled || !siteKey) return;
 
     const renderWidget = () => {
       if (!widgetRef.current || !window.turnstile || widgetIdRef.current) return;
@@ -90,28 +97,27 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
       script.defer = true;
       document.head.appendChild(script);
     }
-  }, [inQueue, turnstileEnabled, siteKey]);
+  }, [modalOpen, inQueue, turnstileEnabled, siteKey]);
+
+  // Close modal automatically once we enter the queue.
+  useEffect(() => {
+    if (inQueue) setModalOpen(false);
+  }, [inQueue]);
+
+  const closeModal = () => {
+    setModalOpen(false);
+    autoJoinedTokenRef.current = null;
+    setCaptchaToken(null);
+    widgetIdRef.current = null;
+  };
 
   if (!inQueue) {
     return (
       <div className="queue-landing">
         <div className="queue-card">
           <h1>Radio Telescope</h1>
-          <p>
-            {turnstileEnabled
-              ? 'This telescope is shared. Complete the check below to join the queue.'
-              : 'This telescope is shared. Join the queue to take control.'}
-          </p>
-          {turnstileEnabled && siteKey && <div className="cf-turnstile" ref={widgetRef} />}
-          {turnstileEnabled ? (
-            <p className="queue-status-line">
-              {joining
-                ? 'Joining…'
-                : captchaToken
-                  ? 'Verified — joining queue…'
-                  : 'Waiting for verification…'}
-            </p>
-          ) : (
+          <p>This telescope is shared with other users. Join the queue to take control.</p>
+          {!turnstileEnabled && (
             <button
               className="action-button"
               disabled={joining}
@@ -120,8 +126,31 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
               {joining ? 'Joining…' : 'Join queue'}
             </button>
           )}
-          {joinError && <p className="banner banner-error">{joinError}</p>}
+          {joinError && !modalOpen && <p className="banner banner-error">{joinError}</p>}
         </div>
+
+        {modalOpen && (
+          <div className="captcha-modal-overlay">
+            <div className="captcha-modal">
+              <div className="captcha-modal-header">
+                <h2>Verify to join</h2>
+                <button className="captcha-modal-close" onClick={closeModal} aria-label="Close">
+                  ×
+                </button>
+              </div>
+              <p className="captcha-modal-body">Complete the check below to join the queue.</p>
+              <div className="cf-turnstile" ref={widgetRef} />
+              <p className="queue-status-line">
+                {joining
+                  ? 'Joining…'
+                  : captchaToken
+                    ? 'Verified — joining queue…'
+                    : 'Waiting for verification…'}
+              </p>
+              {joinError && <p className="banner banner-error">{joinError}</p>}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
