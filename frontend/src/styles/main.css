@@ -347,7 +347,8 @@ input:focus-visible {
 }
 
 /* First-visit prompt — custom buttons injected via onPopoverRender */
-.rt-tour-prompt .driver-popover-footer { margin-top: 18px; }
+.rt-tour-prompt.driver-popover { min-width: 380px; }
+.rt-tour-prompt .driver-popover-footer { margin-top: 18px; gap: 6px; }
 
 .rt-tour-popover .driver-popover-footer button.rt-tour-btn {
   font-size: 13px;
@@ -852,6 +853,29 @@ input:focus-visible {
   background: var(--sect-amber-soft);
   color: var(--warn);
 }
+.spectrum-guided-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--sect-amber-soft);
+  border: 1px solid var(--accent-line, var(--sect-amber-soft));
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  cursor: pointer;
+}
+.spectrum-guided-cta:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0d16;
+}
+.spectrum-guided-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .spectrum-disconnected {
   font-size: 10px;
   font-weight: 600;

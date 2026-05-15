@@ -13,6 +13,7 @@ import { SkyMap } from './components/SkyMap';
 import { SpectrumPanel } from './components/SpectrumPanel';
 import { QueuePage } from './components/QueuePage';
 import { startTour, maybePromptFirstVisit } from './tour';
+import { startGuidedObservation } from './guidedObservation';
 import {
   fetchQueueConfig, fetchQueueStatus, joinQueue, leaveQueue,
   type QueueConfig, type QueueStatus,
@@ -214,6 +215,20 @@ function App() {
     }
   };
 
+  const gotoRaDec = useCallback(async (raDeg: number, decDeg: number) => {
+    setNotice(null);
+    try {
+      await api.gotoRaDec({ ra_deg: raDeg, dec_deg: decDeg });
+      setTelemetry(await api.status());
+    } catch (err) {
+      setNotice(errorMessage(err));
+    }
+  }, []);
+
+  const launchGuidedObservation = useCallback(() => {
+    startGuidedObservation(gotoRaDec);
+  }, [gotoRaDec]);
+
   const syncAltAz = async (altDeg: number, azDeg: number) => {
     setNotice(null);
     try {
@@ -276,9 +291,9 @@ function App() {
   // in front of them — no point prompting while they're still on the queue page.
   useEffect(() => {
     if (!isActiveController) return;
-    const t = setTimeout(() => maybePromptFirstVisit(), 600);
+    const t = setTimeout(() => maybePromptFirstVisit(launchGuidedObservation), 600);
     return () => clearTimeout(t);
-  }, [isActiveController]);
+  }, [isActiveController, launchGuidedObservation]);
 
   if (queueEnabled && !isActiveController) {
     return (
@@ -358,7 +373,7 @@ function App() {
         </section>
         <div className="dashboard-rightcol">
           <section className="panel spectrum-panel-host">
-            <SpectrumPanel />
+            <SpectrumPanel onStartGuided={launchGuidedObservation} />
           </section>
           <section className="panel status-side-panel">
             <TelemetryDashboard telemetry={telemetry} />
