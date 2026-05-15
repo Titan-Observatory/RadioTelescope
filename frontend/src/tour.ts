@@ -1,5 +1,6 @@
 import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
+import { track } from './analytics';
 
 const TOUR_SEEN_KEY = 'rt-tour-seen';
 
@@ -13,6 +14,7 @@ function hasSeenTour(): boolean {
 
 export function maybePromptFirstVisit() {
   if (hasSeenTour()) return;
+  track('tour_prompt_shown');
 
   const prompt = driver({
     overlayOpacity: 0.65,
@@ -34,6 +36,7 @@ export function maybePromptFirstVisit() {
             dontShow.textContent = "Don't show again";
             dontShow.className = 'rt-tour-btn rt-tour-btn-ghost';
             dontShow.onclick = () => {
+              track('tour_prompt_dismissed', { choice: 'dont_show' });
               markTourSeen();
               prompt.destroy();
             };
@@ -41,15 +44,19 @@ export function maybePromptFirstVisit() {
             const later = document.createElement('button');
             later.textContent = 'Maybe later';
             later.className = 'rt-tour-btn rt-tour-btn-ghost';
-            later.onclick = () => prompt.destroy();
+            later.onclick = () => {
+              track('tour_prompt_dismissed', { choice: 'later' });
+              prompt.destroy();
+            };
 
             const yes = document.createElement('button');
             yes.textContent = 'Start tour';
             yes.className = 'rt-tour-btn rt-tour-btn-primary';
             yes.onclick = () => {
+              track('tour_prompt_dismissed', { choice: 'start' });
               markTourSeen();
               prompt.destroy();
-              startTour();
+              startTour('first_visit');
             };
 
             footer.appendChild(dontShow);
@@ -64,8 +71,11 @@ export function maybePromptFirstVisit() {
   prompt.drive();
 }
 
-export function startTour() {
+export function startTour(source: 'first_visit' | 'button' = 'button') {
   markTourSeen();
+  track('tour_started', { source });
+  let lastStepIndex = 0;
+  let completed = false;
   const tour = driver({
     showProgress: true,
     allowClose: true,
@@ -74,6 +84,22 @@ export function startTour() {
     nextBtnText: 'Next',
     prevBtnText: 'Back',
     doneBtnText: 'Done',
+    onHighlightStarted: (_el, _step, opts) => {
+      lastStepIndex = opts.state.activeIndex ?? lastStepIndex;
+    },
+    onDestroyStarted: (_el, _step, opts) => {
+      const total = opts.config.steps?.length ?? 0;
+      const idx = opts.state.activeIndex ?? lastStepIndex;
+      // driver.js calls onDestroyStarted both for "Done" and for early close;
+      // we infer completion by whether we reached the last step.
+      if (!completed && idx >= total - 1) {
+        completed = true;
+        track('tour_completed', { steps: total });
+      } else if (!completed) {
+        track('tour_abandoned', { last_step_index: idx, total_steps: total });
+      }
+      opts.driver.destroy();
+    },
     steps: [
       {
         popover: {
@@ -116,24 +142,6 @@ export function startTour() {
           title: 'Go to a target',
           description:
             'Type an azimuth and altitude in degrees, then hit Slew to drive the dish there automatically.',
-          side: 'right',
-        },
-      },
-      {
-        element: '[data-tour="calibration"]',
-        popover: {
-          title: 'Calibration',
-          description:
-            'Expand this section to sync coordinates, home the elevation axis, or zero an encoder. Use after physically repositioning the dish.',
-          side: 'right',
-        },
-      },
-      {
-        element: '[data-tour="pid"]',
-        popover: {
-          title: 'PID tuning',
-          description:
-            'Advanced: read and write the motor controller\'s position and velocity PID gains. Changes are written to controller flash.',
           side: 'right',
         },
       },

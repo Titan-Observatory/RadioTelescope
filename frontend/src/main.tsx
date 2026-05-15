@@ -1,8 +1,8 @@
 import './styles/main.css';
 
 import {
-  Activity, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Cpu, Crosshair, HelpCircle, Home, Info, LogOut, Navigation, Zap,
+  Activity, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
+  HelpCircle, MessageSquare, Navigation, Zap,
 } from 'lucide-react';
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -13,8 +13,10 @@ import { SkyMap } from './components/SkyMap';
 import { SpectrumPanel } from './components/SpectrumPanel';
 import { QueuePage } from './components/QueuePage';
 import { startTour, maybePromptFirstVisit } from './tour';
+import { FeedbackDialog } from './components/FeedbackDialog';
+import { setAnalyticsContext, track } from './analytics';
 import {
-  fetchQueueConfig, fetchQueueStatus, joinQueue, leaveQueue,
+  fetchQueueConfig, fetchQueueStatus, joinQueue,
   type QueueConfig, type QueueStatus,
 } from './queue';
 import type { CommandInfo, RoboClawTelemetry, TelescopeConfig } from './types';
@@ -24,29 +26,12 @@ document.title = `${BRAND.name} · ${BRAND.tagline}`;
 const favicon = document.getElementById('favicon') as HTMLLinkElement | null;
 if (favicon) favicon.href = BRAND.faviconUrl;
 
-interface ErrorLogEntry {
-  id: number;
-  source: string;
-  message: string;
-  firstSeen: Date;
-  lastSeen: Date;
-  count: number;
-}
-
-interface ControllerIssue {
-  title: string;
-  summary: string;
-  action: string;
-}
-
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 function App() {
   const [telemetry, setTelemetry] = useState<RoboClawTelemetry | null>(null);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
-  const [notice, setNotice] = useState<string | null>(null);
   const [telescopeConfig, setTelescopeConfig] = useState<TelescopeConfig | null>(null);
-  const [errorLog, setErrorLog] = useState<ErrorLogEntry[]>([]);
   const [targetAz, setTargetAz] = useState(0);
   const [targetAlt, setTargetAlt] = useState(45);
   const [hasMapTarget, setHasMapTarget] = useState(false);
@@ -54,23 +39,18 @@ function App() {
   const [queueConfig, setQueueConfig] = useState<QueueConfig | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
-  const [tooltipsEnabled, setTooltipsEnabled] = useState(true);
-  const nextErrorId = useRef(1);
   const prevIsActiveRef = useRef<boolean | null>(null);
   const lastLeaseRemainingRef = useRef<number | null>(null);
 
-  const logEvent = (source: string, message: string) => {
-    const now = new Date();
-    setErrorLog((entries) => {
-      const latest = entries[0];
-      if (latest && latest.source === source && latest.message === message) {
-        return [{ ...latest, lastSeen: now, count: latest.count + 1 }, ...entries.slice(1)];
-      }
-      return [
-        { id: nextErrorId.current++, source, message, firstSeen: now, lastSeen: now, count: 1 },
-        ...entries,
-      ].slice(0, 20);
-    });
+  // Errors are tracked for analytics but never surfaced to the demo user —
+  // public visitors see a quiet UI even when the controller is misbehaving.
+  // Dedup last (source, message) to avoid flooding the events log on a flap.
+  const lastErrorRef = useRef<{ source: string; message: string } | null>(null);
+  const trackErrorOnce = (source: string, message: string) => {
+    const last = lastErrorRef.current;
+    if (last && last.source === source && last.message === message) return;
+    lastErrorRef.current = { source, message };
+    track('error_shown', { source, message: message.slice(0, 200) });
   };
 
   // Bootstrap queue state and telemetry. Telemetry is read-only and visible
@@ -81,17 +61,9 @@ function App() {
 
     void api.status().then((next) => {
       setTelemetry(next);
-      if (next.last_error) logEvent('RoboClaw', next.last_error);
-    }).catch((err) => {
-      const message = errorMessage(err);
-      setNotice(message);
-      logEvent('API', message);
-    });
-    void api.commands().then(setCommands).catch((err) => {
-      const message = errorMessage(err);
-      setNotice(message);
-      logEvent('API', message);
-    });
+      if (next.last_error) trackErrorOnce('RoboClaw', next.last_error);
+    }).catch((err) => trackErrorOnce('API', errorMessage(err)));
+    void api.commands().then(setCommands).catch((err) => trackErrorOnce('API', errorMessage(err)));
     void api.telescopeConfig().then(setTelescopeConfig).catch(() => {/* non-critical */});
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -99,13 +71,9 @@ function App() {
     ws.onmessage = (event) => {
       const next = JSON.parse(event.data) as RoboClawTelemetry;
       setTelemetry(next);
-      if (next.last_error) logEvent('RoboClaw', next.last_error);
+      if (next.last_error) trackErrorOnce('RoboClaw', next.last_error);
     };
-    ws.onerror = () => {
-      const message = 'RoboClaw telemetry websocket disconnected.';
-      setNotice(message);
-      logEvent('WebSocket', message);
-    };
+    ws.onerror = () => trackErrorOnce('WebSocket', 'RoboClaw telemetry websocket disconnected.');
     return () => ws.close();
   }, []);
 
@@ -172,19 +140,18 @@ function App() {
   const handleJoin = async (turnstileToken: string | null) => {
     setJoining(true);
     setJoinError(null);
+    track('queue_join_attempt', { turnstile: turnstileToken != null });
     try {
       const next = await joinQueue(turnstileToken);
       setQueueStatus(next);
+      track('queue_joined', { position: next.position, queue_length: next.queue_length });
     } catch (err) {
-      setJoinError(errorMessage(err));
+      const message = errorMessage(err);
+      setJoinError(message);
+      track('queue_join_failed', { message: message.slice(0, 200) });
     } finally {
       setJoining(false);
     }
-  };
-
-  const handleLeave = async () => {
-    await leaveQueue();
-    setQueueStatus({ ...(queueStatus ?? {} as QueueStatus), position: -1, is_active: false });
   };
 
   const commandById = useMemo(
@@ -194,67 +161,25 @@ function App() {
 
   const runCommand = async (commandId: string, args: Record<string, number | boolean>) => {
     const command = commandById[commandId];
-    if (!command) { setNotice(`Command unavailable: ${commandId}`); return; }
-    setNotice(null);
+    if (!command) {
+      track('command_failed', { command_id: commandId, message: 'unavailable' });
+      return;
+    }
     try {
       await api.execute(command.id, args);
       setTelemetry(await api.status());
     } catch (err) {
-      setNotice(errorMessage(err));
+      track('command_failed', { command_id: commandId, message: errorMessage(err).slice(0, 200) });
     }
   };
 
   const gotoAltAz = async (altDeg: number, azDeg: number) => {
-    setNotice(null);
+    track('goto_submitted', { alt_deg: altDeg, az_deg: azDeg });
     try {
       await api.gotoAltAz(altDeg, azDeg);
       setTelemetry(await api.status());
     } catch (err) {
-      setNotice(errorMessage(err));
-    }
-  };
-
-  const syncAltAz = async (altDeg: number, azDeg: number) => {
-    setNotice(null);
-    try {
-      await api.syncAltAz(altDeg, azDeg);
-      setNotice(`Pointing set to Az ${azDeg.toFixed(1)}° · Alt ${altDeg.toFixed(1)}°`);
-      setTelemetry(await api.status());
-    } catch (err) {
-      setNotice(errorMessage(err));
-    }
-  };
-
-  const homeElevation = async () => {
-    setNotice(null);
-    try {
-      const r = await api.homeElevation();
-      setNotice(r.message);
-      setTelemetry(await api.status());
-    } catch (err) {
-      setNotice(errorMessage(err));
-    }
-  };
-
-  const zeroAzimuth = async () => {
-    setNotice(null);
-    try {
-      const r = await api.zeroAzimuth();
-      setNotice(r.message);
-      setTelemetry(await api.status());
-    } catch (err) {
-      setNotice(errorMessage(err));
-    }
-  };
-
-  const zeroAltitude = async () => {
-    setNotice(null);
-    try {
-      const r = await api.zeroAltitude();
-      setNotice(r.message);
-      setTelemetry(await api.status());
-    } catch (err) {
-      setNotice(errorMessage(err));
+      track('goto_failed', { message: errorMessage(err).slice(0, 200) });
     }
   };
 
@@ -262,15 +187,36 @@ function App() {
     setTargetAz(Math.round(az * 1000) / 1000);
     setTargetAlt(Math.round(alt * 1000) / 1000);
     setHasMapTarget(true);
+    track('map_target_picked', { alt_deg: alt, az_deg: az });
   }, []);
-
-  const controllerIssue = explainControllerError(telemetry?.last_error ?? null);
 
   // Queue gating: when the queue is enabled and we are not the active
   // controller, render the spectator/queue page instead of the control UI.
   // Position 0 = active controller; -1 = not in queue; >0 = waiting.
   const queueEnabled = queueConfig?.enabled ?? false;
   const isActiveController = !queueEnabled || queueStatus?.is_active === true;
+
+  // Keep analytics context current so every tracked event is tagged with
+  // queue position and controller status without per-call boilerplate.
+  useEffect(() => {
+    setAnalyticsContext({
+      isActiveController,
+      queuePosition: queueStatus?.position ?? null,
+    });
+  }, [isActiveController, queueStatus?.position]);
+
+  // One session_start per tab — fires after the queue state is known so the
+  // controller/spectator split is captured on the first row.
+  const sessionStartedRef = useRef(false);
+  useEffect(() => {
+    if (sessionStartedRef.current) return;
+    if (queueEnabled && queueStatus == null) return;
+    sessionStartedRef.current = true;
+    track('session_start', {
+      queue_enabled: queueEnabled,
+      entered_as: isActiveController ? 'controller' : 'spectator',
+    });
+  }, [queueEnabled, queueStatus, isActiveController]);
 
   // Offer the first-visit guided tour once the user actually has the controls
   // in front of them — no point prompting while they're still on the queue page.
@@ -298,39 +244,16 @@ function App() {
       <TopBar
         telemetry={telemetry}
         leaseStatus={queueEnabled && queueStatus?.is_active ? queueStatus : null}
-        onLeaveLease={() => void handleLeave()}
-        tooltipsEnabled={tooltipsEnabled}
-        onToggleTooltips={() => setTooltipsEnabled((enabled) => !enabled)}
       />
-
-      {telemetry?.connection.mode === 'error' && (
-        <div className="banner banner-error">
-          <AlertTriangle size={14} />
-          <span>Lost connection to the telescope. Check that all cables are secure and try refreshing.</span>
-        </div>
-      )}
-
-      {telemetry?.last_error && (
-        <ControllerIssueBanner issue={controllerIssue} />
-      )}
-
-      {notice && (
-        <div className={`banner ${notice.toLowerCase().includes('homed') || notice.toLowerCase().includes('zero') || notice.toLowerCase().includes('set') ? 'banner-ok' : 'banner-error'}`}>
-          <AlertTriangle size={14} />
-          <span>{notice}</span>
-        </div>
-      )}
-
-      {errorLog.length > 0 && <ErrorLog entries={errorLog} onClear={() => setErrorLog([])} />}
 
       <main className="dashboard">
         <section className="panel skymap-panel">
           <SkyMap
             telemetry={telemetry}
             config={telescopeConfig}
-            onNotice={setNotice}
+            onNotice={() => { /* errors suppressed for demo */ }}
             onTarget={handleMapTarget}
-            tooltipsEnabled={tooltipsEnabled}
+            tooltipsEnabled={true}
           />
           <div className="skymap-bottom-dock">
             <div className="skymap-overlay-controls">
@@ -347,7 +270,7 @@ function App() {
               <button
                 type="button"
                 className="skymap-slew-target"
-                onClick={() => void gotoAltAz(targetAlt, targetAz)}
+                onClick={() => { track('slew_from_map', { alt_deg: targetAlt, az_deg: targetAz }); void gotoAltAz(targetAlt, targetAz); }}
                 title={`Slew to Az ${targetAz.toFixed(3)} deg, Alt ${targetAlt.toFixed(3)} deg`}
               >
                 <Navigation size={24} />
@@ -364,15 +287,14 @@ function App() {
             <TelemetryDashboard telemetry={telemetry} />
           </section>
         </div>
-        <section className="panel controls-panel">
-          <AdminPanel syncAltAz={syncAltAz} homeElevation={homeElevation} zeroAzimuth={zeroAzimuth} zeroAltitude={zeroAltitude} targetAz={targetAz} targetAlt={targetAlt} />
-        </section>
       </main>
+
+      <InfoSection />
     </div>
   );
 }
 
-function LeaseChip({ status, onLeave }: { status: QueueStatus; onLeave: () => void }) {
+function LeaseChip({ status }: { status: QueueStatus }) {
   const remaining = Math.max(0, Math.round(status.lease_remaining_s ?? 0));
   const idle = status.idle_remaining_s == null ? null : Math.max(0, Math.round(status.idle_remaining_s));
   return (
@@ -383,9 +305,6 @@ function LeaseChip({ status, onLeave }: { status: QueueStatus; onLeave: () => vo
       {idle != null && idle < 30 && (
         <span className="topbar-lease-idle">· idle {idle}s</span>
       )}
-      <button className="topbar-lease-leave" onClick={onLeave} title="Release control">
-        <LogOut size={11} /> Release
-      </button>
     </span>
   );
 }
@@ -401,93 +320,48 @@ function formatSeconds(s: number): string {
 function TopBar({
   telemetry,
   leaseStatus,
-  onLeaveLease,
-  tooltipsEnabled,
-  onToggleTooltips,
 }: {
   telemetry: RoboClawTelemetry | null;
   leaseStatus: QueueStatus | null;
-  onLeaveLease: () => void;
-  tooltipsEnabled: boolean;
-  onToggleTooltips: () => void;
 }) {
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   return (
-    <header className="topbar">
-      <a className="topbar-brand" href={BRAND.homepage} target="_blank" rel="noreferrer">
-        <img src={BRAND.logoUrl} alt={BRAND.name} className="brand-logo" />
-        <div className="brand-text">
-          <h1>{BRAND.name}</h1>
-          <p className="topbar-sub">{BRAND.tagline}</p>
-        </div>
-      </a>
-      <div className="topbar-status">
-        {leaseStatus && <LeaseChip status={leaseStatus} onLeave={onLeaveLease} />}
-        <button
-          type="button"
-          className={`topbar-tooltips${tooltipsEnabled ? ' active' : ''}`}
-          onClick={onToggleTooltips}
-          title={tooltipsEnabled ? 'Hide hover tooltips' : 'Show hover tooltips'}
-          aria-pressed={tooltipsEnabled}
-        >
-          <Info size={14} /> Tooltips
-        </button>
-        <button
-          type="button"
-          className="topbar-help"
-          onClick={() => startTour()}
-          title="Take a guided tour of the controls"
-        >
-          <HelpCircle size={14} /> Tour
-        </button>
-        <span className="topbar-time" title="Time at the telescope (EST)">
-          <span className="topbar-time-label">Telescope time</span>
-          {telemetry
-            ? `${new Date(telemetry.timestamp * 1000).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour12: false })} EST`
-            : '—'}
-        </span>
-      </div>
-    </header>
-  );
-}
-
-function ControllerIssueBanner({ issue }: { issue: ControllerIssue | null }) {
-  if (!issue) return null;
-
-  return (
-    <div className="banner banner-error banner-column">
-      <div className="banner-main">
-        <AlertTriangle size={14} />
-        <strong>{issue.title}</strong>
-        <span>{issue.summary}</span>
-      </div>
-      <span className="banner-detail">{issue.action}</span>
-    </div>
-  );
-}
-
-function ErrorLog({ entries, onClear }: { entries: ErrorLogEntry[]; onClear: () => void }) {
-  if (entries.length === 0) return null;
-
-  return (
-    <details className="error-log">
-      <summary>
-        <span>Connection issues</span>
-        <strong>{entries.length}</strong>
-      </summary>
-      <div className="error-log-body">
-        <button type="button" className="error-log-clear" onClick={onClear}>Clear</button>
-        {entries.map((entry) => (
-          <div className="error-log-entry" key={entry.id}>
-            <div className="error-log-meta">
-              <strong>{entry.source}</strong>
-              <span>{entry.lastSeen.toLocaleTimeString()}</span>
-              {entry.count > 1 && <span>{entry.count}x</span>}
-            </div>
-            <code>{entry.message}</code>
+    <>
+      <header className="topbar">
+        <a className="topbar-brand" href={BRAND.homepage} target="_blank" rel="noreferrer">
+          <img src={BRAND.logoUrl} alt={BRAND.name} className="brand-logo" />
+          <div className="brand-text">
+            <p className="topbar-sub">{BRAND.tagline}</p>
           </div>
-        ))}
-      </div>
-    </details>
+        </a>
+        <div className="topbar-status">
+          {leaseStatus && <LeaseChip status={leaseStatus} />}
+          <button
+            type="button"
+            className="topbar-feedback"
+            onClick={() => { track('feedback_opened'); setFeedbackOpen(true); }}
+            title="Share feedback about the telescope experience"
+          >
+            <MessageSquare size={14} /> Feedback
+          </button>
+          <button
+            type="button"
+            className="topbar-help"
+            onClick={() => { track('tour_button_clicked'); startTour('button'); }}
+            title="Take a guided tour of the controls"
+          >
+            <HelpCircle size={14} /> Tour
+          </button>
+          <span className="topbar-time" title="Time at the telescope (EST)">
+            <span className="topbar-time-label">Telescope time</span>
+            {telemetry
+              ? `${new Date(telemetry.timestamp * 1000).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour12: false })} EST`
+              : '—'}
+          </span>
+        </div>
+      </header>
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+    </>
   );
 }
 
@@ -510,6 +384,18 @@ function MotionControls({
   const [slewSpeed, setSlewSpeed] = useState(40);
   const speed = Math.round(slewSpeed * 127 / 100);
 
+  const switchMode = (next: 'jog' | 'goto') => {
+    if (next === mode) return;
+    track('motion_mode_switched', { from: mode, to: next });
+    setMode(next);
+  };
+
+  const changeSpeed = (value: number) => {
+    if (value === slewSpeed) return;
+    track('motion_speed_changed', { from: slewSpeed, to: value });
+    setSlewSpeed(value);
+  };
+
   const submitTarget = async (e: FormEvent) => {
     e.preventDefault();
     await gotoAltAz(targetAlt, targetAz);
@@ -526,7 +412,7 @@ function MotionControls({
           role="radio"
           aria-checked={mode === 'jog'}
           className="motion-mode-step"
-          onClick={() => setMode('jog')}
+          onClick={() => switchMode('jog')}
         >
           Jog
         </button>
@@ -535,7 +421,7 @@ function MotionControls({
           role="radio"
           aria-checked={mode === 'goto'}
           className="motion-mode-step"
-          onClick={() => setMode('goto')}
+          onClick={() => switchMode('goto')}
         >
           GoTo
         </button>
@@ -543,7 +429,7 @@ function MotionControls({
       {mode === 'jog' ? (
         <div className="motion-card">
           <PointingPad runCommand={runCommand} speed={speed} />
-          <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={setSlewSpeed} />
+          <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={changeSpeed} />
         </div>
       ) : (
         <form className="target-form target-form-overlay" onSubmit={submitTarget}>
@@ -608,73 +494,6 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
   );
 }
 
-// Admin panel
-function AdminPanel({ syncAltAz, homeElevation, zeroAzimuth, zeroAltitude, targetAz, targetAlt }: {
-  syncAltAz: (alt: number, az: number) => Promise<void>;
-  homeElevation: () => Promise<void>;
-  zeroAzimuth: () => Promise<void>;
-  zeroAltitude: () => Promise<void>;
-  targetAz: number;
-  targetAlt: number;
-}) {
-  const [elHoming, setElHoming] = useState(false);
-
-  const runHomeElevation = async () => {
-    setElHoming(true);
-    try { await homeElevation(); } finally { setElHoming(false); }
-  };
-
-  return (
-    <details className="admin-panel" data-tour="calibration">
-      <summary className="admin-panel-summary">
-        <Cpu size={13} /> Calibration &amp; Homing
-      </summary>
-      <div className="admin-panel-body">
-        <div className="admin-row">
-          <span className="admin-label">Position offset</span>
-          <button
-            type="button"
-            onClick={() => void syncAltAz(targetAlt, targetAz)}
-            title="Recalibrates the alt/az zero offsets so the controller reports the current target coordinates. Does not move the dish."
-          >
-            <Crosshair size={13} /> Set as Current
-          </button>
-        </div>
-        <div className="admin-row">
-          <span className="admin-label">Elevation home</span>
-          <button
-            onClick={() => void runHomeElevation()}
-            disabled={elHoming}
-            className={elHoming ? 'homing-active' : ''}
-            title="Slowly lowers the dish until it hits the bottom stop, then resets the elevation encoder to zero"
-          >
-            <Home size={13} />
-            {elHoming ? 'Homing…' : 'Home Elevation'}
-          </button>
-        </div>
-        <div className="admin-row">
-          <span className="admin-label">Azimuth zero</span>
-          <button
-            onClick={() => void zeroAzimuth()}
-            title="Sets the current azimuth position as the zero reference point"
-          >
-            <Crosshair size={13} /> Zero Azimuth
-          </button>
-        </div>
-        <div className="admin-row">
-          <span className="admin-label">Altitude zero</span>
-          <button
-            onClick={() => void zeroAltitude()}
-            title="Zeros the M2 encoder register at the current position. Reported altitude follows the calibration; any prior sync offset is preserved."
-          >
-            <Crosshair size={13} /> Zero Altitude
-          </button>
-        </div>
-      </div>
-    </details>
-  );
-}
-
 // ─── Pointing pad + axis status ───────────────────────────────────────────────
 
 // RoboClaw's firmware serial-timeout failsafe stops the motors if no command
@@ -686,10 +505,15 @@ function PointingPad({ runCommand, speed }: {
   runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
   speed: number;
 }) {
-  const west = useJog(() => runCommand('backward_m1', { speed }), () => runCommand('backward_m1', { speed: 0 }));
-  const east = useJog(() => runCommand('forward_m1',  { speed }), () => runCommand('forward_m1',  { speed: 0 }));
-  const down = useJog(() => runCommand('backward_m2', { speed }), () => runCommand('backward_m2', { speed: 0 }));
-  const up   = useJog(() => runCommand('forward_m2',  { speed }), () => runCommand('forward_m2',  { speed: 0 }));
+  // Track on press only (not every repeat tick) — useJog's start fires every
+  // JOG_REPEAT_MS while held, which would flood the events log otherwise.
+  const onPress = (direction: 'west' | 'east' | 'up' | 'down') =>
+    track('jog_pressed', { direction, speed });
+
+  const west = useJog(() => runCommand('backward_m1', { speed }), () => runCommand('backward_m1', { speed: 0 }), () => onPress('west'));
+  const east = useJog(() => runCommand('forward_m1',  { speed }), () => runCommand('forward_m1',  { speed: 0 }), () => onPress('east'));
+  const down = useJog(() => runCommand('backward_m2', { speed }), () => runCommand('backward_m2', { speed: 0 }), () => onPress('down'));
+  const up   = useJog(() => runCommand('forward_m2',  { speed }), () => runCommand('forward_m2',  { speed: 0 }), () => onPress('up'));
 
   return (
     <div className="pointing-pad" role="group" aria-label="Pointing controls">
@@ -716,15 +540,17 @@ function PointingPad({ runCommand, speed }: {
 // JOG_REPEAT_MS while pressed, sends `stop` on release / pointer-leave /
 // cancel / unmount. We avoid setPointerCapture so dragging off the button
 // is treated as a release (matches what the user sees on touch too).
-function useJog(start: () => Promise<void>, stop: () => Promise<void>) {
+function useJog(start: () => Promise<void>, stop: () => Promise<void>, onPress?: () => void) {
   const [active, setActive] = useState(false);
   const timerRef = useRef<number | null>(null);
   // Stash the latest callbacks so the interval always fires the current one
   // even though we only set it up once per press.
   const startRef = useRef(start);
   const stopRef = useRef(stop);
+  const onPressRef = useRef(onPress);
   startRef.current = start;
   stopRef.current = stop;
+  onPressRef.current = onPress;
 
   const end = useCallback(() => {
     if (timerRef.current == null) return;
@@ -738,6 +564,7 @@ function useJog(start: () => Promise<void>, stop: () => Promise<void>) {
     if (e.button !== 0 && e.pointerType === 'mouse') return; // left-click only on mouse
     if (timerRef.current != null) return;
     setActive(true);
+    onPressRef.current?.();
     void startRef.current();
     timerRef.current = window.setInterval(() => { void startRef.current(); }, JOG_REPEAT_MS);
   }, []);
@@ -868,39 +695,89 @@ function tempClass(c: number | null | undefined): string {
   return '';
 }
 
-function explainControllerError(message: string | null): ControllerIssue | null {
-  if (!message) return null;
-  const lower = message.toLowerCase();
-  const hasSerialTimeout = lower.includes('serial timeout');
-  const hasCrcMismatch = lower.includes('crc mismatch');
-
-  if (hasSerialTimeout || hasCrcMismatch) {
-    return {
-      title: 'Connection to the motor controller is unstable.',
-      summary: "The telescope isn't responding to commands reliably.",
-      action: 'Check that all cables between the Raspberry Pi and the motor controller are secure and fully seated.',
-    };
-  }
-
-  if (lower.includes('missing ack')) {
-    return {
-      title: 'The motor controller didn\'t respond to a command.',
-      summary: 'A movement command was sent but the controller did not confirm it.',
-      action: 'Check that the controller is powered on and the USB cable is connected firmly.',
-    };
-  }
-
-  return {
-    title: 'The motor controller reported a problem.',
-    summary: 'Something unexpected happened while communicating with the telescope.',
-    action: 'Expand "Connection issues" below for details. Try refreshing the page if the problem persists.',
-  };
-}
-
 function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
   if (err instanceof Error) return err.message;
   return 'Unknown error';
+}
+
+// ─── Info section ────────────────────────────────────────────────────────────
+
+const PLANNED_FEATURES = [
+  'Multi-user scheduling — reserve observation windows days in advance',
+  'RA/Dec & object-name GoTo — point at Andromeda by name',
+  'Pulsar timing — detect rotational slow-down of known pulsars',
+  'Hydrogen-line mapping — image the galactic plane in 21 cm',
+  'Interferometry baseline — phase-coherent linking of multiple dishes',
+  'Real-time sky subtraction & RFI excision pipeline',
+  'Educational live-stream mode with annotated overlays',
+  'Automated nightly observation queue with public data archive',
+];
+
+function InfoSection() {
+  return (
+    <section className="info-section">
+      <div className="info-section-inner">
+
+        <div className="info-col info-col-about">
+          <h2 className="info-col-heading">About this demo</h2>
+          <p>
+            Titan Observatory is a community radio telescope built on a Raspberry Pi,
+            a motorised dish, and a software-defined radio receiver. This page gives you
+            live remote access to the real hardware — the sky map and spectrum panel
+            update in real time from the telescope's position and RF front-end.
+          </p>
+          <p>
+            The queue system ensures fair access: each visitor gets a timed session
+            at the controls while spectators watch along. Commands are rate-limited
+            and safety interlocks prevent the dish from leaving its allowed range.
+          </p>
+          <p className="info-note">
+            All data leaving the server is anonymised. Session tokens are ephemeral
+            and no personal information is stored.
+          </p>
+        </div>
+
+        <div className="info-col info-col-features">
+          <h2 className="info-col-heading">Roadmap</h2>
+          <p className="info-col-sub">Features we're building toward for the full observatory:</p>
+          <ul className="feature-list">
+            {PLANNED_FEATURES.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="info-col info-col-donate">
+          <h2 className="info-col-heading">Support the observatory</h2>
+          <p>
+            Titan Observatory runs entirely on community donations. Every dollar goes
+            toward hardware, hosting, and expanding capacity — more dishes, more bandwidth,
+            more time online for everyone.
+          </p>
+          <ul className="donate-impact-list">
+            <li><strong>$10</strong> keeps the server running for a week</li>
+            <li><strong>$50</strong> funds a new low-noise amplifier</li>
+            <li><strong>$250</strong> contributes toward a second dish</li>
+          </ul>
+          <a
+            className="donate-cta"
+            href={BRAND.homepage}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => track('donate_clicked')}
+          >
+            Donate to Titan Observatory
+          </a>
+          <p className="info-note">
+            Titan Observatory is a volunteer-run project. All contributions are
+            used directly for observatory operations and development.
+          </p>
+        </div>
+
+      </div>
+    </section>
+  );
 }
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────

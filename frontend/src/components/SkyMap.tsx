@@ -792,6 +792,9 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, tooltipsEnabled,
   const targetCatalogRef = useRef<ReturnType<typeof A.catalog> | null>(null);
   const initializedRef = useRef(false);
   const onTargetRef = useRef<((az: number, alt: number) => void) | null>(null);
+  // Mirrored so the init effect doesn't re-run (and tear down its event handlers)
+  // every time the parent passes a fresh inline callback.
+  const onNoticeRef = useRef<((msg: string | null) => void) | null>(null);
   // Latest selected survey, mirrored into a ref so the click handler (attached
   // once in the init effect) can check it without being rebuilt.
   const surveyRef = useRef<SurveyId>('CDS/P/HI4PI/NHI');
@@ -809,6 +812,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, tooltipsEnabled,
   useEffect(() => { telemetryRef.current = telemetry; }, [telemetry]);
   useEffect(() => { pendingRef.current   = pending;   }, [pending]);
   useEffect(() => { onTargetRef.current  = onTarget;  }, [onTarget]);
+  useEffect(() => { onNoticeRef.current  = onNotice;  }, [onNotice]);
   useEffect(() => { surveyRef.current    = survey;    }, [survey]);
   useEffect(() => {
     if (!tooltipsEnabled) setHoverTooltip(null);
@@ -995,18 +999,18 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, tooltipsEnabled,
         const isSimulated = telemetryRef.current?.connection.mode === 'simulated';
         if (!isSimulated) {
           if (altAz.altitude_deg < 0) {
-            onNotice('Selected point is below the horizon.');
+            onNoticeRef.current?.('Selected point is below the horizon.');
             return;
           }
           if (currentConfig.pointing_limit_altaz.length === 3 &&
               !isInsideTriangle(altAz, currentConfig.pointing_limit_altaz)) {
             setPending(null);
-            onNotice('Selected target is outside configured pointing limits.');
+            onNoticeRef.current?.('Selected target is outside configured pointing limits.');
             return;
           }
         }
 
-        onNotice(null);
+        onNoticeRef.current?.(null);
         setPending({ ra_deg, dec_deg });
         onTargetRef.current?.(altAz.azimuth_deg, altAz.altitude_deg);
       };
@@ -1028,7 +1032,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, tooltipsEnabled,
       cancelled = true;
       removeClickHandler?.();
     };
-  }, [config, onNotice]);
+  }, [config]);
 
   // Change survey
   useEffect(() => {

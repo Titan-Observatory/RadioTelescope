@@ -99,5 +99,18 @@ def lan_admin_or_session(request: Request) -> str | None:
     return read_session_token(request)
 
 
+async def require_lan_admin(request: Request) -> None:
+    """Gate operator-only endpoints (calibration, homing) to local IPs.
+
+    Stricter than require_control: even the active queue holder cannot hit
+    these from the public side. Used for endpoints that mutate persistent
+    state (encoder zeros, alt/az offsets) where a public-internet user
+    shouldn't be allowed to drift the dish's reference frame.
+    """
+    if is_lan_admin(request):
+        return
+    raise HTTPException(status_code=404, detail="Not found")
+
+
 def trusted_proxy_ips(allowed: Iterable[str]) -> str:
     return ",".join(allowed)

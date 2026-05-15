@@ -12,8 +12,10 @@ import {
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
 
-import { Camera, FolderOpen } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Sliders } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+import { BaselineWizard } from './BaselineWizard';
 
 echarts.use([
   LineChart,
@@ -140,10 +142,8 @@ export function SpectrumPanel() {
   const [connected, setConnected] = useState(false);
   const [yRange] = useState<[number, number]>(DEFAULT_Y_RANGE);
   const [baseline, setBaseline] = useState<Baseline | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [dopplerOpen, setDopplerOpen] = useState(false);
-  const [baselineOpen, setBaselineOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   // Baseline subtraction is what makes the H I line pop above the bandpass.
   // Only apply when the cached baseline matches the current FFT layout —
@@ -347,35 +347,6 @@ export function SpectrumPanel() {
     ctx.putImageData(row, plotLeft, 0);
   }, [frame, displayed, yRange, baselineApplies]);
 
-  const captureBaseline = useCallback(async () => {
-    setBusy(true); setNotice(null);
-    try {
-      const r = await fetch('/api/spectrum/baseline', { method: 'POST' });
-      if (!r.ok) throw new Error((await r.json()).detail ?? r.statusText);
-      setBaseline(await r.json());
-      setNotice('Baseline captured.');
-    } catch (err) {
-      setNotice(`Capture failed: ${(err as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const loadBaseline = useCallback(async () => {
-    setBusy(true); setNotice(null);
-    try {
-      const r = await fetch('/api/spectrum/baseline');
-      if (r.status === 404) { setNotice('No saved baseline on the server.'); return; }
-      if (!r.ok) throw new Error(r.statusText);
-      setBaseline(await r.json());
-      setNotice('Baseline loaded.');
-    } catch (err) {
-      setNotice(`Load failed: ${(err as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
   const chartEmptyMessage = !connected
     ? 'Spectrum websocket is offline.'
     : !frame
@@ -475,51 +446,17 @@ export function SpectrumPanel() {
           <div className="spectrum-control-label">
             <strong>Capture baseline</strong>
             <span>
-              Save the current buffer to perform{' '}
-              <span className="spectrum-baseline-wrap">
-                <button
-                  type="button"
-                  className="spectrum-baseline-term"
-                  onClick={() => setBaselineOpen((open) => !open)}
-                  aria-expanded={baselineOpen}
-                  aria-controls="spectrum-baseline-popup"
-                  aria-describedby={baselineOpen ? undefined : 'spectrum-baseline-preview'}
-                >
-                  Baseline subtraction
-                </button>
-                {!baselineOpen && (
-                  <span className="spectrum-baseline-preview" id="spectrum-baseline-preview" role="tooltip">
-                    Subtract a saved reference trace so small hydrogen-line features stand out. Click for the full explainer.
-                  </span>
-                )}
-              </span>
-              , helping signals stand out.
+              Save the current buffer to perform baseline subtraction, helping signals stand out.
             </span>
-            {baselineOpen && (
-              <div className="spectrum-baseline-popup" id="spectrum-baseline-popup" role="status">
-                <button
-                  type="button"
-                  className="spectrum-baseline-close"
-                  onClick={() => setBaselineOpen(false)}
-                  aria-label="Close baseline subtraction explainer"
-                >
-                  ×
-                </button>
-                <strong>Baseline subtraction lesson</strong>
-                <p>
-                  Receivers and antennas have their own frequency response, so the raw spectrum often
-                  slopes or curves. A baseline is a saved reference trace. Subtracting it flattens the
-                  display so narrow features, like the hydrogen line, are easier to compare.
-                </p>
-              </div>
-            )}
           </div>
           <div className="spectrum-tool-group" role="group" aria-label="Baseline controls">
-            <button type="button" className="ghost-btn" onClick={() => void captureBaseline()} disabled={busy || !frame} title="Save the current spectrum as a baseline (persists on the server)">
-              <Camera size={12} /> Capture
-            </button>
-            <button type="button" className="ghost-btn" onClick={() => void loadBaseline()} disabled={busy} title="Load the saved baseline from the server">
-              <FolderOpen size={12} /> Load
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => setWizardOpen(true)}
+              title="Open the guided flow to point at empty sky and capture a baseline (or just load a saved one)"
+            >
+              <Sliders size={12} /> Set up baseline
             </button>
           </div>
         </div>
@@ -547,7 +484,12 @@ export function SpectrumPanel() {
         {chartEmptyMessage && <div className="spectrum-chart-empty">{chartEmptyMessage}</div>}
       </div>
 
-      {notice && <div className="spectrum-notice">{notice}</div>}
+      <BaselineWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        frame={frame}
+        onBaselineReady={setBaseline}
+      />
     </section>
   );
 }

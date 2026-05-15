@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from radiotelescope.api import (
     routes_camera,
     routes_camera_proxy,
+    routes_events,
+    routes_feedback,
     routes_iq,
     routes_queue,
     routes_roboclaw,
@@ -130,6 +132,8 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         app.include_router(routes_iq.router)
     else:
         app.include_router(routes_spectrum.router)
+        app.include_router(routes_feedback.router)
+        app.include_router(routes_events.router)
 
     if mode == "gateway-server":
         # Pi is headless in this mode — return a status line on `/` instead

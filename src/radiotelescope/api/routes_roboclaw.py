@@ -6,7 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 
-from radiotelescope.api.dependencies import require_control
+from radiotelescope.api.dependencies import require_control, require_lan_admin
 from radiotelescope.hardware.roboclaw import COMMANDS, OPERATOR_COMMAND_IDS, command_registry
 from radiotelescope.models.state import AltAzRequest, CommandInfo, CommandRequest, CommandResult, HealthStatus, RaDecRequest, RoboClawTelemetry, TelescopeConfig
 from radiotelescope.pointing import radec_to_altaz
@@ -218,7 +218,7 @@ async def goto_alt_az(body: AltAzRequest, request: Request):
     )
 
 
-@router.post("/api/telescope/sync", dependencies=[Depends(require_control)])
+@router.post("/api/telescope/sync", dependencies=[Depends(require_lan_admin)])
 async def sync_alt_az(body: AltAzRequest, request: Request):
     """Recalibrate the alt/az offsets so the current encoder positions are reported as the given alt/az.
 
@@ -279,7 +279,7 @@ async def goto_radec(body: RaDecRequest, request: Request):
     )
 
 
-@router.post("/api/telescope/home/elevation", dependencies=[Depends(require_control)])
+@router.post("/api/telescope/home/elevation", dependencies=[Depends(require_lan_admin)])
 async def home_elevation(request: Request):
     """Drive M2 downward until the end stop cuts current to zero, then zero the encoder."""
     client = _service(request).client
@@ -323,7 +323,7 @@ async def home_elevation(request: Request):
     return {"status": "ok", "message": "Elevation homed — encoder zeroed at end stop"}
 
 
-@router.post("/api/telescope/home/azimuth", dependencies=[Depends(require_control)])
+@router.post("/api/telescope/home/azimuth", dependencies=[Depends(require_lan_admin)])
 async def home_azimuth(request: Request):
     """Zero the azimuth encoder at whatever position the telescope is currently pointing."""
     client = _service(request).client
@@ -333,7 +333,7 @@ async def home_azimuth(request: Request):
     return {"status": "ok", "message": "Azimuth encoder zeroed at current position"}
 
 
-@router.post("/api/telescope/home/altitude", dependencies=[Depends(require_control)])
+@router.post("/api/telescope/home/altitude", dependencies=[Depends(require_lan_admin)])
 async def home_altitude(request: Request):
     """Zero the M2 encoder register at the current position.
 

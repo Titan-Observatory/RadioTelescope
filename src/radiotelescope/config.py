@@ -187,6 +187,8 @@ class AppConfig(BaseModel):
     sdr: SDRConfig = Field(default_factory=SDRConfig)
     queue: QueueConfig = Field(default_factory=QueueConfig)
     turnstile: TurnstileConfig = Field(default_factory=TurnstileConfig)
+    feedback_log_path: str = "feedback.jsonl"
+    events_log_path: str = "events.jsonl"
 
 
 def load_config(path: Path | str = "config.toml") -> AppConfig:

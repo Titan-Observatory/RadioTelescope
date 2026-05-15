@@ -42,13 +42,9 @@ export const api = {
       accel_qpps2: accelQpps2,
       decel_qpps2: accelQpps2,
     }),
-  syncAltAz: (altitudeDeg: number, azimuthDeg: number) =>
-    request<Record<string, CommandResult>>('POST', '/api/telescope/sync', {
-      altitude_deg: altitudeDeg,
-      azimuth_deg: azimuthDeg,
-    }),
   stop: () => request<Record<string, CommandResult>>('POST', '/api/roboclaw/stop'),
-  homeElevation: () => request<{ status: string; message: string }>('POST', '/api/telescope/home/elevation'),
-  zeroAzimuth:   () => request<{ status: string; message: string }>('POST', '/api/telescope/home/azimuth'),
-  zeroAltitude:  () => request<{ status: string; message: string }>('POST', '/api/telescope/home/altitude'),
 };
+
+export async function submitFeedback(rating: number, message: string): Promise<void> {
+  await request<{ ok: boolean }>('POST', '/api/feedback', { rating, message });
+}
