@@ -12,7 +12,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
 
-import { Camera, FolderOpen } from 'lucide-react';
+import { Camera, FolderOpen, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 echarts.use([
@@ -119,7 +119,11 @@ interface Baseline {
   power_db: number[];
 }
 
-export function SpectrumPanel() {
+interface SpectrumPanelProps {
+  onStartGuided?: () => void;
+}
+
+export function SpectrumPanel({ onStartGuided }: SpectrumPanelProps = {}) {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
   // The waterfall is rendered straight to a 2D canvas: each tick we scroll the
@@ -415,6 +419,17 @@ export function SpectrumPanel() {
           {baseline && baselineApplies && <span className="spectrum-tag">baseline subtracted</span>}
           {baseline && !baselineApplies && <span className="spectrum-tag spectrum-tag-warn">baseline mismatched</span>}
           {!connected && <span className="spectrum-disconnected">offline</span>}
+          {onStartGuided && (
+            <button
+              type="button"
+              className="spectrum-guided-cta"
+              onClick={onStartGuided}
+              disabled={!connected || !frame}
+              title={!connected || !frame ? 'Waiting for SDR…' : 'Walk through a hydrogen-line observation step by step'}
+            >
+              <Sparkles size={12} /> Guided observation
+            </button>
+          )}
         </div>
       </header>
 
