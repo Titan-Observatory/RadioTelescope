@@ -32,7 +32,7 @@ Layered architecture: hardware → safety → services → API → static fronte
 **Hardware layer** (`hardware/`):
 - `IBT2Motor` — IBT-2/BTS7960 H-bridge via lgpio PWM. Async duty ramping; direction changes trigger hard stop to prevent shoot-through.
 - `INA226` — I2C current/power sensor (smbus2). Retries every 2 s on fault; returns `SensorReading(available=False)` rather than raising.
-- `SDRReceiver` — wraps pyrtlsdr `RtlSdrAio`; async sample streaming.
+- `SDRReceiver` — wraps SoapySDR's `airspy` driver (Airspy Mini / R2); bridges blocking `readStream` onto asyncio via `to_thread`.
 
 **Safety layer** (`safety/interlocks.py`):
 - `SafetyMonitor` is a *passive checker*, not a background loop.
@@ -65,6 +65,6 @@ Tests use `pytest-asyncio` (`asyncio_mode = "auto"` in pyproject.toml). Hardware
 ## Hardware Notes (Raspberry Pi)
 
 - GPIO via `lgpio`; I2C via `smbus2` on bus 1 (default)
-- `pyrtlsdr==0.3.0` must be pinned exactly — PyPI 0.3.0 works with standard `librtlsdr`; later unreleased versions require `rtlsdr_set_dithering` which is absent from most system builds
+- SDR uses SoapySDR's Airspy driver. Install on the Pi with `sudo apt install soapysdr-module-airspy python3-soapysdr` (the bindings aren't on PyPI). Verify the device is seen with `SoapySDRUtil --probe="driver=airspy"` or `airspy_info`. Airspy Mini sample rate must be 3 Msps or 6 Msps.
 - `setuptools<72` required on Python 3.13 for `pkg_resources` availability
 - INA226 defaults to I2C address `0x40`; configure shunt resistor ohms in `config.toml`

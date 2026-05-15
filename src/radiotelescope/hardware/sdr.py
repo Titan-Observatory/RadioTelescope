@@ -1,12 +1,17 @@
-"""RTL-SDR hardware wrapper.
+"""Airspy SDR hardware wrapper.
 
-Wraps `pyrtlsdr.RtlSdrAio` for async sample streaming. If pyrtlsdr or a real
-dongle is unavailable, the receiver enters `unavailable` mode and produces no
-samples — downstream consumers see an empty stream and publish nothing,
-rather than receiving synthetic data that would silently masquerade as live.
+Talks to an Airspy Mini (or R2) via SoapySDR's ``airspy`` module. If
+SoapySDR or a real dongle is unavailable the receiver enters ``unavailable``
+mode and produces no samples — downstream consumers see an empty stream and
+publish nothing, rather than receiving synthetic data that would silently
+masquerade as live.
+
+Streaming is bridged from SoapySDR's blocking ``readStream`` onto asyncio
+via ``asyncio.to_thread`` so the rest of the app can ``async for`` over it.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import AsyncIterator
 
@@ -17,20 +22,28 @@ from radiotelescope.config import SDRConfig
 logger = logging.getLogger(__name__)
 
 try:
-    from rtlsdr import RtlSdrAio  # type: ignore
-    _RTLSDR_AVAILABLE = True
+    import SoapySDR  # type: ignore
+    from SoapySDR import SOAPY_SDR_RX, SOAPY_SDR_CF32  # type: ignore
+    _SOAPY_AVAILABLE = True
 except Exception as exc:  # pragma: no cover — exercised on non-Pi hosts
-    RtlSdrAio = None  # type: ignore
-    _RTLSDR_AVAILABLE = False
-    _RTLSDR_IMPORT_ERROR = str(exc)
+    SoapySDR = None  # type: ignore
+    SOAPY_SDR_RX = 0  # type: ignore
+    SOAPY_SDR_CF32 = "CF32"  # type: ignore
+    _SOAPY_AVAILABLE = False
+    _SOAPY_IMPORT_ERROR = str(exc)
+
+
+# Airspy Mini supports 3 Msps and 6 Msps only. Airspy R2 adds 2.5 / 10 Msps.
+_AIRSPY_RATES = (2_500_000.0, 3_000_000.0, 6_000_000.0, 10_000_000.0)
 
 
 class SDRReceiver:
-    """Async source of complex IQ sample chunks of length `fft_size`."""
+    """Async source of complex IQ sample chunks of length ``fft_size``."""
 
     def __init__(self, cfg: SDRConfig) -> None:
         self._cfg = cfg
         self._sdr: object | None = None
+        self._stream: object | None = None
         self.mode: str = "uninitialised"
 
     @property
@@ -41,75 +54,90 @@ class SDRReceiver:
         if not self._cfg.enabled:
             self.mode = "disabled"
             return
-        if not _RTLSDR_AVAILABLE:
+        if not _SOAPY_AVAILABLE:
             self.mode = "unavailable"
             logger.error(
-                "pyrtlsdr is not importable (%s); SDR will produce no data. "
-                "Install librtlsdr + pyrtlsdr to enable the spectrum pipeline.",
-                _RTLSDR_IMPORT_ERROR,
+                "SoapySDR is not importable (%s); SDR will produce no data. "
+                "Install soapysdr-module-airspy + python3-soapysdr to enable "
+                "the spectrum pipeline.",
+                _SOAPY_IMPORT_ERROR,
             )
             return
         try:
-            sdr = RtlSdrAio()  # type: ignore[operator]
-            sdr.sample_rate = self._cfg.sample_rate_hz
-            sdr.center_freq = self._cfg.center_freq_hz
+            sdr = SoapySDR.Device({"driver": "airspy"})  # type: ignore[union-attr]
+            sdr.setSampleRate(SOAPY_SDR_RX, 0, float(self._cfg.sample_rate_hz))
+            sdr.setFrequency(SOAPY_SDR_RX, 0, float(self._cfg.center_freq_hz))
             if self._cfg.gain_db is None:
-                sdr.gain = "auto"
+                sdr.setGainMode(SOAPY_SDR_RX, 0, True)  # AGC
             else:
-                sdr.gain = self._cfg.gain_db
+                sdr.setGainMode(SOAPY_SDR_RX, 0, False)
+                # Airspy's "overall" gain is a 0-21 linearity index, not dB.
+                # We pass the configured value straight through and clamp.
+                g = max(0.0, min(21.0, float(self._cfg.gain_db)))
+                sdr.setGain(SOAPY_SDR_RX, 0, g)
+            stream = sdr.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32)
+            sdr.activateStream(stream)
             self._sdr = sdr
-            self.mode = "rtlsdr"
+            self._stream = stream
+            self.mode = "airspy"
             logger.info(
-                "RTL-SDR opened at %.3f MHz, %.1f Msps",
+                "Airspy opened at %.3f MHz, %.1f Msps",
                 self._cfg.center_freq_hz / 1e6,
                 self._cfg.sample_rate_hz / 1e6,
             )
         except Exception as exc:
             self._sdr = None
+            self._stream = None
             self.mode = "unavailable"
             logger.error(
-                "RTL-SDR open failed (%s); SDR will produce no data. "
+                "Airspy open failed (%s); SDR will produce no data. "
                 "Check that the dongle is plugged in and not held by another process.",
                 exc,
             )
 
     async def close(self) -> None:
-        sdr = self._sdr
+        sdr, stream = self._sdr, self._stream
         self._sdr = None
-        if sdr is None:
+        self._stream = None
+        if sdr is None or stream is None:
             return
         try:
-            await sdr.stop()  # type: ignore[attr-defined]
+            sdr.deactivateStream(stream)  # type: ignore[attr-defined]
         except Exception:
             pass
         try:
-            sdr.close()  # type: ignore[attr-defined]
+            sdr.closeStream(stream)  # type: ignore[attr-defined]
         except Exception:
             pass
+
+    def _read_chunk(self, buf: np.ndarray) -> int:
+        """Blocking single read into ``buf``. Returns samples read (>=0) or <0 on error."""
+        sr = self._sdr.readStream(  # type: ignore[union-attr]
+            self._stream, [buf], buf.size, timeoutUs=1_000_000
+        )
+        return int(sr.ret)
 
     async def stream(self) -> AsyncIterator[np.ndarray]:
-        """Yield successive IQ chunks of length `fft_size` as complex64.
-
-        When the SDR isn't available the generator returns immediately —
-        SpectrumService's async-for exits cleanly and no frames are published.
-        """
-        if self.mode != "rtlsdr" or self._sdr is None:
+        """Yield successive IQ chunks of length ``fft_size`` as complex64."""
+        if self.mode != "airspy" or self._sdr is None or self._stream is None:
             return
         n = self._cfg.fft_size
-        async for samples in self._sdr.stream(num_samples_or_bytes=n, format="samples"):  # type: ignore[attr-defined]
-            yield np.asarray(samples, dtype=np.complex64)
+        while True:
+            buf = np.empty(n, dtype=np.complex64)
+            got = 0
+            while got < n:
+                read = await asyncio.to_thread(self._read_chunk, buf[got:])
+                if read < 0:
+                    logger.warning("Airspy readStream error: %d", read)
+                    return
+                got += read
+            yield buf
 
     async def stream_bytes(self) -> AsyncIterator[bytes]:
-        """Yield raw uint8 I/Q chunks (2 × `fft_size` bytes each).
+        """Yield raw complex64 I/Q chunks (8 × ``fft_size`` bytes each).
 
-        Matches the RTL-SDR's native USB wire format. Returns immediately when
-        the SDR isn't available — same contract as `stream()`.
+        This is the gateway-server wire format consumed by
+        :class:`radiotelescope.hardware.remote.RemoteSDRReceiver`.
         """
-        if self.mode != "rtlsdr" or self._sdr is None:
-            return
-        n_bytes = 2 * self._cfg.fft_size
-        async for buf in self._sdr.stream(num_samples_or_bytes=n_bytes, format="bytes"):  # type: ignore[attr-defined]
-            # pyrtlsdr may hand back a bytes, bytearray, or numpy uint8 buffer
-            # depending on version — coerce to immutable bytes so the publisher
-            # can fan it out without copying per subscriber.
-            yield bytes(buf) if not isinstance(buf, bytes) else buf
+        async for buf in self.stream():
+            yield buf.tobytes()

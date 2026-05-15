@@ -126,10 +126,9 @@ def _try_detail(r: httpx.Response) -> str | None:
 class RemoteSDRReceiver:
     """Mirrors `SDRReceiver`: opens a WS to the gateway's /ws/iq, yields chunks.
 
-    The wire format is raw `uint8` I/Q pairs of length `2 * fft_size` per
-    frame, matching what an RTL-SDR dongle produces natively. We convert to
-    `complex64` on this side so the FFT pipeline behaves identically to local
-    mode.
+    The wire format is raw `complex64` I/Q samples (8 bytes/sample,
+    ``8 * fft_size`` bytes per frame), matching what the gateway-server's
+    Airspy stream produces. No conversion is needed beyond a ``frombuffer``.
     """
 
     def __init__(self, hardware_cfg: HardwareConfig, sdr_cfg: SDRConfig) -> None:
@@ -187,13 +186,5 @@ class RemoteSDRReceiver:
 
 
 def _bytes_to_complex64(raw: bytes) -> np.ndarray:
-    """Convert RTL-SDR-native uint8 I/Q pairs to centred complex64.
-
-    Matches `pyrtlsdr`'s `format="samples"` conversion: subtract 127.5 and
-    scale by 1/127.5 so the resulting samples sit in roughly [-1, +1].
-    """
-    u8 = np.frombuffer(raw, dtype=np.uint8)
-    if u8.size % 2:
-        u8 = u8[:-1]
-    iq = (u8.astype(np.float32) - 127.5) / 127.5
-    return (iq[0::2] + 1j * iq[1::2]).astype(np.complex64)
+    """Decode the gateway IQ wire format (raw little-endian complex64)."""
+    return np.frombuffer(raw, dtype=np.complex64)

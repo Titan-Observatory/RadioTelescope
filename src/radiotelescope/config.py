@@ -140,12 +140,14 @@ class TurnstileConfig(BaseModel):
 
 class SDRConfig(BaseModel):
     enabled: bool = True
-    # RTL-SDR (R820T2/R828D) tuner range is roughly 24 MHz – 1.766 GHz; the
-    # hydrogen line at 1420.405 MHz sits comfortably inside it.
+    # Airspy Mini tunes 24 MHz – 1.7 GHz; the hydrogen line at 1420.405 MHz
+    # sits comfortably inside it.
     center_freq_hz: float = Field(default=1.4204e9, gt=0)
-    sample_rate_hz: float = Field(default=2.4e6, gt=0)
+    # Airspy Mini supports 3 Msps and 6 Msps only; Airspy R2 adds 2.5/10 Msps.
+    sample_rate_hz: float = Field(default=3.0e6, gt=0)
     fft_size: int = Field(default=2048, ge=64)
-    # Tuner gain in dB; None lets the dongle pick automatically.
+    # Airspy "overall" gain is a 0-21 linearity index (not dB). ``None``
+    # enables AGC. Field name kept as ``gain_db`` for config back-compat.
     gain_db: float | None = None
     # Rolling integration: number of FFT frames averaged exponentially before
     # publishing. Larger = smoother but slower to react.

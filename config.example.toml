@@ -66,11 +66,11 @@ observing_freq_hz = 1.42e9   # hydrogen line (21 cm)
 
 [sdr]
 enabled = true
-# RTL-SDR centred on the neutral hydrogen line (21 cm).
+# Airspy Mini centred on the neutral hydrogen line (21 cm).
 center_freq_hz = 1.4204e9
-sample_rate_hz = 2.4e6
+sample_rate_hz = 3.0e6        # Airspy Mini supports 3e6 or 6e6 only
 fft_size = 2048
-# gain_db = 40       # uncomment to set a fixed tuner gain; default = "auto"
+# gain_db = 14       # Airspy "linearity" gain index 0-21; default = AGC
 integration_frames = 64    # rolling EMA window; bigger = smoother trace
 publish_rate_hz = 5
 
