@@ -101,14 +101,7 @@ async def execute_command(command_id: str, body: CommandRequest, request: Reques
     spec = COMMANDS.get(command_id)
     if spec is None:
         raise HTTPException(status_code=404, detail=f"Unknown command: {command_id}")
-    # The operator allowlist keeps dangerous low-level commands (e.g.
-    # `set_encoder_m2`) out of the public web surface. When the queue is
-    # disabled this box is acting as a trusted LAN endpoint — typically a
-    # gateway-server fronting a gateway-client host that has already gated
-    # the request — so the allowlist would just block legitimate internal
-    # traffic. Same trust model as `require_control`.
-    queue_enabled = request.app.state.config.queue.enabled
-    if queue_enabled and command_id not in OPERATOR_COMMAND_IDS:
+    if command_id not in OPERATOR_COMMAND_IDS:
         raise HTTPException(status_code=404, detail=f"Command is not available from the web controller: {command_id}")
 
     client = _service(request).client

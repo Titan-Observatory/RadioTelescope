@@ -5,7 +5,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 
-from radiotelescope.api.dependencies import require_lan_admin
+from radiotelescope.api.dependencies import require_control
 
 router = APIRouter(tags=["spectrum"])
 
@@ -49,7 +49,7 @@ async def get_baseline(request: Request):
     return baseline
 
 
-@router.post("/api/spectrum/baseline", dependencies=[Depends(require_lan_admin)])
+@router.post("/api/spectrum/baseline", dependencies=[Depends(require_control)])
 async def capture_baseline(request: Request):
     service = _service(request)
     baseline = service.capture_baseline()
@@ -58,13 +58,13 @@ async def capture_baseline(request: Request):
     return baseline
 
 
-@router.post("/api/spectrum/reset", dependencies=[Depends(require_lan_admin)])
+@router.post("/api/spectrum/reset", dependencies=[Depends(require_control)])
 async def reset_integration(request: Request):
     _service(request).reset_integration()
     return {"ok": True}
 
 
-@router.delete("/api/spectrum/baseline", dependencies=[Depends(require_lan_admin)])
+@router.delete("/api/spectrum/baseline", dependencies=[Depends(require_control)])
 async def clear_baseline(request: Request):
     _service(request).clear_baseline()
     return {"ok": True}

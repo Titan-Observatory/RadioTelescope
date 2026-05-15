@@ -124,6 +124,14 @@ class QueueConfig(BaseModel):
     cookie_name: str = "rt_session"
 
 
+class AuthConfig(BaseModel):
+    enabled: bool = False
+    passwords_file: str = "passwords.txt"
+    secret_key: str = Field(default="change-me-in-config", min_length=8)
+    max_attempts: int = Field(default=5, ge=1)
+    lockout_minutes: int = Field(default=15, ge=1)
+
+
 class TurnstileConfig(BaseModel):
     enabled: bool = True
     site_key: str = ""
@@ -189,6 +197,7 @@ class AppConfig(BaseModel):
     turnstile: TurnstileConfig = Field(default_factory=TurnstileConfig)
     feedback_log_path: str = "feedback.jsonl"
     events_log_path: str = "events.jsonl"
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
 
 def load_config(path: Path | str = "config.toml") -> AppConfig:

@@ -98,6 +98,16 @@ max_queue_size = 100
 cookie_secret = "CHANGE-ME-generate-with-secrets.token_urlsafe-32"
 cookie_name = "rt_session"
 
+[auth]
+# Set enabled = true and add passwords to passwords.txt to require a password
+# before anyone can access the UI. Good for beta testing.
+enabled = false
+passwords_file = "passwords.txt"
+# Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+secret_key = "CHANGE-ME-generate-with-secrets.token_urlsafe-32"
+max_attempts = 5      # failed attempts before an IP is locked out
+lockout_minutes = 15  # how long a locked IP must wait
+
 [turnstile]
 enabled = true
 # Cloudflare Turnstile keys. Use the always-pass test key 1x00000000000000000000AA

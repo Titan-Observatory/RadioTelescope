@@ -321,7 +321,8 @@ input:focus-visible {
 }
 
 /* First-visit prompt — custom buttons injected via onPopoverRender */
-.rt-tour-prompt .driver-popover-footer { margin-top: 18px; }
+.rt-tour-prompt.driver-popover { min-width: 380px; }
+.rt-tour-prompt .driver-popover-footer { margin-top: 18px; gap: 6px; }
 
 .rt-tour-popover .driver-popover-footer button.rt-tour-btn {
   font-size: 13px;
@@ -826,6 +827,29 @@ input:focus-visible {
   background: var(--sect-amber-soft);
   color: var(--warn);
 }
+.spectrum-guided-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--sect-amber-soft);
+  border: 1px solid var(--accent-line, var(--sect-amber-soft));
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  cursor: pointer;
+}
+.spectrum-guided-cta:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0d16;
+}
+.spectrum-guided-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .spectrum-disconnected {
   font-size: 10px;
   font-weight: 600;
@@ -2218,7 +2242,57 @@ h2.panel-header {
 
 .cf-turnstile { min-height: 65px; }
 
-/* In-queue page: header + content sections */
+/* Captcha popup */
+
+.captcha-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.captcha-modal {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  padding: 24px 28px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.captcha-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.captcha-modal-header h2 { margin: 0; font-size: 18px; }
+
+.captcha-modal-close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: var(--r-sm);
+}
+
+.captcha-modal-close:hover { color: var(--text-1); }
+
+.captcha-modal-body { margin: 0; font-size: 14px; color: var(--text-2); }
+
+/* In-queue waiting page */
 
 .queue-waiting {
   min-height: 100svh;
@@ -2286,78 +2360,17 @@ h2.panel-header {
   padding-left: 10px;
 }
 
-.queue-content {
-  width: 100%;
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 32px 24px 64px;
-  display: flex;
-  flex-direction: column;
-  gap: 40px;
-}
-
-.queue-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.queue-section-header h2 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.queue-section-lede {
-  margin: 6px 0 0;
-  color: var(--text-2);
-  max-width: 70ch;
-  min-height: 1.4em;
-}
-
-.queue-section-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
-}
-
-.queue-block {
-  background: var(--surface-1);
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-md);
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 160px;
-}
-
-.queue-block h3 {
-  margin: 0;
-  font-size: 15px;
-  color: var(--text-1);
-  min-height: 1.2em;
-}
-
-.queue-block-body {
-  color: var(--text-2);
-  font-size: 14px;
-  line-height: 1.55;
+.queue-waiting-body {
   flex: 1;
-  min-height: 80px;
-}
-
-.queue-block-wide {
-  grid-column: 1 / -1;
-}
-
-.queue-block-media {
-  min-height: 220px;
-  border: 1px dashed var(--hairline);
-  border-radius: var(--r-sm);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 48px 24px;
+  color: var(--text-2);
+  font-size: 15px;
 }
+
+.queue-waiting-body p { margin: 0; }
 
 @media (max-width: 720px) {
   .queue-header-inner {
@@ -2366,7 +2379,6 @@ h2.panel-header {
     gap: 10px;
     padding: 14px 18px;
   }
-  .queue-content { padding: 24px 18px 48px; gap: 32px; }
 }
 
 /* =========================================================================
@@ -2448,6 +2460,15 @@ h2.panel-header {
   .spectrum-doppler-lesson-grid { grid-template-columns: 1fr; }
 
   .banner, .error-log summary, .error-log-body { padding-left: 14px; padding-right: 14px; }
+
+  /* Hide GoTo mode — mobile users jog or tap on Aladin */
+  .motion-mode { display: none; }
+  .target-form-overlay { display: none; }
+
+  /* Survey switcher: only Hydrogen Line and optical (DSS2) on mobile */
+  .skymap-surveys-mobile .skymap-survey-btn:not(.hydrogen):not(.optical) {
+    display: none;
+  }
 }
 
 /* ── Feedback dialog (@radix-ui/react-dialog) ────────────────────────── */
@@ -2819,3 +2840,49 @@ body.rt-baseline-pick .skymap-panel {
 @media (max-width: 600px) {
   .info-section { padding: 40px 16px 48px; }
 }
+
+/* =========================================================================
+   Mobile hint — fixed toast anchored to the bottom of the viewport.
+   Visibility is controlled by React state (checked once on mount against
+   window.innerWidth and localStorage), so no media query needed here.
+   ========================================================================= */
+
+.mobile-hint {
+  position: fixed;
+  bottom: 20px;
+  left: 16px;
+  right: 16px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(16, 18, 30, 0.96);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.mobile-hint-icon { color: var(--accent); flex-shrink: 0; }
+
+.mobile-hint-text {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.mobile-hint-close {
+  flex-shrink: 0;
+  min-height: 28px;
+  min-width: 28px;
+  padding: 0;
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--fg-subtle);
+  border-radius: var(--r-sm);
+}
+.mobile-hint-close:hover { background: var(--surface-2); color: var(--fg); }

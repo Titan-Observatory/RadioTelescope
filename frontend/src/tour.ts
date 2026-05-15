@@ -2,6 +2,8 @@ import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
 import { track } from './analytics';
 
+import { markGuidedObservationSeen, hasSeenGuidedObservation } from './guidedObservation';
+
 const TOUR_SEEN_KEY = 'rt-tour-seen';
 
 function markTourSeen() {
@@ -12,9 +14,12 @@ function hasSeenTour(): boolean {
   try { return localStorage.getItem(TOUR_SEEN_KEY) === '1'; } catch { return false; }
 }
 
-export function maybePromptFirstVisit() {
-  if (hasSeenTour()) return;
-  track('tour_prompt_shown');
+export function hasSeenAnyOnboarding(): boolean {
+  return hasSeenTour() || hasSeenGuidedObservation();
+}
+
+export function maybePromptFirstVisit(onStartGuided: () => void) {
+  if (hasSeenAnyOnboarding()) return;
 
   const prompt = driver({
     overlayOpacity: 0.65,
@@ -25,7 +30,7 @@ export function maybePromptFirstVisit() {
         popover: {
           title: 'Welcome',
           description:
-            "It looks like this is your first time here. Would you like a guided tour showing you how to use the telescope?",
+            "First time here? Pick how you want to start. The control tour shows you what every panel does; the guided observation walks you through capturing a hydrogen-line signal end-to-end.",
           onPopoverRender: (popover) => {
             const footer = popover.footer as HTMLElement;
             footer.innerHTML = '';
@@ -38,6 +43,7 @@ export function maybePromptFirstVisit() {
             dontShow.onclick = () => {
               track('tour_prompt_dismissed', { choice: 'dont_show' });
               markTourSeen();
+              markGuidedObservationSeen();
               prompt.destroy();
             };
 
@@ -49,19 +55,28 @@ export function maybePromptFirstVisit() {
               prompt.destroy();
             };
 
-            const yes = document.createElement('button');
-            yes.textContent = 'Start tour';
-            yes.className = 'rt-tour-btn rt-tour-btn-primary';
-            yes.onclick = () => {
-              track('tour_prompt_dismissed', { choice: 'start' });
+            const controls = document.createElement('button');
+            controls.textContent = 'Tour the controls';
+            controls.className = 'rt-tour-btn rt-tour-btn-ghost';
+            controls.onclick = () => {
               markTourSeen();
               prompt.destroy();
               startTour('first_visit');
             };
 
+            const observe = document.createElement('button');
+            observe.textContent = 'Try a guided observation';
+            observe.className = 'rt-tour-btn rt-tour-btn-primary';
+            observe.onclick = () => {
+              markGuidedObservationSeen();
+              prompt.destroy();
+              onStartGuided();
+            };
+
             footer.appendChild(dontShow);
             footer.appendChild(later);
-            footer.appendChild(yes);
+            footer.appendChild(controls);
+            footer.appendChild(observe);
           },
         },
       },
