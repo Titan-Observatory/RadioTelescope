@@ -35,6 +35,7 @@ interface Props {
 
 export function QueuePage({ status, joining, joinError, siteKey, turnstileEnabled, onJoin }: Props) {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const widgetRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
   const autoJoinedTokenRef = useRef<string | null>(null);
@@ -61,8 +62,9 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
     }
   }, [joinError, turnstileEnabled]);
 
+  // Load Turnstile and render widget inside the modal when it opens.
   useEffect(() => {
-    if (inQueue || !turnstileEnabled || !siteKey) return;
+    if (!modalOpen || inQueue || !turnstileEnabled || !siteKey) return;
 
     const renderWidget = () => {
       if (!widgetRef.current || !window.turnstile || widgetIdRef.current) return;
@@ -90,38 +92,65 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
       script.defer = true;
       document.head.appendChild(script);
     }
-  }, [inQueue, turnstileEnabled, siteKey]);
+  }, [modalOpen, inQueue, turnstileEnabled, siteKey]);
+
+  // Close modal automatically once we enter the queue.
+  useEffect(() => {
+    if (inQueue) setModalOpen(false);
+  }, [inQueue]);
+
+  const openModal = () => {
+    if (!turnstileEnabled) {
+      void onJoin(null);
+      return;
+    }
+    autoJoinedTokenRef.current = null;
+    setCaptchaToken(null);
+    widgetIdRef.current = null;
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    autoJoinedTokenRef.current = null;
+    setCaptchaToken(null);
+    widgetIdRef.current = null;
+  };
 
   if (!inQueue) {
     return (
       <div className="queue-landing">
         <div className="queue-card">
           <h1>Radio Telescope</h1>
-          <p>
-            {turnstileEnabled
-              ? 'This telescope is shared. Complete the check below to join the queue.'
-              : 'This telescope is shared. Join the queue to take control.'}
-          </p>
-          {turnstileEnabled && siteKey && <div className="cf-turnstile" ref={widgetRef} />}
-          {turnstileEnabled ? (
-            <p className="queue-status-line">
-              {joining
-                ? 'Joining…'
-                : captchaToken
-                  ? 'Verified — joining queue…'
-                  : 'Waiting for verification…'}
-            </p>
-          ) : (
-            <button
-              className="action-button"
-              disabled={joining}
-              onClick={() => void onJoin(null)}
-            >
-              {joining ? 'Joining…' : 'Join queue'}
-            </button>
-          )}
-          {joinError && <p className="banner banner-error">{joinError}</p>}
+          <p>This telescope is shared with other users. Join the queue to take control.</p>
+          <button className="action-button" disabled={joining} onClick={openModal}>
+            {joining ? 'Joining…' : 'Join queue'}
+          </button>
+          {joinError && !modalOpen && <p className="banner banner-error">{joinError}</p>}
         </div>
+
+        {modalOpen && (
+          <div className="captcha-modal-overlay" onClick={closeModal}>
+            <div className="captcha-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="captcha-modal-header">
+                <h2>Verify to join</h2>
+                <button className="captcha-modal-close" onClick={closeModal} aria-label="Close">
+                  ×
+                </button>
+              </div>
+              <p className="captcha-modal-body">Complete the check below to join the queue.</p>
+              <div className="cf-turnstile" ref={widgetRef} />
+              <p className="queue-status-line">
+                {joining
+                  ? 'Joining…'
+                  : captchaToken
+                    ? 'Verified — joining queue…'
+                    : 'Waiting for verification…'}
+              </p>
+              {joinError && <p className="banner banner-error">{joinError}</p>}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -143,52 +172,9 @@ export function QueuePage({ status, joining, joinError, siteKey, turnstileEnable
           </div>
         </div>
       </header>
-
-      <main className="queue-content">
-        <section className="queue-section" aria-labelledby="how-to-use-heading">
-          <header className="queue-section-header">
-            <h2 id="how-to-use-heading">How to use the radio telescope</h2>
-            <p className="queue-section-lede">{/* Short intro paragraph goes here. */}</p>
-          </header>
-          <div className="queue-section-body">
-            <article className="queue-block">
-              <h3>{/* Subsection heading */}</h3>
-              <div className="queue-block-body">{/* Body content */}</div>
-            </article>
-            <article className="queue-block">
-              <h3>{/* Subsection heading */}</h3>
-              <div className="queue-block-body">{/* Body content */}</div>
-            </article>
-            <article className="queue-block">
-              <h3>{/* Subsection heading */}</h3>
-              <div className="queue-block-body">{/* Body content */}</div>
-            </article>
-          </div>
-        </section>
-
-        <section className="queue-section" aria-labelledby="hydrogen-line-heading">
-          <header className="queue-section-header">
-            <h2 id="hydrogen-line-heading">The hydrogen line</h2>
-            <p className="queue-section-lede">{/* Short intro paragraph goes here. */}</p>
-          </header>
-          <div className="queue-section-body">
-            <article className="queue-block">
-              <h3>{/* What is it? */}</h3>
-              <div className="queue-block-body">{/* Body content */}</div>
-            </article>
-            <article className="queue-block">
-              <h3>{/* Why does it matter? */}</h3>
-              <div className="queue-block-body">{/* Body content */}</div>
-            </article>
-            <article className="queue-block queue-block-wide">
-              <h3>{/* What you'll see in the spectrum */}</h3>
-              <div className="queue-block-body queue-block-media">
-                {/* Image, diagram, or extended explanation */}
-              </div>
-            </article>
-          </div>
-        </section>
-      </main>
+      <div className="queue-waiting-body">
+        <p>You'll be given control automatically when it's your turn.</p>
+      </div>
     </div>
   );
 }
