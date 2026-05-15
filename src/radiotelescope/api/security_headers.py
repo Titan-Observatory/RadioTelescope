@@ -15,6 +15,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 #     supersedes X-Frame-Options on all modern browsers
 _HEADERS: list[tuple[bytes, bytes]] = [
     (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"DENY"),
     (b"referrer-policy", b"strict-origin-when-cross-origin"),
     (
         b"content-security-policy",
@@ -43,7 +44,8 @@ class SecurityHeadersMiddleware:
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                message = {**message, "headers": list(message.get("headers", [])) + _HEADERS}
+                existing = list(message.get("headers", []))
+                message = {**message, "headers": existing + _HEADERS}
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
