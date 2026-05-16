@@ -30,6 +30,7 @@ class _SDRLike(Protocol):
 
     async def open(self) -> None: ...
     async def close(self) -> None: ...
+    async def set_lna_bias_tee(self, enabled: bool) -> LnaStatus: ...
 
 
 class SDRDriverTask(Broadcaster[T], Generic[T]):
@@ -59,6 +60,12 @@ class SDRDriverTask(Broadcaster[T], Generic[T]):
             "lna_status",
             LnaStatus(state="unknown", label="Unknown", detail="Receiver does not expose LNA status"),
         )
+
+    async def set_lna_bias_tee(self, enabled: bool) -> LnaStatus:
+        setter = getattr(self._rx, "set_lna_bias_tee", None)
+        if setter is None:
+            raise RuntimeError("Receiver does not support LNA bias tee control")
+        return await setter(enabled)
 
     async def start(self) -> None:
         await self._rx.open()

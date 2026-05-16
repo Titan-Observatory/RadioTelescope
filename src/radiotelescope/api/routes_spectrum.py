@@ -4,10 +4,15 @@ import asyncio
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from radiotelescope.api.dependencies import require_control
 
 router = APIRouter(tags=["spectrum"])
+
+
+class LnaToggleRequest(BaseModel):
+    enabled: bool
 
 
 def _service(request: Request):
@@ -71,6 +76,16 @@ async def reconnect_sdr(request: Request):
     service = _service(request)
     mode = await service.reconnect()
     return {"ok": mode not in ("unavailable", "disconnected"), "mode": mode}
+
+
+@router.post("/api/spectrum/lna", dependencies=[Depends(require_control)])
+async def set_spectrum_lna(request: Request, payload: LnaToggleRequest):
+    service = _service(request)
+    try:
+        status = await service.set_lna_bias_tee(payload.enabled)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": status.state == "on" if payload.enabled else status.state == "off", "lna": status.model_dump()}
 
 
 @router.delete("/api/spectrum/baseline", dependencies=[Depends(require_control)])

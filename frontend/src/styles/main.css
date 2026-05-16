@@ -2301,6 +2301,7 @@ h2.panel-header {
 .val-crit { color: var(--crit) !important; }
 
 .lna-status-pill {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2316,6 +2317,16 @@ h2.panel-header {
   font-weight: 700;
   line-height: 1;
   text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, color .15s ease, opacity .15s ease;
+}
+.lna-status-pill:disabled {
+  cursor: wait;
+  opacity: .72;
+}
+.lna-status-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .lna-status-on {
   border-color: color-mix(in srgb, var(--ok) 45%, transparent);

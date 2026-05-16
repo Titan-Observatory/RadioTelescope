@@ -82,6 +82,8 @@ async def require_control(request: Request) -> None:
     """
     if not request.app.state.config.queue.enabled:
         return
+    if is_lan_admin(request):
+        return
     token = read_session_token(request)
     queue = queue_service(request)
     if not queue.is_active(token):

@@ -34,6 +34,7 @@ if (favicon) favicon.href = BRAND.faviconUrl;
 function App() {
   const [telemetry, setTelemetry] = useState<RoboClawTelemetry | null>(null);
   const [lnaStatus, setLnaStatus] = useState<LnaStatus | null>(null);
+  const [lnaChanging, setLnaChanging] = useState(false);
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [telescopeConfig, setTelescopeConfig] = useState<TelescopeConfig | null>(null);
   const [targetAz, setTargetAz] = useState(0);
@@ -83,17 +84,22 @@ function App() {
     onError: () => trackErrorOnce('WebSocket', 'RoboClaw telemetry websocket disconnected.'),
   });
 
+  const refreshLnaStatus = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/spectrum/status');
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+      const next = await resp.json() as RfStatus;
+      setLnaStatus(next.lna ?? null);
+    } catch {
+      setLnaStatus({ state: 'unknown', label: 'Unknown', detail: 'RF status unavailable' });
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
-      try {
-        const resp = await fetch('/api/spectrum/status');
-        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-        const next = await resp.json() as RfStatus;
-        if (!cancelled) setLnaStatus(next.lna ?? null);
-      } catch {
-        if (!cancelled) setLnaStatus({ state: 'unknown', label: 'Unknown', detail: 'RF status unavailable' });
-      }
+      if (cancelled) return;
+      await refreshLnaStatus();
     };
     void refresh();
     const id = window.setInterval(refresh, 3000);
@@ -101,7 +107,28 @@ function App() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [refreshLnaStatus]);
+
+  const toggleLna = async () => {
+    if (lnaChanging) return;
+    const enabled = lnaStatus?.state !== 'on';
+    setLnaChanging(true);
+    setLnaStatus({
+      state: enabled ? 'on' : 'off',
+      label: enabled ? 'On' : 'Off',
+      detail: enabled ? 'Turning Airspy bias tee on' : 'Turning Airspy bias tee off',
+    });
+    try {
+      const result = await api.setSpectrumLna(enabled);
+      setLnaStatus(result.lna);
+      track('lna_toggled', { enabled, ok: result.ok });
+    } catch (err) {
+      track('lna_toggle_failed', { enabled, message: errorMessage(err).slice(0, 200) });
+      await refreshLnaStatus();
+    } finally {
+      setLnaChanging(false);
+    }
+  };
 
   // Subscribe to queue status updates as long as we have a session cookie.
   const queueWsEnabled = queueStatus != null && queueStatus.position >= 0;
@@ -347,7 +374,7 @@ function App() {
             <SpectrumPanel onStartGuided={startObservationGuide} />
           </section>
           <section className="panel status-side-panel">
-            <TelemetryDashboard telemetry={telemetry} lnaStatus={lnaStatus} />
+            <TelemetryDashboard telemetry={telemetry} lnaStatus={lnaStatus} lnaChanging={lnaChanging} onToggleLna={toggleLna} />
           </section>
         </div>
       </main>
@@ -696,9 +723,13 @@ function useJog(start: () => Promise<void>, stop: () => Promise<void>, onPress?:
 function TelemetryDashboard({
   telemetry,
   lnaStatus,
+  lnaChanging,
+  onToggleLna,
 }: {
   telemetry: RoboClawTelemetry | null;
   lnaStatus: LnaStatus | null;
+  lnaChanging: boolean;
+  onToggleLna: () => void;
 }) {
   const systemPower = minReading(telemetry?.main_battery_v, telemetry?.logic_battery_v);
   const roboclawTemp = maxReading(telemetry?.temperature_c, telemetry?.temperature_2_c);
@@ -710,7 +741,7 @@ function TelemetryDashboard({
       <div className="telemetry-dense">
         <DenseReadout title="System" icon={<Activity size={11} />} rows={[
           ['Connection', telemetry?.connection?.connected === false ? 'Issue' : 'Stable', telemetry?.connection?.connected === false ? 'val-crit' : 'val-ok'],
-          ['LNA', <LnaPill status={lnaStatus} />],
+          ['LNA', <LnaPill status={lnaStatus} changing={lnaChanging} onToggle={onToggleLna} />],
           ['Power', volts(systemPower), voltClass(systemPower)],
           ['RoboClaw temp', celsius(roboclawTemp), tempClass(roboclawTemp)],
           ['Pi temp', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
@@ -756,13 +787,30 @@ function DenseReadout({ title, icon, rows }: { title?: string; icon?: React.Reac
   );
 }
 
-function LnaPill({ status }: { status: LnaStatus | null | undefined }) {
+function LnaPill({
+  status,
+  changing,
+  onToggle,
+}: {
+  status: LnaStatus | null | undefined;
+  changing: boolean;
+  onToggle: () => void;
+}) {
   const state = status?.state ?? 'unknown';
-  const label = status?.label ?? 'Unknown';
+  const label = changing ? '...' : (status?.label ?? 'Unknown');
+  const next = state === 'on' ? 'off' : 'on';
   return (
-    <span className={`lna-status-pill lna-status-${state}`} title={status?.detail ?? 'LNA status'}>
+    <button
+      type="button"
+      className={`lna-status-pill lna-status-${state}`}
+      title={status?.detail ?? `Turn LNA ${next}`}
+      aria-label={`Turn LNA ${next}`}
+      aria-pressed={state === 'on'}
+      disabled={changing}
+      onClick={onToggle}
+    >
       {label}
-    </span>
+    </button>
   );
 }
 

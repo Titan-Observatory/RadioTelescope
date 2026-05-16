@@ -3,10 +3,15 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from radiotelescope.api.dependencies import require_control
 
 router = APIRouter(tags=["iq"])
+
+
+class LnaToggleRequest(BaseModel):
+    enabled: bool
 
 
 @router.post("/api/iq/reconnect", dependencies=[Depends(require_control)])
@@ -25,6 +30,18 @@ async def iq_status(request: Request):
     if publisher is None:
         return {"enabled": False, "mode": "disabled", "lna": {"state": "off", "label": "Off", "detail": "IQ publisher disabled"}}
     return {"enabled": True, "mode": publisher.mode, "lna": publisher.lna_status.model_dump()}
+
+
+@router.post("/api/iq/lna", dependencies=[Depends(require_control)])
+async def set_iq_lna(request: Request, payload: LnaToggleRequest):
+    publisher = getattr(request.app.state, "iq_publisher", None)
+    if publisher is None:
+        raise HTTPException(404, "IQ publisher is not running on this host")
+    try:
+        status = await publisher.set_lna_bias_tee(payload.enabled)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": status.state == "on" if payload.enabled else status.state == "off", "lna": status.model_dump()}
 
 
 @router.websocket("/ws/iq")

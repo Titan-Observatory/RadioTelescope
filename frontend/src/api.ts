@@ -1,4 +1,4 @@
-import type { CommandInfo, CommandResult, RaDecTarget, RoboClawTelemetry, TelescopeConfig } from './types';
+import type { CommandInfo, CommandResult, LnaStatus, RaDecTarget, RoboClawTelemetry, TelescopeConfig } from './types';
 import type { QueueConfig, QueueStatus } from './queue';
 
 export class ApiError extends Error {
@@ -52,6 +52,8 @@ export const api = {
       ...motionParams(speedQpps, accelQpps2, decelQpps2),
     }),
   stop: () => request<Record<string, CommandResult>>('POST', '/api/roboclaw/stop'),
+  setSpectrumLna: (enabled: boolean) =>
+    request<{ ok: boolean; lna: LnaStatus }>('POST', '/api/spectrum/lna', { enabled }),
   // ─── Queue ────────────────────────────────────────────────────────────
   queueConfig: () => request<QueueConfig>('GET', '/api/queue/config'),
   queueStatus: () => request<QueueStatus>('GET', '/api/queue/status'),

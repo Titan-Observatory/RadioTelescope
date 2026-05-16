@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 from typing import AsyncIterator
 
 import numpy as np
@@ -46,6 +47,7 @@ except Exception as exc:  # pragma: no cover — exercised on non-Pi hosts
 
 # Airspy Mini supports 3 Msps and 6 Msps only. Airspy R2 adds 2.5 / 10 Msps.
 _AIRSPY_RATES = (2_500_000.0, 3_000_000.0, 6_000_000.0, 10_000_000.0)
+_AIRSPY_BIAS_GPIO_CMD = ("airspy_gpio", "-p", "1", "-n", "13", "-w")
 
 
 class SDRReceiver:
@@ -65,6 +67,9 @@ class SDRReceiver:
     @property
     def lna_status(self) -> LnaStatus:
         return self._lna_status
+
+    async def set_lna_bias_tee(self, enabled: bool) -> LnaStatus:
+        return await asyncio.to_thread(self._set_lna_bias_tee_live, enabled)
 
     async def open(self) -> None:
         if not self._cfg.enabled:
@@ -125,9 +130,12 @@ class SDRReceiver:
         if sdr is None or stream is None:
             return
         try:
-            sdr.writeSetting("biastee", "false")  # type: ignore[attr-defined]
+            self._set_lna_bias_tee_gpio(False)
         except Exception:
-            pass
+            try:
+                sdr.writeSetting("biastee", "false")  # type: ignore[attr-defined]
+            except Exception:
+                pass
         try:
             sdr.deactivateStream(stream)  # type: ignore[attr-defined]
         except Exception:
@@ -140,6 +148,12 @@ class SDRReceiver:
 
     def _set_lna_bias_tee(self, sdr: object) -> None:
         enabled = bool(self._cfg.lna_bias_tee_enabled)
+        try:
+            self._set_lna_bias_tee_gpio(enabled)
+            return
+        except Exception as exc:
+            logger.warning("airspy_gpio bias tee control failed, trying SoapySDR setting: %s", exc)
+
         try:
             sdr.writeSetting("biastee", "true" if enabled else "false")  # type: ignore[attr-defined]
         except Exception as exc:
@@ -156,6 +170,58 @@ class SDRReceiver:
             if enabled
             else LnaStatus(state="off", label="Off", detail="Airspy bias tee disabled")
         )
+
+    def _set_lna_bias_tee_live(self, enabled: bool) -> LnaStatus:
+        try:
+            return self._set_lna_bias_tee_gpio(enabled)
+        except Exception as gpio_exc:
+            if self._sdr is None:
+                raise
+            try:
+                self._sdr.writeSetting("biastee", "true" if enabled else "false")  # type: ignore[attr-defined]
+            except Exception as soapy_exc:
+                raise RuntimeError(f"{gpio_exc}; SoapySDR fallback failed: {soapy_exc}") from soapy_exc
+            self._cfg.lna_bias_tee_enabled = enabled
+            self._lna_status = (
+                LnaStatus(state="on", label="On", detail="Airspy bias tee enabled")
+                if enabled
+                else LnaStatus(state="off", label="Off", detail="Airspy bias tee disabled")
+            )
+            return self._lna_status
+
+    def _set_lna_bias_tee_gpio(self, enabled: bool) -> LnaStatus:
+        value = "1" if enabled else "0"
+        cmd = (*_AIRSPY_BIAS_GPIO_CMD, value)
+        try:
+            result = subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except FileNotFoundError as exc:
+            status = LnaStatus(state="fault", label="Issue", detail="airspy_gpio command not found")
+            self._lna_status = status
+            raise RuntimeError(status.detail) from exc
+        except subprocess.TimeoutExpired as exc:
+            status = LnaStatus(state="fault", label="Issue", detail="airspy_gpio timed out")
+            self._lna_status = status
+            raise RuntimeError(status.detail) from exc
+
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or f"airspy_gpio exited with {result.returncode}").strip()
+            status = LnaStatus(state="fault", label="Issue", detail=f"Airspy bias tee failed: {detail}")
+            self._lna_status = status
+            raise RuntimeError(status.detail)
+
+        self._cfg.lna_bias_tee_enabled = enabled
+        self._lna_status = (
+            LnaStatus(state="on", label="On", detail="Airspy bias tee enabled")
+            if enabled
+            else LnaStatus(state="off", label="Off", detail="Airspy bias tee disabled")
+        )
+        return self._lna_status
 
     def _read_chunk(self, buf: np.ndarray) -> int:
         """Blocking single read into ``buf``. Returns samples read (>=0) or <0 on error."""

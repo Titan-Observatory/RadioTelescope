@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from radiotelescope.main import create_app
@@ -53,6 +55,31 @@ def test_spectrum_status_contains_lna(simulated_config_path):
     body = response.json()
     assert response.status_code == 200
     assert body["lna"]["state"] in {"on", "off", "unknown", "fault"}
+
+
+def test_spectrum_lna_toggle_runs_airspy_gpio(simulated_config_path, monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("radiotelescope.hardware.sdr.subprocess.run", fake_run)
+
+    with TestClient(create_app(simulated_config_path)) as client:
+        join = client.post("/api/queue/join", json={"turnstile_token": None})
+        response = client.post("/api/spectrum/lna", json={"enabled": True})
+        off = client.post("/api/spectrum/lna", json={"enabled": False})
+
+    assert join.status_code == 200
+    assert response.status_code == 200
+    assert response.json()["lna"]["state"] == "on"
+    assert off.status_code == 200
+    assert off.json()["lna"]["state"] == "off"
+    assert calls[-2:] == [
+        ["airspy_gpio", "-p", "1", "-n", "13", "-w", "1"],
+        ["airspy_gpio", "-p", "1", "-n", "13", "-w", "0"],
+    ]
 
 
 def test_api_accepts_alt_az_goto(simulated_config_path):

@@ -147,6 +147,17 @@ class RemoteSDRReceiver:
     def lna_status(self) -> LnaStatus:
         return self._lna_status
 
+    async def set_lna_bias_tee(self, enabled: bool) -> LnaStatus:
+        try:
+            async with httpx.AsyncClient(base_url=self._hw.base_url, timeout=5.0) as client:
+                r = await client.post("/api/iq/lna", json={"enabled": enabled})
+                r.raise_for_status()
+                raw = r.json().get("lna")
+            self._lna_status = LnaStatus.model_validate(raw)
+        except Exception as exc:
+            self._lna_status = LnaStatus(state="fault", label="Issue", detail=f"Gateway LNA toggle failed: {exc}")
+        return self._lna_status
+
     async def open(self) -> None:
         if not self._cfg.enabled:
             self.mode = "disabled"
