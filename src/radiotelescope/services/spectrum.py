@@ -82,6 +82,26 @@ class SpectrumService:
         await self._rx.close()
         logger.info("Spectrum service stopped")
 
+    async def reconnect(self) -> str:
+        """Tear down and re-open the SDR without restarting the server.
+
+        Lets the operator power-cycle the dongle or fix udev permissions and
+        recover without bouncing uvicorn. Returns the receiver's new mode so
+        the caller can tell whether the retry worked.
+        """
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        await self._rx.close()
+        await self._rx.open()
+        self._task = asyncio.create_task(self._run())
+        logger.info("Spectrum service reconnected (mode=%s)", self._rx.mode)
+        return self._rx.mode
+
     def subscribe(self, maxsize: int = 4) -> asyncio.Queue[SpectrumFrame]:
         q: asyncio.Queue[SpectrumFrame] = asyncio.Queue(maxsize=maxsize)
         if self._latest is not None:

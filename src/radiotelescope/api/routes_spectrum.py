@@ -64,6 +64,14 @@ async def reset_integration(request: Request):
     return {"ok": True}
 
 
+@router.post("/api/spectrum/reconnect", dependencies=[Depends(require_control)])
+async def reconnect_sdr(request: Request):
+    """Force the SDR receiver to close + re-open without restarting the app."""
+    service = _service(request)
+    mode = await service.reconnect()
+    return {"ok": mode not in ("unavailable", "disconnected"), "mode": mode}
+
+
 @router.delete("/api/spectrum/baseline", dependencies=[Depends(require_control)])
 async def clear_baseline(request: Request):
     _service(request).clear_baseline()

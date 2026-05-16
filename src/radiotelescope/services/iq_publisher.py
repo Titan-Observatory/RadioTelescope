@@ -46,6 +46,21 @@ class IQPublisher:
         await self._rx.close()
         logger.info("IQ publisher stopped")
 
+    async def reconnect(self) -> str:
+        """Tear down and re-open the SDR without restarting the server."""
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        await self._rx.close()
+        await self._rx.open()
+        self._task = asyncio.create_task(self._run())
+        logger.info("IQ publisher reconnected (mode=%s)", self._rx.mode)
+        return self._rx.mode
+
     def subscribe(self, maxsize: int = 32) -> asyncio.Queue[bytes]:
         q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=maxsize)
         self._subscribers.append(q)
