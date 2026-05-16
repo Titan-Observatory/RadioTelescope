@@ -64,7 +64,10 @@ class SDRReceiver:
             )
             return
         try:
-            sdr = SoapySDR.Device({"driver": "airspy"})  # type: ignore[union-attr]
+            # String form ("driver=airspy") rather than dict — the SWIG
+            # dict→Kwargs conversion is broken in some 0.8.x builds and
+            # silently raises `Device::make() no match`.
+            sdr = SoapySDR.Device("driver=airspy")  # type: ignore[union-attr]
             sdr.setSampleRate(SOAPY_SDR_RX, 0, float(self._cfg.sample_rate_hz))
             sdr.setFrequency(SOAPY_SDR_RX, 0, float(self._cfg.center_freq_hz))
             if self._cfg.gain_db is None:
