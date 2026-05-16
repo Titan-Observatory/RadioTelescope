@@ -25,19 +25,22 @@ try:
     import SoapySDR  # type: ignore
     from SoapySDR import SOAPY_SDR_RX, SOAPY_SDR_CF32  # type: ignore
     _SOAPY_AVAILABLE = True
+    # Soapy negative return codes that mean "samples were dropped, keep going":
+    #   TIMEOUT (-1), OVERFLOW (-4), UNDERFLOW (-7).
+    # We deliberately do NOT retry on STREAM_ERROR (-2) or CORRUPTION (-3) —
+    # those indicate the stream itself is broken and we need to re-open.
+    _SOAPY_RETRYABLE = (
+        SoapySDR.SOAPY_SDR_TIMEOUT,
+        SoapySDR.SOAPY_SDR_OVERFLOW,
+        SoapySDR.SOAPY_SDR_UNDERFLOW,
+    )
 except Exception as exc:  # pragma: no cover — exercised on non-Pi hosts
     SoapySDR = None  # type: ignore
     SOAPY_SDR_RX = 0  # type: ignore
     SOAPY_SDR_CF32 = "CF32"  # type: ignore
     _SOAPY_AVAILABLE = False
     _SOAPY_IMPORT_ERROR = str(exc)
-
-# SoapySDR negative return codes that mean "try again", not "give up":
-#   -1 SOAPY_SDR_TIMEOUT, -7 SOAPY_SDR_OVERFLOW, -2 SOAPY_SDR_END_BURST,
-#   -8 SOAPY_SDR_NOT_SUPPORTED — we treat anything in this set as transient
-#   so a single overflow (common on the Airspy when downstream stalls) doesn't
-#   permanently kill the spectrum pipeline.
-_SOAPY_RETRYABLE = (-1, -2, -7)
+    _SOAPY_RETRYABLE = (-1, -4, -7)
 
 
 # Airspy Mini supports 3 Msps and 6 Msps only. Airspy R2 adds 2.5 / 10 Msps.
