@@ -32,6 +32,13 @@ except Exception as exc:  # pragma: no cover — exercised on non-Pi hosts
     _SOAPY_AVAILABLE = False
     _SOAPY_IMPORT_ERROR = str(exc)
 
+# SoapySDR negative return codes that mean "try again", not "give up":
+#   -1 SOAPY_SDR_TIMEOUT, -7 SOAPY_SDR_OVERFLOW, -2 SOAPY_SDR_END_BURST,
+#   -8 SOAPY_SDR_NOT_SUPPORTED — we treat anything in this set as transient
+#   so a single overflow (common on the Airspy when downstream stalls) doesn't
+#   permanently kill the spectrum pipeline.
+_SOAPY_RETRYABLE = (-1, -2, -7)
+
 
 # Airspy Mini supports 3 Msps and 6 Msps only. Airspy R2 adds 2.5 / 10 Msps.
 _AIRSPY_RATES = (2_500_000.0, 3_000_000.0, 6_000_000.0, 10_000_000.0)
@@ -130,10 +137,17 @@ class SDRReceiver:
             got = 0
             while got < n:
                 read = await asyncio.to_thread(self._read_chunk, buf[got:])
-                if read < 0:
-                    logger.warning("Airspy readStream error: %d", read)
-                    return
-                got += read
+                if read >= 0:
+                    got += read
+                    continue
+                if read in _SOAPY_RETRYABLE:
+                    # Overflow / timeout — drop the partial frame and start
+                    # over. The Airspy keeps streaming under the hood.
+                    logger.debug("Airspy readStream transient (%d); skipping frame", read)
+                    got = 0
+                    continue
+                logger.warning("Airspy readStream fatal error: %d; ending stream", read)
+                return
             yield buf
 
     async def stream_bytes(self) -> AsyncIterator[bytes]:
