@@ -661,8 +661,8 @@ function PointingPad({ runCommand, speed }: {
   const onPress = (direction: 'west' | 'east' | 'up' | 'down') =>
     track('jog_pressed', { direction, speed });
 
-  const west = useJog(() => runCommand('backward_m1', { speed }), () => runCommand('backward_m1', { speed: 0 }), () => onPress('west'));
-  const east = useJog(() => runCommand('forward_m1',  { speed }), () => runCommand('forward_m1',  { speed: 0 }), () => onPress('east'));
+  const west = useJog(() => runCommand('forward_m1',  { speed }), () => runCommand('forward_m1',  { speed: 0 }), () => onPress('west'));
+  const east = useJog(() => runCommand('backward_m1', { speed }), () => runCommand('backward_m1', { speed: 0 }), () => onPress('east'));
   const down = useJog(() => runCommand('backward_m2', { speed }), () => runCommand('backward_m2', { speed: 0 }), () => onPress('down'));
   const up   = useJog(() => runCommand('forward_m2',  { speed }), () => runCommand('forward_m2',  { speed: 0 }), () => onPress('up'));
 

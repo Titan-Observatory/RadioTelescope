@@ -82,6 +82,7 @@ class MountConfig(BaseModel):
     goto_speed_qpps: int = Field(default=10_000, ge=0)
     goto_accel_qpps2: int = Field(default=25_000, ge=0)
     goto_decel_qpps2: int = Field(default=25_000, ge=0)
+    goto_arrival_tolerance_counts: int = Field(default=1, ge=0)
     pointing_limit_altaz: list[AltAzLimitPoint] = Field(default_factory=list)
     altitude_calibration: AltitudeCalibrationConfig | None = None
 

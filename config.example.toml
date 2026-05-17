@@ -35,6 +35,9 @@ alt_zero_count = 0
 goto_speed_qpps = 1000
 goto_accel_qpps2 = 1000
 goto_decel_qpps2 = 1000
+# Once both axes are this close to the encoder target, send stop_all so the
+# controller stops holding position and does not jitter at the target.
+goto_arrival_tolerance_counts = 1
 pointing_limit_altaz = []
 
 # Empirical calibration for the elevation axis. Each point is an observed

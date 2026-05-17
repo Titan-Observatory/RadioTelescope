@@ -19,6 +19,16 @@ GATEWAY_INTERNAL_COMMAND_IDS = {
 }
 
 
+def _position_targets(command_id: str, args: dict[str, int | bool]) -> dict[str, int | None] | None:
+    if command_id == "speed_accel_decel_position_m1":
+        return {"m1": int(args["position"])}
+    if command_id == "speed_accel_decel_position_m2":
+        return {"m2": int(args["position"])}
+    if command_id == "speed_accel_decel_position_m1m2":
+        return {"m1": int(args["m1_position"]), "m2": int(args["m2_position"])}
+    return None
+
+
 def _inside_pointing_limits(altitude_deg: float, azimuth_deg: float, request: Request) -> bool:
     limits = request.app.state.config.mount.pointing_limit_altaz
     if not limits:
@@ -101,12 +111,19 @@ async def execute_command(command_id: str, body: CommandRequest, request: Reques
     result = await asyncio.to_thread(client.execute, command_id, body.args)
     if not result.ok:
         raise HTTPException(status_code=400, detail=result.error or "RoboClaw command failed")
+    targets = _position_targets(command_id, body.args)
+    if targets is not None:
+        _service(request).set_position_target(**targets)
+    elif spec.kind == "motion":
+        _service(request).set_position_target()
     return result
 
 
 @router.post("/api/roboclaw/stop", response_model=dict[str, CommandResult], dependencies=[Depends(require_control)])
 async def stop(request: Request):
-    return await asyncio.to_thread(_service(request).client.stop_all)
+    service = _service(request)
+    service.set_position_target()
+    return await asyncio.to_thread(service.client.stop_all)
 
 
 @router.get("/api/telescope/goto")
@@ -190,6 +207,7 @@ async def _execute_goto_altaz(
     )
     if not result.ok:
         raise HTTPException(status_code=400, detail=result.error or "Goto command failed")
+    _service(request).set_position_target(m1=m1_position, m2=m2_position)
     return result
 
 

@@ -4,7 +4,8 @@ import asyncio
 import logging
 import time
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import katpoint
 
@@ -16,6 +17,12 @@ from radiotelescope.services._pubsub import Broadcaster
 from radiotelescope.services.geometry import encoder_counts_to_altitude
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PositionTarget:
+    m1: int | None = None
+    m2: int | None = None
 
 
 class RoboClawService:
@@ -36,6 +43,7 @@ class RoboClawService:
         self._tick_times: deque[float] = deque(maxlen=20)
         self._stored_m1_qpps: int | None = None
         self._stored_m2_qpps: int | None = None
+        self._position_target: PositionTarget | None = None
 
     @property
     def client(self) -> RoboClawClient:
@@ -56,6 +64,13 @@ class RoboClawService:
     def stored_qpps(self) -> tuple[int | None, int | None]:
         """(m1, m2) velocity-PID QPPS as stored on the controller, or None if unread."""
         return (self._stored_m1_qpps, self._stored_m2_qpps)
+
+    def set_position_target(self, *, m1: int | None = None, m2: int | None = None) -> None:
+        """Track the active position command so polling can stop it on arrival."""
+        if m1 is None and m2 is None:
+            self._position_target = None
+            return
+        self._position_target = PositionTarget(m1=m1, m2=m2)
 
     async def refresh_stored_qpps(self) -> None:
         """Read each axis's velocity-PID QPPS from the controller and cache it."""
@@ -137,11 +152,41 @@ class RoboClawService:
                     logger.debug("altaz_to_radec failed", exc_info=True)
 
         self._latest = snap.model_copy(update=updates) if updates else snap
+        await self._stop_if_position_target_reached(self._latest)
         self._broadcaster.publish(self._latest)
         return self._latest
+
+    async def _stop_if_position_target_reached(self, snap: RoboClawTelemetry) -> None:
+        target = self._position_target
+        if target is None:
+            return
+        tolerance = self._mount_cfg.goto_arrival_tolerance_counts if self._mount_cfg is not None else 1
+        if not _target_reached(snap, target, tolerance):
+            return
+
+        self._position_target = None
+        result = await asyncio.to_thread(self._client.stop_all)
+        failed = [item.error or item.command_id for item in result.values() if not item.ok]
+        if failed:
+            logger.warning("Failed to stop after reaching target %s: %s", target, "; ".join(failed))
+            self._position_target = target
+            return
+        logger.info("Stopped motors after reaching target m1=%s m2=%s", target.m1, target.m2)
 
     async def _poll_loop(self) -> None:
         interval = 1.0 / self._rate
         while True:
             await self.refresh()
             await asyncio.sleep(interval)
+
+
+def _target_reached(snap: RoboClawTelemetry, target: PositionTarget, tolerance: int) -> bool:
+    for motor_id, encoder_target in (("m1", target.m1), ("m2", target.m2)):
+        if encoder_target is None:
+            continue
+        motor = snap.motors.get(motor_id)
+        if motor is None or motor.encoder is None:
+            return False
+        if abs(motor.encoder - encoder_target) > tolerance:
+            return False
+    return True
