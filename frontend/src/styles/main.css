@@ -2527,15 +2527,15 @@ h2.panel-header {
 .h1-hero {
   background: var(--surface-1);
   border-bottom: 1px solid var(--hairline);
-  padding: 52px 24px 44px;
+  padding: 48px 24px;
 }
 
 .h1-hero-inner {
-  max-width: 920px;
+  max-width: 1180px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 1fr 1.5fr;
-  gap: 48px;
+  grid-template-columns: minmax(320px, 0.72fr) minmax(560px, 1fr);
+  gap: clamp(36px, 5vw, 72px);
   align-items: center;
 }
 
@@ -2560,15 +2560,17 @@ h2.panel-header {
 
 .h1-hero-sub {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.7;
+  max-width: 560px;
+  font-size: 14px;
+  line-height: 1.58;
   color: var(--fg-muted);
 }
 
 .h1-hero-visual {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
 }
 
 /* Spin-flip section */
@@ -2660,7 +2662,7 @@ h2.panel-header {
 .h1-svg-wide { min-width: 500px; }
 
 .h1-visual-caption {
-  margin: 10px 0 0;
+  margin: 0;
   font-size: 12px;
   line-height: 1.5;
   color: var(--fg-subtle);
@@ -2691,7 +2693,9 @@ h2.panel-header {
   .h1-spinflip-inner,
   .h1-doppler-inner { grid-template-columns: 1fr; }
 
+  .h1-hero-inner { gap: 28px; }
   .h1-hero-title { font-size: 26px; }
+  .h1-hero-sub { max-width: none; }
 
   .h1-hero,
   .h1-spinflip,

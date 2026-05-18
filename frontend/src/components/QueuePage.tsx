@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Cloud } from 'lucide-react';
 
+import queueSpectrumRaw from '../data/queueSpectrum.txt?raw';
 import type { QueueStatus } from '../queue';
 
 declare global {
@@ -25,33 +26,6 @@ const TURNSTILE_SCRIPT_ID = 'cf-turnstile-script';
 const TURNSTILE_SCRIPT_SRC =
   'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit';
 
-// ─── SVG path helpers ──────────────────────────────────────────────────────────
-
-function gaussianPts(cx: number, sigma: number, amp: number, base: number, w: number): string[] {
-  const pts: string[] = [];
-  for (let x = 0; x <= w; x += 3)
-    pts.push(`${x},${(base - amp * Math.exp(-0.5 * ((x - cx) / sigma) ** 2)).toFixed(1)}`);
-  return pts;
-}
-
-function gaussianLine(cx: number, sigma: number, amp: number, base: number, w: number): string {
-  return `M ${gaussianPts(cx, sigma, amp, base, w).join(' L ')}`;
-}
-
-function gaussianFill(cx: number, sigma: number, amp: number, base: number, w: number): string {
-  return `M 0,${base} L ${gaussianPts(cx, sigma, amp, base, w).join(' L ')} L ${w},${base} Z`;
-}
-
-function noiseFloor(base: number, w: number, amp: number): string {
-  const pts: string[] = [];
-  let v = 0;
-  for (let x = 0; x <= w; x += 4) {
-    v = v * 0.55 + (Math.sin(x * 0.43 + 7) * 0.5 + Math.sin(x * 0.19 + 3) * 0.5) * amp;
-    pts.push(`${x},${(base + v).toFixed(1)}`);
-  }
-  return `M ${pts.join(' L ')}`;
-}
-
 // ─── Precomputed path data ─────────────────────────────────────────────────────
 
 // Hero spectrum: 600×135 — animated playback of a real H I survey profile.
@@ -59,74 +33,84 @@ const HW = 600;
 const HERO_BASE_Y = 112;          // y-coordinate of the 0-power baseline
 const HERO_PEAK_PX = 90;          // pixels of y-range allocated to the strongest peak
 
-// Real LAB-survey hydrogen-line brightness temperatures (K) sampled in 1.03
-// km/s steps across v_LSR = -80 … +80 km/s. The line of sight is (l=110°,
-// b=0°), which slices outward through the galactic disk: the local-arm peak
-// sits right at the rest frequency, and the Perseus-arm peak ~50 km/s
-// blueshifted shows up as a clearly separated second bump — a textbook
-// Doppler-shift example with two comparable peaks and quiet wings.
-//
-// Pulled from the Argelander Institut LAB profile server:
-//   https://www.astro.uni-bonn.de/hisurvey/euhou/LABprofile/
-// Eventually we'll swap this for a real recording from this telescope.
-const SURVEY_TB_K: number[] = [
-  16.25, 15.84, 15.27, 15.02, 14.92, 15.18, 15.64, 16.37, 17.07, 17.93, 18.32,
-  18.49, 18.78, 19.12, 20.26, 21.90, 24.66, 28.88, 35.45, 43.83, 53.37, 62.21,
-  68.85, 72.88, 74.77, 76.67, 77.51, 78.62, 80.21, 81.63, 81.79, 79.82, 75.48,
-  69.36, 61.44, 53.08, 45.61, 40.33, 35.66, 31.86, 28.56, 26.45, 24.05, 21.73,
-  19.39, 17.92, 17.30, 17.27, 16.66, 15.98, 15.31, 14.64, 14.09, 13.14, 12.08,
-  11.56, 11.17, 11.36, 11.69, 12.50, 13.67, 15.70, 17.91, 20.78, 24.17, 28.69,
-  33.54, 39.06, 44.62, 50.14, 56.64, 64.63, 72.15, 77.85, 79.96, 78.77, 76.51,
-  71.87, 63.29, 51.71, 40.08, 30.15, 22.27, 16.57, 12.67, 10.02, 7.98, 6.35,
-  5.27, 4.22, 3.43, 2.82, 2.31, 1.88, 1.53, 1.21, 1.03, 0.91, 0.57, 0.69,
-  0.46, 0.46, 0.36, 0.33, 0.16, 0.21, 0.17, 0.20, 0.11, 0.14, 0.06, 0.01,
-  0.04, 0.13, 0.03, 0.03, 0.04, 0.04, 0.07, 0.03, 0.01, 0.01, -0.02, 0.02,
-  0.11, 0.01, 0.02, 0.12, 0.02, 0.07, -0.01, 0.09, 0.02, 0.19, 0.07, 0.01,
-  0.05, 0.13, 0.01, 0.09, 0.02, 0.00, -0.02, 0.09, 0.03, -0.05, 0.05, -0.05,
-  0.05, -0.00, -0.00, 0.05, -0.02, 0.02, 0.08,
-];
+// LAB hydrogen-line profile supplied for the queue-page example spectrum.
+// Columns in the source file are v_lsr [km/s], T_B [K], frequency [MHz],
+// and wavelength [cm].
+type SurveySample = {
+  tbK: number;
+  freqMhz: number;
+};
+
+function parseQueueSpectrum(raw: string): SurveySample[] {
+  const samples: SurveySample[] = [];
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('%')) continue;
+
+    const parts = trimmed.split(/\s+/);
+    if (parts.length < 3) continue;
+
+    const tbK = Number(parts[1]);
+    const freqMhz = Number(parts[2]);
+    if (Number.isFinite(tbK) && Number.isFinite(freqMhz)) {
+      samples.push({ tbK, freqMhz });
+    }
+  }
+
+  if (samples.length === 0) {
+    throw new Error('Queue spectrum data did not contain any LAB samples.');
+  }
+
+  return samples;
+}
+
+const SURVEY_SAMPLES = parseQueueSpectrum(queueSpectrumRaw);
+const SURVEY_TB_K: number[] = SURVEY_SAMPLES.map(sample => sample.tbK);
+const SURVEY_FREQ_MHZ: number[] = SURVEY_SAMPLES.map(sample => sample.freqMhz);
 
 // Normalize to [0, 1] for the SVG mapping; the receiver-noise animation layers
 // on top of this baseline shape per frame.
 const SURVEY_PEAK_K = SURVEY_TB_K.reduce((m, v) => (v > m ? v : m), 0);
 const SURVEY_POWER: number[] = SURVEY_TB_K.map((v) => Math.max(0, v) / SURVEY_PEAK_K);
 
-// Frequency-axis mapping. Display range hugs the data span (±80 km/s ≈
-// ±0.38 MHz around the rest line) so the trace fills the chart, with just
+// Frequency-axis mapping. Display range hugs the supplied data span with
 // enough padding to land round-numbered tick labels on the axis.
 const H1_REST_MHZ = 1420.4058;
-const DISPLAY_MIN_MHZ = 1420.0;
-const DISPLAY_MAX_MHZ = 1420.8;
+const DISPLAY_TICK_STEP_MHZ = 0.2;
+const DISPLAY_MIN_SIGNAL_K = 0.02;
+const DISPLAY_PAD_MHZ = 0.04;
+const DISPLAY_SIGNAL_FREQ_MHZ = SURVEY_SAMPLES
+  .filter(sample => sample.tbK >= DISPLAY_MIN_SIGNAL_K)
+  .map(sample => sample.freqMhz);
+const DISPLAY_MIN_MHZ =
+  Math.min(...DISPLAY_SIGNAL_FREQ_MHZ) - DISPLAY_PAD_MHZ;
+const DISPLAY_MAX_MHZ =
+  Math.max(...DISPLAY_SIGNAL_FREQ_MHZ) + DISPLAY_PAD_MHZ;
 const DISPLAY_SPAN_MHZ = DISPLAY_MAX_MHZ - DISPLAY_MIN_MHZ;
-const C_KM_S = 299792.458;
-const SURVEY_V_START = -80;
-const SURVEY_V_STEP = 160 / (SURVEY_TB_K.length - 1);
 // Higher frequency on the left (blueshifted), lower on the right (redshifted)
 // — the standard convention used by SDR spectrum tools.
 const fToX = (f: number) => ((DISPLAY_MAX_MHZ - f) / DISPLAY_SPAN_MHZ) * HW;
-const vToX = (v: number) => fToX(H1_REST_MHZ * (1 - v / C_KM_S));
-const indexToX = (i: number) => vToX(SURVEY_V_START + i * SURVEY_V_STEP);
+const indexToX = (i: number) => fToX(SURVEY_FREQ_MHZ[i]);
 const SURVEY_X_START = indexToX(0);
 const SURVEY_X_END   = indexToX(SURVEY_TB_K.length - 1);
 
-const SURVEY_PEAK_X = (() => {
+const SURVEY_DOPPLER_PEAK_X = (() => {
   let idx = 0;
-  for (let i = 0; i < SURVEY_POWER.length; i++) if (SURVEY_POWER[i] > SURVEY_POWER[idx]) idx = i;
+  for (let i = 0; i < SURVEY_POWER.length; i++) {
+    const isBlueShifted = SURVEY_FREQ_MHZ[i] > H1_REST_MHZ + 0.05;
+    if (isBlueShifted && SURVEY_POWER[i] > SURVEY_POWER[idx]) idx = i;
+  }
   return indexToX(idx);
 })();
 
-// Frequency tick labels placed at round 0.2 MHz intervals across the display.
-const FREQ_TICKS_MHZ = [1420.0, 1420.2, 1420.4, 1420.6, 1420.8];
-
-// Observation spectrum: 680×200, three peaks at different velocities
-const OW = 680, OBASE = 142;
-const OBS_APP_FILL  = gaussianFill(190, 32, 74, OBASE, OW);
-const OBS_APP_LINE  = gaussianLine(190, 32, 74, OBASE, OW);
-const OBS_REST_FILL = gaussianFill(340, 26, 38, OBASE, OW);
-const OBS_REST_LINE = gaussianLine(340, 26, 38, OBASE, OW);
-const OBS_REC_FILL  = gaussianFill(490, 38, 82, OBASE, OW);
-const OBS_REC_LINE  = gaussianLine(490, 38, 82, OBASE, OW);
-const OBS_NOISE     = noiseFloor(OBASE, OW, 6);
+// Frequency tick labels placed at round intervals across the display.
+const FIRST_FREQ_TICK_MHZ = Math.ceil(DISPLAY_MIN_MHZ / DISPLAY_TICK_STEP_MHZ) * DISPLAY_TICK_STEP_MHZ;
+const LAST_FREQ_TICK_MHZ = Math.floor(DISPLAY_MAX_MHZ / DISPLAY_TICK_STEP_MHZ) * DISPLAY_TICK_STEP_MHZ;
+const FREQ_TICKS_MHZ = Array.from(
+  { length: Math.round((LAST_FREQ_TICK_MHZ - FIRST_FREQ_TICK_MHZ) / DISPLAY_TICK_STEP_MHZ) + 1 },
+  (_, i) => FIRST_FREQ_TICK_MHZ + i * DISPLAY_TICK_STEP_MHZ,
+);
 
 // ─── SVG components ────────────────────────────────────────────────────────────
 
@@ -262,17 +246,15 @@ function HeroSpectrum() {
       <path d={paths.fill}  fill="url(#h1HeroGrad)" />
       <path d={paths.line}  fill="none" stroke="#ffbc42" strokeWidth="2.5" strokeLinejoin="round" />
       <line x1={fToX(H1_REST_MHZ)} y1="6" x2={fToX(H1_REST_MHZ)} y2="115" stroke="#ffbc42" strokeWidth="1" strokeDasharray="4,3" opacity="0.45" />
-      {/* Doppler-shifted peak marker — the Perseus-arm gas in this sightline
-          is moving toward us at ~50 km/s, shifting its emission well to the
-          blue side of the 1420.4 MHz rest line. */}
+      {/* Secondary blueshifted emission peak in the supplied LAB profile. */}
       <line
-        x1={SURVEY_PEAK_X} y1="6" x2={SURVEY_PEAK_X} y2="115"
+        x1={SURVEY_DOPPLER_PEAK_X} y1="6" x2={SURVEY_DOPPLER_PEAK_X} y2="115"
         stroke="#5ba4f5" strokeWidth="1" strokeDasharray="3,3" opacity="0.7"
       />
       <a href="#h1-doppler-section">
         <title>This peak is offset from 1420.4 MHz — that's the Doppler effect. Click to learn more.</title>
         <text
-          x={SURVEY_PEAK_X + 6} y="14"
+          x={SURVEY_DOPPLER_PEAK_X + 6} y="14"
           fill="#5ba4f5" fontSize="10"
           fontFamily="ui-monospace,monospace"
           style={{ cursor: 'pointer', textDecoration: 'underline' }}
@@ -316,7 +298,7 @@ function HeroSpectrum() {
 // source's instantaneous motion.
 
 const DA_W = 600;
-const DA_H = 360;                   // total SVG height (scene + mini spectrum)
+const DA_H = 380;                   // total SVG height (scene + mini spectrum)
 const DA_AXIS_Y = 108;              // y of horizontal axis through source
 const DA_TELESCOPE_X = 64;          // x of dish centre
 const DA_DISH_BACK_X = DA_TELESCOPE_X - 0.5;
@@ -414,6 +396,18 @@ const DA_MINI_NOISE_TAU_S = 0.08;      // smoothing time constant (s)
 // nearly the full width.
 const DA_MINI_HALF_RANGE = (DA_MINI_W / 2 - 36) * 0.55;
 
+// Map mini-spectrum x to the frequency it represents. DA_V_MAX (in km/s in this
+// scene) shifts the peak by DA_MINI_HALF_RANGE px, and Doppler says that
+// corresponds to Δf = f₀ · v/c at the H1 rest line.
+const DA_SPEED_OF_LIGHT_KMS = 299792.458;
+const DA_DOPPLER_DF_AT_VMAX_MHZ =
+  H1_REST_MHZ * DA_V_MAX / DA_SPEED_OF_LIGHT_KMS;
+const DA_MINI_MHZ_PER_PX =
+  DA_DOPPLER_DF_AT_VMAX_MHZ / DA_MINI_HALF_RANGE;
+const daFreqToX = (mhz: number) =>
+  DA_MINI_CX + (mhz - H1_REST_MHZ) / DA_MINI_MHZ_PER_PX;
+const DA_MINI_FREQ_LABELS_MHZ = [1420.2, 1420.3, 1420.4, 1420.5, 1420.6];
+
 const dopplerColor = (vFrac: number): string => {
   // vFrac in approx [-V_MAX/C, +V_MAX/C]; positive = approaching (blueshift).
   const amber = [255, 188, 66];
@@ -495,7 +489,7 @@ export function DopplerAnimation({ renderTimeSeconds }: { renderTimeSeconds?: nu
       const alpha = 1 - Math.exp(-dt / DA_MINI_NOISE_TAU_S);
       const emitTAtDish = findEmitTimeAtTelescope(newT);
       const vReceived = vTowardAt(emitTAtDish);
-      const peakCenter = DA_MINI_CX - (vReceived / DA_V_MAX) * DA_MINI_HALF_RANGE;
+      const peakCenter = DA_MINI_CX + (vReceived / DA_V_MAX) * DA_MINI_HALF_RANGE;
       const prev = miniBinsRef.current;
       const next = new Array<number>(DA_MINI_BINS);
       for (let i = 0; i < DA_MINI_BINS; i++) {
@@ -589,7 +583,7 @@ export function DopplerAnimation({ renderTimeSeconds }: { renderTimeSeconds?: nu
     ? Array.from({ length: DA_MINI_BINS }, (_, i) => {
       const emitTAtDish = findEmitTimeAtTelescope(t);
       const vReceived = vTowardAt(emitTAtDish);
-      const peakCenter = DA_MINI_CX - (vReceived / DA_V_MAX) * DA_MINI_HALF_RANGE;
+      const peakCenter = DA_MINI_CX + (vReceived / DA_V_MAX) * DA_MINI_HALF_RANGE;
       const x = DA_MINI_PLOT_LEFT_X + (i / (DA_MINI_BINS - 1)) * DA_MINI_PLOT_W;
       const dx = x - peakCenter;
       const peakNorm = Math.exp(-0.5 * (dx / DA_MINI_PEAK_SIGMA) ** 2);
@@ -750,7 +744,7 @@ export function DopplerAnimation({ renderTimeSeconds }: { renderTimeSeconds?: nu
       </defs>
       <rect
         x={DA_MINI_LEFT_X} y={DA_MINI_TOP_Y}
-        width={DA_MINI_W} height={DA_MINI_BASE_Y - DA_MINI_TOP_Y + 18}
+        width={DA_MINI_W} height={DA_MINI_BASE_Y - DA_MINI_TOP_Y + 32}
         fill="#0c0f1c" stroke="#1d2138" rx="4"
       />
       <text
@@ -772,19 +766,15 @@ export function DopplerAnimation({ renderTimeSeconds }: { renderTimeSeconds?: nu
           />
         );
       })}
-      {/* Vertical gridlines at the same fractional positions as the hero
-          spectrum's MHz ticks (1420.0, 1420.2, 1420.4, 1420.6, 1420.8). */}
-      {[0.125, 0.375, 0.5, 0.625, 0.875].map((f) => {
-        const x = DA_MINI_LEFT_X + 12 + f * (DA_MINI_W - 24);
-        return (
-          <line
-            key={f}
-            x1={x} y1={DA_MINI_PLOT_TOP_Y}
-            x2={x} y2={DA_MINI_BASE_Y}
-            stroke="#1a1d2e" strokeWidth="1"
-          />
-        );
-      })}
+      {/* Vertical gridlines aligned to the frequency-axis tick labels. */}
+      {DA_MINI_FREQ_LABELS_MHZ.map((mhz) => (
+        <line
+          key={mhz}
+          x1={daFreqToX(mhz)} y1={DA_MINI_PLOT_TOP_Y}
+          x2={daFreqToX(mhz)} y2={DA_MINI_BASE_Y}
+          stroke="#1a1d2e" strokeWidth="1"
+        />
+      ))}
       {/* Rest-frequency dashed marker, matching the hero amber line. */}
       <line
         x1={DA_MINI_CX} y1={DA_MINI_PLOT_TOP_Y}
@@ -805,81 +795,34 @@ export function DopplerAnimation({ renderTimeSeconds }: { renderTimeSeconds?: nu
         strokeWidth="2.5"
         strokeLinejoin="round"
       />
-      {/* Tick labels along the axis. */}
+      {/* Frequency tick labels along the axis. */}
+      {DA_MINI_FREQ_LABELS_MHZ.map((mhz) => {
+        const isRest = Math.abs(mhz - 1420.4) < 0.001;
+        return (
+          <text
+            key={mhz}
+            x={daFreqToX(mhz)} y={DA_MINI_BASE_Y + 13}
+            textAnchor="middle"
+            fill={isRest ? '#9b9ece' : '#6f719a'}
+            fontSize={isRest ? 11 : 9}
+            fontFamily="ui-monospace,monospace"
+          >
+            {mhz.toFixed(1)}
+          </text>
+        );
+      })}
       <text
-        x={DA_MINI_LEFT_X + 12} y={DA_MINI_BASE_Y + 14}
-        fill="#5ba4f5" fontSize="10"
+        x={DA_MINI_LEFT_X + 12} y={DA_MINI_BASE_Y + 27}
+        fill="#ff7a4d" fontSize="10"
       >
-        blueshift ←
+        redshift ←
       </text>
       <text
-        x={DA_MINI_CX} y={DA_MINI_BASE_Y + 14}
-        textAnchor="middle" fill="#9b9ece" fontSize="11"
-        fontFamily="ui-monospace,monospace"
+        x={DA_MINI_LEFT_X + DA_MINI_W - 12} y={DA_MINI_BASE_Y + 27}
+        textAnchor="end" fill="#5ba4f5" fontSize="10"
       >
-        1420.4 MHz
+        → blueshift
       </text>
-      <text
-        x={DA_MINI_LEFT_X + DA_MINI_W - 12} y={DA_MINI_BASE_Y + 14}
-        textAnchor="end" fill="#ff7a4d" fontSize="10"
-      >
-        → redshift
-      </text>
-    </svg>
-  );
-}
-
-function ObservationSpectrum() {
-  const appX = 190, restX = 340, recX = 490, axisY = 152;
-  return (
-    <svg
-      viewBox={`0 0 ${OW} 200`}
-      className="h1-svg h1-svg-wide"
-      preserveAspectRatio="xMidYMid meet"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id="h1AppGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#5ba4f5" stopOpacity="0.22" />
-          <stop offset="100%" stopColor="#5ba4f5" stopOpacity="0" />
-        </linearGradient>
-        <linearGradient id="h1RestGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#ffbc42" stopOpacity="0.15" />
-          <stop offset="100%" stopColor="#ffbc42" stopOpacity="0" />
-        </linearGradient>
-        <linearGradient id="h1RecGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#ff7a4d" stopOpacity="0.22" />
-          <stop offset="100%" stopColor="#ff7a4d" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-
-      {[40, 80, 120].map(y => (
-        <line key={y} x1="0" y1={y} x2={OW} y2={y} stroke="#1a1d2e" strokeWidth="1" />
-      ))}
-
-      <line x1={restX} y1="0" x2={restX} y2={axisY} stroke="#ffbc42" strokeWidth="1" strokeDasharray="5,4" opacity="0.35" />
-      <path d={OBS_NOISE}    fill="none" stroke="#252840" strokeWidth="1.5" />
-      <path d={OBS_APP_FILL}  fill="url(#h1AppGrad)" />
-      <path d={OBS_REST_FILL} fill="url(#h1RestGrad)" />
-      <path d={OBS_REC_FILL}  fill="url(#h1RecGrad)" />
-      <path d={OBS_APP_LINE}  fill="none" stroke="#5ba4f5" strokeWidth="2" />
-      <path d={OBS_REST_LINE} fill="none" stroke="#ffbc42" strokeWidth="1.5" />
-      <path d={OBS_REC_LINE}  fill="none" stroke="#ff7a4d" strokeWidth="2" />
-
-      <line x1="0" y1={axisY} x2={OW} y2={axisY} stroke="#232640" strokeWidth="1" />
-
-      <line x1={appX}  y1={OBASE - 74} x2={appX}  y2={axisY + 8} stroke="#5ba4f5" strokeWidth="1" opacity="0.4" />
-      <line x1={restX} y1={OBASE - 38} x2={restX} y2={axisY + 8} stroke="#ffbc42" strokeWidth="1" opacity="0.35" />
-      <line x1={recX}  y1={OBASE - 82} x2={recX}  y2={axisY + 8} stroke="#ff7a4d" strokeWidth="1" opacity="0.4" />
-
-      <text x={appX}  y={axisY + 22} textAnchor="middle" fill="#5ba4f5" fontSize="12" fontWeight="600">Approaching gas</text>
-      <text x={appX}  y={axisY + 36} textAnchor="middle" fill="#8ab4d8" fontSize="10">moving toward us</text>
-
-      <text x={restX} y={axisY + 22} textAnchor="middle" fill="#c8a872" fontSize="11">rest frequency</text>
-      <text x={restX} y={axisY + 36} textAnchor="middle" fill="#9b9ece" fontSize="10" fontFamily="ui-monospace,monospace">1420.4 MHz</text>
-
-      <text x={recX}  y={axisY + 22} textAnchor="middle" fill="#ff7a4d" fontSize="12" fontWeight="600">Receding gas</text>
-      <text x={recX}  y={axisY + 36} textAnchor="middle" fill="#cc8c6e" fontSize="10">moving away from us</text>
     </svg>
   );
 }
