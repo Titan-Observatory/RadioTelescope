@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-ConnectionMode = Literal["serial", "simulated", "error"]
+ConnectionMode = Literal["serial", "disconnected", "error"]
 LnaState = Literal["on", "off", "unknown", "fault"]
 ArgType = Literal["u8", "u16", "s16", "u32", "s32", "bool"]
 

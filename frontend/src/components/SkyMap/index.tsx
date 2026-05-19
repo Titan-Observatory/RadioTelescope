@@ -1,623 +1,33 @@
 import A from 'aladin-lite';
-import { LineChart } from 'echarts/charts';
-import { GridComponent } from 'echarts/components';
-import * as echarts from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
-import type { EChartsOption } from 'echarts';
-import { Layers, Maximize2, Telescope } from 'lucide-react';
+import { Layers, Telescope } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import {
   altAzToRaDec,
-  HYDROGEN_LINE_MHZ,
   isInsideTriangle,
   moonIllumination,
   moonRaDec,
-  normalizeDeg,
-  positionAngleDeg,
   raDecToAltAz,
   sunRaDec,
-} from '../lib/astro';
-import type { AltAzPoint, RaDecTarget, RoboClawTelemetry, SkyOverlay, TelescopeConfig } from '../types';
+} from '../../lib/astro';
+import type { RaDecTarget, RoboClawTelemetry, SkyOverlay, TelescopeConfig } from '../../types';
 
-echarts.use([LineChart, GridComponent, CanvasRenderer]);
+import { CameraPip } from './CameraPip';
+import { DEFAULT_HORIZON_VIEW, initialHorizonRotationDeg } from './aladin/orientation';
+import { drawMoonIcon, drawSunIcon, pointInPolygon } from './horizon/icons';
+import { LightSpectrumSurveySelector } from './spectrum/SurveySelector';
+import {
+  HYDROGEN_SURVEY_ID,
+  SURVEYS,
+  type SurveyId,
+  surveyToneClass,
+} from './spectrum/surveys';
 
-// ─── Camera PIP ───────────────────────────────────────────────────────────────
-
-function CameraPip({ swapped, onToggleSwap }: { swapped: boolean; onToggleSwap: () => void }) {
-  const [enabled, setEnabled] = useState(false);
-  const [label, setLabel] = useState('Cam A');
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/camera/status')
-      .then((r) => r.json())
-      .then((d: { enabled: boolean; label: string }) => {
-        setEnabled(d.enabled);
-        setLabel(d.label);
-      })
-      .catch(() => {/* non-critical */});
-  }, []);
-
-  if (!enabled) return null;
-
-  return (
-    <div className={`cam-pip${error ? ' cam-pip-error' : ''}${swapped ? ' cam-pip-swapped' : ''}`}>
-      <img
-        className="cam-pip-feed"
-        src="/api/camera/stream"
-        alt="Camera feed"
-        onError={() => {
-          setError(true);
-          setEnabled(false);
-        }}
-        onLoad={() => setError(false)}
-      />
-      {error ? (
-        <div className="cam-pip-offline">No signal</div>
-      ) : (
-        <div className="cam-pip-live"><span className="cam-pip-dot" />LIVE</div>
-      )}
-      <button
-        type="button"
-        className="cam-pip-fullscreen"
-        onClick={onToggleSwap}
-        title={swapped ? 'Restore sky map' : 'Swap with sky map'}
-        aria-label={swapped ? 'Restore sky map' : 'Swap with sky map'}
-        aria-pressed={swapped}
-      >
-        <Maximize2 size={13} />
-      </button>
-      <div className="cam-pip-label">{label}</div>
-    </div>
-  );
-}
-
-// ─── Component-local helpers ─────────────────────────────────────────────────
-// Math primitives (degrees / coordinate transforms / solar + lunar position)
-// live in `../lib/astro.ts`; only the SkyMap-specific helpers stay here.
 
 const TARGET_CLICK_DRAG_TOLERANCE_PX = 6;
 
-function localUpOrientationDeg(center: RaDecTarget, config: TelescopeConfig, date: Date): number {
-  const centerAltAz = raDecToAltAz(center.ra_deg, center.dec_deg, config, date);
-  const upAlt = Math.min(89.5, centerAltAz.altitude_deg + 1);
-  const localUp = altAzToRaDec(
-    { altitude_deg: upAlt, azimuth_deg: centerAltAz.azimuth_deg },
-    config,
-    date,
-  );
-  return positionAngleDeg(center, localUp);
-}
 
-function initialHorizonRotationDeg(center: RaDecTarget, config: TelescopeConfig, date: Date): number {
-  const rotation = normalizeDeg(360 - localUpOrientationDeg(center, config, date));
-  return rotation === 0 ? 0.001 : rotation;
-}
-
-// ─── Canvas body-icon helpers ─────────────────────────────────────────────────
-
-/**
- * Draws the sun as an accurately-sized disc.
- * r is the pixel radius derived from the current Aladin projection so the
- * disc matches the sun's true ~0.53° angular diameter at whatever zoom level
- * the viewer is at.
- */
-function drawSunIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
-  // Limb darkening: centre is near-white, edge deepens to amber
-  const disc = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  disc.addColorStop(0,   '#fffde8');  // bright white-yellow core
-  disc.addColorStop(0.55, '#ffe030'); // yellow mid-disc
-  disc.addColorStop(1,   '#ffb000');  // amber limb
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-  ctx.fillStyle = disc;
-  ctx.fill();
-}
-
-/**
- * Draws the moon disc with the correct phase shape.
- *
- * Uses the two-arc path technique: the lit region is bounded by an outer
- * semicircle on the lit side and the terminator ellipse arc on the other
- * side, then filled in a single path — no masking or composite ops needed.
- *
- * fraction : 0 = new moon, 1 = full moon
- * waxing   : true → lit on the right, false → lit on the left
- */
-function drawMoonIcon(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-  fraction: number,
-  waxing: boolean,
-): void {
-  // Subtle corona
-  const glow = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 2.4);
-  glow.addColorStop(0,   'rgba(200, 218, 255, 0.22)');
-  glow.addColorStop(1,   'rgba(180, 200, 255, 0)');
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 2.4, 0, 2 * Math.PI);
-  ctx.fillStyle = glow;
-  ctx.fill();
-
-  // c runs −1 (new) → 0 (quarter) → +1 (full)
-  const c  = 2 * fraction - 1;
-  // Half-width of the terminator ellipse; small epsilon avoids a degenerate arc
-  const rx = Math.max(0.5, Math.abs(c) * r);
-
-  // Dark disc — shadow side fill so the moon is opaque against the survey
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-  ctx.fillStyle = '#0c1a2e';
-  ctx.fill();
-
-  // ── Phase shape ───────────────────────────────────────────────────────────
-  // Path: outer semicircle (lit side) + terminator ellipse arc (closing return).
-  // For gibbous (c > 0): ellipse bulges toward the dark side → counterclockwise.
-  // For crescent (c < 0): ellipse bulges toward the lit side → clockwise.
-  // Both arcs run top→bottom then bottom→top so the path closes perfectly.
-
-  ctx.beginPath();
-  if (waxing) {
-    // Lit on the right
-    ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, false);            // right semicircle ↓
-    ctx.ellipse(cx, cy, rx, r, 0, Math.PI / 2, -Math.PI / 2, c > 0); // terminator ↑
-  } else {
-    // Lit on the left
-    ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2, true);             // left semicircle ↓
-    ctx.ellipse(cx, cy, rx, r, 0, Math.PI / 2, -Math.PI / 2, c < 0); // terminator ↑
-  }
-  ctx.closePath();
-  ctx.fillStyle = '#dde8ff';
-  ctx.fill();
-
-  // Disc outline — faint ring so a thin crescent or new moon is still locatable
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-  ctx.strokeStyle = 'rgba(180, 200, 255, 0.35)';
-  ctx.lineWidth   = 1;
-  ctx.stroke();
-}
-
-function pointInPolygon(x: number, y: number, polygon: [number, number][]): boolean {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const [xi, yi] = polygon[i];
-    const [xj, yj] = polygon[j];
-    const intersect = (yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-// ─── Survey definitions ──────────────────────────────────────────────────────
-const SURVEYS = [
-  {
-    id: 'CDS/P/HI4PI/NHI',
-    label: '21cm Hydrogen Line',
-    shortLabel: 'H I 1420',
-    title: 'HI4PI 21cm neutral hydrogen column density',
-    description: 'Neutral hydrogen column density at 1420 MHz — the telescope\'s primary science target.',
-    spectrumMhz: HYDROGEN_LINE_MHZ,
-    markerLeft: 42,
-  },
-  {
-    id: 'CDS/P/PLANCK/R3/LFI/color',
-    label: 'Planck LFI',
-    shortLabel: 'Planck LFI',
-    title: 'Planck R3 LFI 30/44/70 GHz color composition',
-    description: 'Microwave sky at 30-70 GHz - synchrotron, free-free emission, and CMB foreground structure.',
-    spectrumMhz: 44_000,
-    markerLeft: 49,
-  },
-  {
-    id: 'CDS/P/PLANCK/R3/HFI/color',
-    label: 'Planck HFI',
-    shortLabel: 'Planck HFI',
-    title: 'Planck R3 HFI 353/545/857 GHz color composition',
-    description: 'Submillimeter sky at 353-857 GHz - thermal dust emission and cold galactic clouds.',
-    spectrumMhz: 545_000,
-    markerLeft: 55,
-  },
-  {
-    id: 'CDS/P/AKARI/FIS/Color',
-    label: 'AKARI FIS',
-    shortLabel: 'AKARI',
-    title: 'AKARI FIS far-infrared all-sky color survey',
-    description: 'Far-infrared (65–160 µm) — cold dust, molecular clouds, and star-forming regions.',
-    spectrumMhz: 3_100_000,
-    markerLeft: 58,
-  },
-  {
-    id: 'CDS/P/allWISE/color',
-    label: 'AllWISE',
-    shortLabel: 'AllWISE',
-    title: 'AllWISE infrared all-sky color survey',
-    description: 'Near/mid-infrared (3.4–22 µm) — stellar populations, AGN, and dusty galaxies.',
-    spectrumMhz: 25_000_000,
-    markerLeft: 72,
-  },
-  {
-    id: 'CDS/P/2MASS/color',
-    label: '2MASS',
-    shortLabel: '2MASS',
-    title: '2MASS near-infrared color survey',
-    description: 'Near-infrared JHK (1.2–2.2 µm) — stars, the galactic bulge, and nearby galaxies.',
-    spectrumMhz: 187_000_000,
-    markerLeft: 79,
-  },
-  {
-    id: 'CDS/P/DSS2/color',
-    label: 'Visible Light',
-    shortLabel: 'Visible',
-    title: 'DSS2 optical color all-sky survey',
-    description: 'Deep optical atlas (B/R/I, ~1″ resolution) digitized from photographic plates.',
-    spectrumMhz: 599_000_000,
-    markerLeft: 92,
-  },
-  {
-    id: 'CDS/P/GALEXGR6/AIS/color',
-    label: 'GALEX AIS',
-    shortLabel: 'GALEX',
-    title: 'GALEX GR6 AIS ultraviolet color survey',
-    description: 'Ultraviolet sky (FUV/NUV, about 150-230 nm) - hot young stars, star-forming regions, and UV-bright galaxies.',
-    spectrumMhz: 1_950_000_000,
-    markerLeft: 99.2,
-  },
-] as const;
-
-type SurveyId = (typeof SURVEYS)[number]['id'];
-
-const SPECTRUM_POINTS = 320;
-const MIN_FREQ_MHZ = 50;
-const MAX_FREQ_MHZ = 3_000_000_000;
-const VISIBLE_LOW_MHZ = 400_000_000;
-const VISIBLE_HIGH_MHZ = 790_000_000;
-const LOG_MIN_FREQ = Math.log10(MIN_FREQ_MHZ);
-const LOG_MAX_FREQ = Math.log10(MAX_FREQ_MHZ);
-const HYDROGEN_LOG_FREQ = Math.log10(HYDROGEN_LINE_MHZ);
-const VISIBLE_LOW_LOG_FREQ = Math.log10(VISIBLE_LOW_MHZ);
-const VISIBLE_HIGH_LOG_FREQ = Math.log10(VISIBLE_HIGH_MHZ);
-
-function logFreqToRatio(logFreq: number): number {
-  return (logFreq - LOG_MIN_FREQ) / (LOG_MAX_FREQ - LOG_MIN_FREQ);
-}
-
-function surveyDefinition(surveyId: SurveyId): (typeof SURVEYS)[number] {
-  return SURVEYS.find((survey) => survey.id === surveyId) ?? SURVEYS[0];
-}
-
-function surveyLogFreq(survey: (typeof SURVEYS)[number]): number {
-  return Math.log10(survey.spectrumMhz);
-}
-
-
-function surveyToneClass(survey: (typeof SURVEYS)[number]): string {
-  if (survey.id === 'CDS/P/HI4PI/NHI') return ' hydrogen';
-  if (survey.spectrumMhz >= VISIBLE_LOW_MHZ) return ' optical';
-  if (survey.spectrumMhz <= 500) return ' radio';
-  return '';
-}
-
-function surveySpectrumColor(survey: (typeof SURVEYS)[number]): string {
-  if (survey.spectrumMhz <= 500) return 'rgba(255, 188, 66, 0.96)';
-  if (survey.spectrumMhz < 2_000_000) return 'rgba(104, 158, 255, 0.96)';
-  if (survey.spectrumMhz < 400_000_000) return 'rgba(220, 114, 255, 0.96)';
-  if (survey.spectrumMhz <= VISIBLE_HIGH_MHZ) return 'rgba(255, 113, 82, 0.98)';
-  return 'rgba(184, 91, 255, 0.92)';
-}
-
-function formatAxisNumber(value: number, digits = 3): string {
-  const rounded = Number(value.toPrecision(digits));
-  return rounded.toLocaleString('en-US', {
-    maximumFractionDigits: Math.max(0, digits - Math.floor(Math.log10(Math.abs(rounded || 1))) - 1),
-  });
-}
-
-function freqLabelFromLog(value: number): string {
-  const mhz = 10 ** value;
-  if (mhz >= 1_000_000_000) return `${formatAxisNumber(mhz / 1_000_000_000)} PHz`;
-  if (mhz >= 1_000_000) return `${formatAxisNumber(mhz / 1_000_000)} THz`;
-  if (mhz >= 1_000) return `${formatAxisNumber(mhz / 1_000)} GHz`;
-  return `${formatAxisNumber(mhz)} MHz`;
-}
-
-function wavelengthLabelFromLog(value: number): string {
-  const hz = (10 ** value) * 1_000_000;
-  const meters = 299_792_458 / hz;
-  if (meters >= 1) return `${formatAxisNumber(meters)} m`;
-  if (meters >= 0.001) return `${formatAxisNumber(meters * 1000)} mm`;
-  if (meters >= 0.000001) return `${formatAxisNumber(meters * 1_000_000)} um`;
-  return `${formatAxisNumber(meters * 1_000_000_000)} nm`;
-}
-
-function spectrumWaveData(focusLogFreq: number): [number, number][] {
-  let phase = 0;
-  let previousRatio = 0;
-  return Array.from({ length: SPECTRUM_POINTS }, (_, i) => {
-    const ratio = i / (SPECTRUM_POINTS - 1);
-    const logFreq = LOG_MIN_FREQ + ratio * (LOG_MAX_FREQ - LOG_MIN_FREQ);
-    const dx = i === 0 ? 0 : ratio - previousRatio;
-    previousRatio = ratio;
-    const cyclesPerUnit = 1.4 + Math.pow(ratio, 1.85) * 24;
-    phase += dx * cyclesPerUnit * Math.PI * 2;
-    const distance = Math.abs(logFreq - focusLogFreq);
-    const selected = Math.exp(-(distance * distance) / (2 * 0.14 * 0.14));
-    const amplitude = 0.16 + selected * 0.11;
-    const focusLift = selected * 0.055;
-    return [logFreq, 0.5 + focusLift + Math.sin(phase) * amplitude];
-  });
-}
-
-function nearestSurveyForLogFreq(logFreq: number): SurveyId {
-  return SURVEYS.reduce((nearest, survey) => {
-    const nearestDistance = Math.abs(logFreq - surveyLogFreq(nearest));
-    const surveyDistance = Math.abs(logFreq - surveyLogFreq(survey));
-    return surveyDistance < nearestDistance ? survey : nearest;
-  }, SURVEYS[0]).id;
-}
-
-function buildSpectrumOption(
-  hoverLogFreq: number | null,
-  activeSurvey: SurveyId,
-  animatedFocusLogFreq: number,
-): EChartsOption {
-  const activeDef = surveyDefinition(activeSurvey);
-  const targetLogFreq = surveyLogFreq(activeDef);
-  const focus = hoverLogFreq ?? animatedFocusLogFreq;
-  const baseData = spectrumWaveData(focus);
-  const hoverData = hoverLogFreq == null
-    ? []
-    : baseData.map(([x, y]) => (Math.abs(x - hoverLogFreq) <= 0.18 ? [x, y] : [x, null]));
-  const selectionData = baseData.map(([x, y]) => (Math.abs(x - animatedFocusLogFreq) <= 0.22 ? [x, y] : [x, null]));
-  const targetGlowData = baseData.map(([x, y]) => (Math.abs(x - targetLogFreq) <= 0.1 ? [x, y] : [x, null]));
-  const visibleStart = logFreqToRatio(VISIBLE_LOW_LOG_FREQ);
-  const visibleEnd = logFreqToRatio(VISIBLE_HIGH_LOG_FREQ);
-  const activeColor = surveySpectrumColor(activeDef);
-
-  return {
-    animation: true,
-    animationDurationUpdate: 80,
-    animationEasingUpdate: 'cubicOut',
-    grid: { left: 32, right: 12, top: 6, bottom: 42 },
-    xAxis: {
-      type: 'value',
-      min: LOG_MIN_FREQ,
-      max: LOG_MAX_FREQ,
-      splitNumber: 4,
-      axisLine: { lineStyle: { color: 'rgba(223, 230, 255, 0.28)' } },
-      axisTick: { lineStyle: { color: 'rgba(223, 230, 255, 0.28)' } },
-      splitLine: { show: false },
-      axisLabel: {
-        color: 'rgba(223, 230, 255, 0.72)',
-        fontSize: 10,
-        lineHeight: 13,
-        formatter: (value: number) => `${freqLabelFromLog(value)}\n${wavelengthLabelFromLog(value)}`,
-      },
-    },
-    yAxis: { type: 'value', min: 0, max: 1, show: false },
-    series: [
-      {
-        type: 'line',
-        data: baseData,
-        smooth: 0.38,
-        symbol: 'none',
-        lineStyle: {
-          width: 5,
-          opacity: 1,
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0.00, color: 'rgba(76, 172, 255, 0.42)' },
-            { offset: 0.22, color: 'rgba(76, 172, 255, 0.82)' },
-            { offset: Math.max(0, visibleStart - 0.06), color: 'rgba(255, 95, 214, 0.78)' },
-            { offset: visibleStart, color: 'rgba(139, 76, 255, 1)' },
-            { offset: visibleStart + (visibleEnd - visibleStart) * 0.28, color: 'rgba(54, 108, 255, 1)' },
-            { offset: visibleStart + (visibleEnd - visibleStart) * 0.50, color: 'rgba(42, 224, 118, 1)' },
-            { offset: visibleStart + (visibleEnd - visibleStart) * 0.72, color: 'rgba(255, 224, 66, 1)' },
-            { offset: visibleEnd, color: 'rgba(255, 82, 58, 1)' },
-            { offset: Math.min(1, visibleEnd + 0.10), color: 'rgba(174, 84, 255, 0.70)' },
-            { offset: 1.00, color: 'rgba(174, 84, 255, 0.34)' },
-          ]),
-        },
-        silent: true,
-      },
-      {
-        type: 'line',
-        data: hoverData,
-        smooth: 0.44,
-        connectNulls: false,
-        symbol: 'none',
-        lineStyle: {
-          width: hoverLogFreq == null ? 0 : 8,
-          opacity: hoverLogFreq == null ? 0 : 0.7,
-          color: 'rgba(255, 255, 255, 0.62)',
-          shadowBlur: 12,
-          shadowColor: 'rgba(255, 255, 255, 0.46)',
-        },
-        silent: true,
-      },
-      {
-        type: 'line',
-        data: selectionData,
-        smooth: 0.44,
-        connectNulls: false,
-        symbol: 'none',
-        lineStyle: {
-          width: 10,
-          opacity: 0.72,
-          color: activeColor,
-          shadowBlur: 18,
-          shadowColor: activeColor,
-        },
-        silent: true,
-      },
-      {
-        type: 'line',
-        data: targetGlowData,
-        smooth: 0.44,
-        connectNulls: false,
-        symbol: 'none',
-        lineStyle: {
-          width: 5,
-          opacity: 0.98,
-          color: 'rgba(255, 255, 255, 0.86)',
-          shadowBlur: 14,
-          shadowColor: activeColor,
-        },
-        silent: true,
-      },
-      {
-        type: 'line',
-        data: [[animatedFocusLogFreq, 0.12], [animatedFocusLogFreq, 0.9]],
-        symbol: 'none',
-        lineStyle: {
-          width: 2,
-          opacity: 0.76,
-          color: activeColor,
-          shadowBlur: 16,
-          shadowColor: activeColor,
-        },
-        silent: true,
-      },
-      {
-        type: 'line',
-        data: [[HYDROGEN_LOG_FREQ, 0.18], [HYDROGEN_LOG_FREQ, 0.82]],
-        symbol: 'none',
-        lineStyle: { width: 1.5, color: 'rgba(255, 188, 66, 0.9)', type: 'dashed' },
-        silent: true,
-      },
-    ],
-  };
-}
-
-function LightSpectrumSurveySelector({
-  activeSurvey,
-  onSelectSurvey,
-  disabled,
-}: {
-  activeSurvey: SurveyId;
-  onSelectSurvey: (survey: SurveyId) => void;
-  disabled: boolean;
-}) {
-  const chartHostRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
-  const activeSurveyRef = useRef(activeSurvey);
-  const disabledRef = useRef(disabled);
-  const onSelectSurveyRef = useRef(onSelectSurvey);
-  const [hoverLogFreq, setHoverLogFreq] = useState<number | null>(null);
-  const [animatedFocusLogFreq, setAnimatedFocusLogFreq] = useState(() => surveyLogFreq(surveyDefinition(activeSurvey)));
-
-  useEffect(() => { activeSurveyRef.current = activeSurvey; }, [activeSurvey]);
-  useEffect(() => { disabledRef.current = disabled; }, [disabled]);
-  useEffect(() => { onSelectSurveyRef.current = onSelectSurvey; }, [onSelectSurvey]);
-
-  useEffect(() => {
-    const host = chartHostRef.current;
-    if (!host) return;
-    const chart = echarts.init(host, undefined, { renderer: 'canvas' });
-    chartRef.current = chart;
-    chart.setOption(buildSpectrumOption(null, activeSurveyRef.current, surveyLogFreq(surveyDefinition(activeSurveyRef.current))));
-
-    const updateHover = (offsetX: number) => {
-      const value = chart.convertFromPixel({ gridIndex: 0 }, [offsetX, 0]) as [number, number] | undefined;
-      if (!value || !Number.isFinite(value[0])) return;
-      setHoverLogFreq(Math.min(LOG_MAX_FREQ, Math.max(LOG_MIN_FREQ, value[0])));
-    };
-
-    chart.getZr().on('mousemove', (event) => updateHover(event.offsetX));
-    chart.getZr().on('globalout', () => setHoverLogFreq(null));
-    chart.getZr().on('click', (event) => {
-      if (disabledRef.current) return;
-      const value = chart.convertFromPixel({ gridIndex: 0 }, [event.offsetX, 0]) as [number, number] | undefined;
-      if (!value || !Number.isFinite(value[0])) return;
-      onSelectSurveyRef.current(nearestSurveyForLogFreq(value[0]));
-    });
-
-    const frame = requestAnimationFrame(() => {
-      chart.resize();
-      chart.setOption(
-        buildSpectrumOption(null, activeSurveyRef.current, surveyLogFreq(surveyDefinition(activeSurveyRef.current))),
-        { notMerge: true },
-      );
-    });
-    const resizeObserver = new ResizeObserver(() => chart.resize());
-    resizeObserver.observe(host);
-    return () => {
-      cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
-      chart.dispose();
-      chartRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const target = surveyLogFreq(surveyDefinition(activeSurvey));
-    let frame = 0;
-    let start = 0;
-    const from = animatedFocusLogFreq;
-    const duration = Math.min(950, Math.max(520, Math.abs(target - from) * 110));
-    const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-
-    const step = (time: number) => {
-      if (start === 0) start = time;
-      const progress = Math.min(1, (time - start) / duration);
-      setAnimatedFocusLogFreq(from + (target - from) * ease(progress));
-      if (progress < 1) frame = requestAnimationFrame(step);
-    };
-
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [activeSurvey]);
-
-  useEffect(() => {
-    chartRef.current?.setOption(buildSpectrumOption(hoverLogFreq, activeSurvey, animatedFocusLogFreq), {
-      notMerge: true,
-      lazyUpdate: true,
-    });
-  }, [hoverLogFreq, activeSurvey, animatedFocusLogFreq]);
-
-  const activeDef = surveyDefinition(activeSurvey);
-  const hydrogenMarkerLeft = `calc(32px + ${logFreqToRatio(HYDROGEN_LOG_FREQ) * 100}% - ${logFreqToRatio(HYDROGEN_LOG_FREQ) * 44}px)`;
-
-  return (
-    <div id="skymap-spectrum-selector" className={`skymap-spectrum-selector${disabled ? ' disabled' : ''}`}>
-      <p className="skymap-spectrum-capability">
-        This telescope is only capable of observing at the 21cm hydrogen line. Surveys in other wavelengths of light are available for exploration.
-      </p>
-      <div className="skymap-spectrum-chart-shell">
-        <div className="skymap-spectrum-chart" ref={chartHostRef} role="button" aria-label="Select sky survey by frequency" />
-        <div className="skymap-hydrogen-line-marker" style={{ left: hydrogenMarkerLeft }} aria-hidden="true">
-          <span>21cm</span>
-        </div>
-      </div>
-      <div className="skymap-survey-list" role="radiogroup" aria-label="Survey presets">
-        {SURVEYS.map((survey) => (
-          <button
-            key={survey.id}
-            type="button"
-            role="radio"
-            aria-checked={activeSurvey === survey.id}
-            className={`skymap-survey-btn${surveyToneClass(survey)}${activeSurvey === survey.id ? ' active' : ''}`}
-            onClick={() => onSelectSurvey(survey.id)}
-            disabled={disabled}
-            title={survey.title}
-          >
-            {survey.shortLabel}
-          </button>
-        ))}
-      </div>
-      <p className="skymap-spectrum-desc">{activeDef.description}</p>
-    </div>
-  );
-}
-const DEFAULT_HORIZON_VIEW: AltAzPoint = {
-  altitude_deg: 15,
-  azimuth_deg: 45,
-};
-
-
-// â”€â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Component ────────────────────────────────────────────────────────────────
 interface SkyMapProps {
   telemetry: RoboClawTelemetry | null;
   config: TelescopeConfig | null;
@@ -653,10 +63,10 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
   const onNoticeRef = useRef<((msg: string | null) => void) | null>(null);
   // Latest selected survey, mirrored into a ref so the click handler (attached
   // once in the init effect) can check it without being rebuilt.
-  const surveyRef = useRef<SurveyId>('CDS/P/HI4PI/NHI');
+  const surveyRef = useRef<SurveyId>(HYDROGEN_SURVEY_ID);
   const [ready, setReady] = useState(false);
   const [pending, setPending] = useState<RaDecTarget | null>(null);
-  const [survey, setSurvey] = useState<SurveyId>('CDS/P/HI4PI/NHI');
+  const [survey, setSurvey] = useState<SurveyId>(HYDROGEN_SURVEY_ID);
   const [viewSelectorOpen, setViewSelectorOpen] = useState(false);
   const [cameraSwapped, setCameraSwapped] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<
@@ -861,7 +271,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
         // instrument and pointing at, say, an infrared source would just put
         // the beam somewhere meaningless. Drop the click silently rather than
         // setting a target the user can't actually observe.
-        if (surveyRef.current !== 'CDS/P/HI4PI/NHI') return;
+        if (surveyRef.current !== HYDROGEN_SURVEY_ID) return;
 
         const rect = container.getBoundingClientRect();
         const coords = aladin.pix2world(e.clientX - rect.left, e.clientY - rect.top);
@@ -874,9 +284,9 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
 
         const altAz = raDecToAltAz(ra_deg, dec_deg, currentConfig, new Date());
 
-        // In simulated mode skip all limit checks — no hardware to protect
-        const isSimulated = telemetryRef.current?.connection.mode === 'simulated';
-        if (!isSimulated) {
+        // No physical hardware to protect when disconnected — skip limit checks
+        const isDisconnected = telemetryRef.current?.connection.mode === 'disconnected';
+        if (!isDisconnected) {
           if (altAz.altitude_deg < 0) {
             onNoticeRef.current?.('Selected point is below the horizon.');
             return;
@@ -920,7 +330,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
   // Change survey
   useEffect(() => {
     if (!ready || !aladinRef.current) return;
-    if (survey === 'CDS/P/HI4PI/NHI') {
+    if (survey === HYDROGEN_SURVEY_ID) {
       aladinRef.current.setImageLayer(
         A.imageHiPS('CDS/P/HI4PI/NHI', {
           name: 'HI4PI colorized hydrogen line',
@@ -1398,7 +808,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
 
     beamOverlayRef.current.removeAll();
     if (ra_deg != null && dec_deg != null) {
-      // Outer glow ring (2Ã— FWHM radius, translucent)
+      // Outer glow ring (2× FWHM radius, translucent)
       beamOverlayRef.current.add(
         A.circle(ra_deg, dec_deg, fwhm, { color: 'rgba(114,224,173,0.10)', lineWidth: 1 }),
       );
@@ -1492,7 +902,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
   return (
     <div
       className={`skymap-wrapper${cameraSwapped ? ' skymap-wrapper-swapped' : ''}${
-        survey !== 'CDS/P/HI4PI/NHI' ? ' skymap-wrapper-explore' : ''
+        survey !== HYDROGEN_SURVEY_ID ? ' skymap-wrapper-explore' : ''
       }`}
       onMouseMove={handleSolarHover}
       onMouseLeave={handleSkyMapLeave}
@@ -1526,7 +936,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
 
       {viewSelectorOpen && (
         <div className="skymap-surveys skymap-surveys-mobile" role="group" aria-label="Sky survey">
-          {SURVEYS.filter((s) => s.id === 'CDS/P/HI4PI/NHI' || s.id === 'CDS/P/DSS2/color').map((s) => (
+          {SURVEYS.filter((s) => s.id === HYDROGEN_SURVEY_ID || s.id === 'CDS/P/DSS2/color').map((s) => (
             <button
               key={s.id}
               type="button"
@@ -1552,7 +962,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
           ) : (
             <span>{fmtAltAz(telemetry!.altitude_deg!, telemetry!.azimuth_deg!)}</span>
           )}
-          {survey !== 'CDS/P/HI4PI/NHI' && (
+          {survey !== HYDROGEN_SURVEY_ID && (
             <span className="skymap-explore-badge" title="Pointing is locked on exploration surveys — switch to H I 1420 to set a target.">
               Explore only
             </span>

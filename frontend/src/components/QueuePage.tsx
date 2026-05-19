@@ -3,6 +3,7 @@ import { Cloud } from 'lucide-react';
 
 import queueSpectrumRaw from '../data/queueSpectrum.txt?raw';
 import type { QueueStatus } from '../queue';
+import { StarsBackground } from './StarsBackground';
 
 declare global {
   interface Window {
@@ -30,6 +31,7 @@ const TURNSTILE_SCRIPT_SRC =
 
 // Hero spectrum: 600×135 — animated playback of a real H I survey profile.
 const HW = 600;
+const HERO_CHART_TOP = -34;
 const HERO_BASE_Y = 112;          // y-coordinate of the 0-power baseline
 const HERO_PEAK_PX = 90;          // pixels of y-range allocated to the strongest peak
 
@@ -180,7 +182,7 @@ function deterministicNoise(seed: number, timeSeconds: number): number {
   );
 }
 
-function useVisibleAnimation<T extends Element>() {
+function useVisibleAnimation<T extends Element>(rootMarginTopPx = 0) {
   const ref = useRef<T | null>(null);
   const [active, setActive] = useState(true);
 
@@ -197,10 +199,15 @@ function useVisibleAnimation<T extends Element>() {
       update();
     };
 
+    // Negative top rootMargin shrinks the observer's effective viewport from
+    // the top, so anything sliding under the sticky header counts as out of
+    // view. Pausing the animation while it's behind a translucent
+    // backdrop-filter is the only thing that lets the compositor cache the
+    // blurred header layer between frames.
     const observer = new IntersectionObserver(([entry]) => {
       inView = entry.isIntersecting;
       update();
-    }, { threshold: 0.01 });
+    }, { threshold: 0.01, rootMargin: `-${rootMarginTopPx}px 0px 0px 0px` });
 
     document.addEventListener('visibilitychange', onVisibilityChange);
     observer.observe(el);
@@ -210,9 +217,23 @@ function useVisibleAnimation<T extends Element>() {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       observer.disconnect();
     };
-  }, []);
+  }, [rootMarginTopPx]);
 
   return [ref, active] as const;
+}
+
+function useStickyHeaderHeight() {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = document.querySelector('.queue-header') as HTMLElement | null;
+    if (!el) return;
+    const measure = () => setHeight(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return height;
 }
 
 const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: boolean }) {
@@ -230,7 +251,8 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
   const rafRef = useRef<number | null>(null);
   const linePathRef = useRef<SVGPathElement | null>(null);
   const fillPathRef = useRef<SVGPathElement | null>(null);
-  const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>();
+  const headerHeight = useStickyHeaderHeight();
+  const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>(headerHeight);
   const initialPaths = buildHeroPaths(smoothedRef.current);
 
   useEffect(() => {
@@ -269,7 +291,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
       <figcaption className="h1-hero-figcaption">Hydrogen line</figcaption>
       <svg
         ref={svgRef}
-        viewBox="0 -22 600 166"
+        viewBox={`0 ${HERO_CHART_TOP} ${HW} ${144 - HERO_CHART_TOP}`}
         className="h1-svg"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
@@ -280,11 +302,11 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
           <stop offset="100%" stopColor="#ffbc42" stopOpacity="0" />
         </linearGradient>
       </defs>
-      {[5, 30, 55, 80, 105].map(y => (
+      {[HERO_CHART_TOP, -22, 5, 30, 55, 80, 105].map(y => (
         <line key={y} x1="0" y1={y} x2={HW} y2={y} stroke="#1a1d2e" strokeWidth="1" />
       ))}
       {FREQ_TICKS_MHZ.map(f => (
-        <line key={f} x1={fToX(f)} y1="-22" x2={fToX(f)} y2="115" stroke="#1a1d2e" strokeWidth="1" />
+        <line key={f} x1={fToX(f)} y1={HERO_CHART_TOP} x2={fToX(f)} y2="115" stroke="#1a1d2e" strokeWidth="1" />
       ))}
       <path ref={fillPathRef} d={initialPaths.fill} fill="url(#h1HeroGrad)" />
       <path ref={linePathRef} d={initialPaths.line} fill="none" stroke="#ffbc42" strokeWidth="2.5" strokeLinejoin="round" />
@@ -540,7 +562,8 @@ function TelescopeIllustration({ cx, cy }: { cx: number; cy: number }) {
 export function DopplerAnimation({ renderTimeSeconds, paused = false }: { renderTimeSeconds?: number; paused?: boolean } = {}) {
   const [now, setNow] = useState(0);
   const startRef = useRef(0);
-  const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>();
+  const headerHeight = useStickyHeaderHeight();
+  const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>(headerHeight);
   const isRenderFrame = renderTimeSeconds != null;
   // Smoothed noisy bin values for the mini spectrum trace. Updated in the rAF
   // loop so render stays a pure function of `now` plus this ref.
@@ -1038,16 +1061,16 @@ export function QueuePage({
   return (
     <div className="queue-waiting">
       <header className={`queue-header${headerCollapsed ? ' queue-header-collapsed' : ''}`}>
-        <p className="queue-content-disclaimer">
-          All written content is made by humans. AI is a tool, not a teacher.
-        </p>
         <div className="queue-header-inner">
           <div className="queue-header-title">
             <h1>{inQueue ? 'You are in the queue' : 'Joining the queue'}</h1>
             <p className="queue-header-sub">
               {inQueue
-                ? "Only one observer can be in control at a time. While you wait, scroll on to learn what you'll be observing."
+                ? "While you wait, scroll on to learn what you'll be observing."
                 : 'Complete the quick verification to take your place in line.'}
+            </p>
+            <p className="queue-content-disclaimer">
+              All content was researched and written by humans :) AI is a tool, not a replacement.
             </p>
           </div>
           <div className="queue-header-status">
@@ -1096,6 +1119,7 @@ export function QueuePage({
 
         {/* ── Spin-flip section ─────────────────────────────────────────────── */}
         <section className="h1-spinflip" id="h1-spinflip-section">
+          <StarsBackground />
           <div className="h1-spinflip-inner">
             <div className="h1-spinflip-text">
               <span className="h1-eyebrow">What causes it?</span>
@@ -1108,9 +1132,9 @@ export function QueuePage({
                     <img src="/Screenshot%202026-05-18%20202822.png" alt="Electron spin explained: imagine a ball that's rotating, except it's not a ball and it's not rotating." />
                   </span>
                 </button>{' '}
-                to say the least, so for the purposes of this analogy, we'll simplify spin to it's two states: "up" and "down". The spin-flip transition occurs when the spins of the proton and electron flip from being aligned (both up or both down) to being anti-aligned (one up, one down), or vice versa. This transition releases a photon with a wavelength of 21 cm, which corresponds to the hydrogen line we observe in radio astronomy.
+                to say the least, so for this analogy, we'll simplify spin to its two possible states: "up" and "down". The spin of each particle induces a small magnetic moment, and the interaction between them gives the parallel configuration, where the proton and electron spins point in the same direction, slightly more energy than the anti-parallel configuration, where one is up and the other is down. A spin-flip transition happens when the electron's spin spontaneously flips, releasing a photon at 1420.4 MHz. That photon is the hydrogen line observed in radio astronomy.
               </p>
-              <p className="h1-section-body">Despite a spin-flip transition being exceptionally rare (</p>
+              <p className="h1-section-body">Although an individual spin-flip transition is exceptionally rare, with an average wait of about 11 million years, neutral hydrogen is so abundant that the combined signal is constant and measurable, even with the smallest radio telescopes.</p>
             </div>
             <div className="h1-spinflip-visual" />
           </div>

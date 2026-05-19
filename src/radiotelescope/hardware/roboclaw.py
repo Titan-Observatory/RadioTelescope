@@ -342,15 +342,49 @@ class SerialRoboClaw:
         return data
 
 
+class NullRoboClaw:
+    """Stand-in client used when no serial RoboClaw is reachable.
+
+    Every command fails with ok=False; snapshot returns an empty telemetry
+    payload carrying the disconnected ConnectionStatus. The rest of the app
+    treats this as "no hardware to talk to" — telemetry is null, commands
+    refuse, and routes that gate on connectedness bypass safety checks they
+    cannot enforce without real motors (see routes_roboclaw).
+    """
+
+    def __init__(self, config: RoboClawConfig, *, mode: Literal["disconnected", "error"] = "disconnected", message: str | None = None) -> None:
+        self._connection = ConnectionStatus(
+            mode=mode,
+            port=config.port,
+            baudrate=config.baudrate,
+            address=config.address,
+            connected=False,
+            message=message or "RoboClaw not connected",
+        )
+
+    @property
+    def connection(self) -> ConnectionStatus:
+        return self._connection
+
+    def execute(self, command_id: str, args: dict[str, int | bool] | None = None) -> CommandResult:
+        return CommandResult(command_id=command_id, ok=False, error="RoboClaw not connected")
+
+    def snapshot(self) -> RoboClawTelemetry:
+        return RoboClawTelemetry(connection=self._connection, timestamp=time.time())
+
+    def stop_all(self) -> dict[str, CommandResult]:
+        return {}
+
+    def close(self) -> None:
+        return None
+
+
 def make_client(config: RoboClawConfig) -> RoboClawClient:
-    if config.connect_mode == "simulated":
-        return SimulatedRoboClaw(config)
     try:
         return SerialRoboClaw(config)
     except Exception as exc:
-        if config.connect_mode == "serial":
-            return SimulatedRoboClaw(config, mode="error", message=f"Serial connection failed: {exc}")
-        return SimulatedRoboClaw(config, message=f"Serial connection failed; using simulator: {exc}")
+        mode = "error" if config.connect_mode == "serial" else "disconnected"
+        return NullRoboClaw(config, mode=mode, message=f"Serial connection failed: {exc}")
 
 
 def build_snapshot(client: RoboClawClient, connection: ConnectionStatus) -> RoboClawTelemetry:
@@ -536,8 +570,3 @@ def _status_flags(status: int | None) -> list[str]:
     if status is None:
         return []
     return [label for bit, label in STATUS_FLAGS.items() if status & bit]
-
-
-# Re-exported at the bottom so the simulator module can import the helpers it
-# depends on from this module without a circular import.
-from radiotelescope.hardware.roboclaw_simulator import SimulatedRoboClaw  # noqa: E402, F401

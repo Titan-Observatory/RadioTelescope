@@ -19,7 +19,7 @@ class RoboClawConfig(BaseModel):
     # as decimal 128, which is 0x80 in this config, not 0x128.
     address: int = Field(default=0x80, ge=0x80, le=0x87)
     timeout_s: float = Field(default=0.25, gt=0)
-    connect_mode: Literal["auto", "serial", "simulated"] = "auto"
+    connect_mode: Literal["auto", "serial"] = "auto"
 
 
 class TelemetryConfig(BaseModel):

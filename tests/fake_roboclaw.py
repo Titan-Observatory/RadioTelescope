@@ -1,3 +1,10 @@
+"""In-memory RoboClaw stand-in for tests.
+
+This is the former `SimulatedRoboClaw` from production code. It lives in tests/
+because production ships only the real serial driver plus a NullRoboClaw stub —
+no fake hardware path is exposed to end users.
+"""
+
 from __future__ import annotations
 
 import random
@@ -17,7 +24,7 @@ from radiotelescope.models.state import CommandResult, ConnectionStatus, RoboCla
 
 
 class SimulatedRoboClaw:
-    def __init__(self, config: RoboClawConfig, mode: Literal["simulated", "error"] = "simulated", message: str | None = None) -> None:
+    def __init__(self, config: RoboClawConfig, mode: Literal["disconnected", "error"] = "disconnected", message: str | None = None) -> None:
         self._cfg = config
         self._connection = ConnectionStatus(
             mode=mode,
@@ -25,7 +32,7 @@ class SimulatedRoboClaw:
             baudrate=config.baudrate,
             address=config.address,
             connected=False,
-            message=message or "Using simulated RoboClaw",
+            message=message or "Using simulated RoboClaw (tests only)",
         )
         self._started = time.time()
         self._firmware = "Simulated RoboClaw 4.1.34"

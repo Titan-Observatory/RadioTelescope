@@ -60,13 +60,15 @@ def _ramps(speed: int, accel: int | None, decel: int | None) -> tuple[int, int]:
     )
 
 
-def _is_simulated(request: Request) -> bool:
-    return _service(request).client.connection.mode == "simulated"
+def _is_disconnected(request: Request) -> bool:
+    # Only the explicit "no hardware wired up" state bypasses safety gates.
+    # Transient errors and remote-gateway failures (mode="error") still enforce.
+    return _service(request).client.connection.mode == "disconnected"
 
 
 def _enforce_pointing_limits(altitude_deg: float, azimuth_deg: float, request: Request) -> None:
-    if _is_simulated(request):
-        return  # no physical hardware to protect in simulation
+    if _is_disconnected(request):
+        return  # no physical hardware to protect
     if not _inside_pointing_limits(altitude_deg, azimuth_deg, request):
         raise HTTPException(
             status_code=400,
@@ -272,7 +274,7 @@ async def telescope_config(request: Request):
 async def goto_radec(body: RaDecRequest, request: Request):
     antenna = request.app.state.antenna
     alt, az = await asyncio.to_thread(radec_to_altaz, body.ra_deg, body.dec_deg, antenna)
-    if alt < 0 and not _is_simulated(request):
+    if alt < 0 and not _is_disconnected(request):
         raise HTTPException(status_code=400, detail=f"Target is below the horizon (alt={alt:.1f}°)")
     return await _execute_goto_altaz(
         alt, az,

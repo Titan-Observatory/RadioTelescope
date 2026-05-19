@@ -7,12 +7,12 @@ from fastapi.testclient import TestClient
 from radiotelescope.main import create_app
 
 
-def test_api_exposes_simulated_health(simulated_config_path):
+def test_api_exposes_disconnected_health(simulated_config_path):
     with TestClient(create_app(simulated_config_path)) as client:
         response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json()["connection"]["mode"] == "simulated"
+    assert response.json()["connection"]["mode"] == "disconnected"
 
 
 def test_api_command_registry_exposes_operator_commands_only(simulated_config_path):

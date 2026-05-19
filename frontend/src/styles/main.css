@@ -2405,8 +2405,10 @@ h2.panel-header {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
+  /* Dim-only — no backdrop-filter here. A full-viewport blur forces the
+     compositor to re-rasterize the entire page every frame the hero spectrum
+     repaints. The blur now lives on .captcha-modal (small area, cheap). */
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2414,7 +2416,7 @@ h2.panel-header {
 }
 
 .captcha-modal {
-  background: var(--surface-1);
+  background: color-mix(in srgb, var(--surface-1) 90%, transparent);
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
   padding: 24px 28px;
@@ -2446,18 +2448,20 @@ h2.panel-header {
   scroll-behavior: smooth;
 }
 
+.stars-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .queue-header {
   position: sticky;
   top: var(--queue-viewport-top, 0px);
   z-index: 10;
-  /* Opaque background (was a 88%-transparent surface + 10px backdrop-filter
-     blur). backdrop-filter forces the browser to re-blur whatever is behind
-     the sticky header every time that content paints, which made the hero
-     spectrum animation feel orders of magnitude heavier than it actually is —
-     when scrolled to the bottom the hero is out of view (animation halted by
-     IntersectionObserver), the header sits over static content, and the page
-     is smooth. Solid background sidesteps the recomposition entirely. */
-  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
   border-bottom: 1px solid var(--hairline);
 }
 
@@ -2487,7 +2491,7 @@ h2.panel-header {
 .queue-header-inner {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 36px 24px 18px;
+  padding: 20px 24px 18px;
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -2581,17 +2585,10 @@ h2.panel-header {
 .queue-waiting-body p { margin: 0; }
 
 .queue-content-disclaimer {
-  position: absolute;
-  top: 8px;
-  left: 24px;
-  right: 24px;
-  max-width: 1180px;
-  margin: 0 auto;
+  margin: 6px 0 0;
   color: var(--fg-subtle);
   font-size: 12px;
   line-height: 1.4;
-  text-align: right;
-  pointer-events: none;
 }
 
 @media (max-width: 720px) {
@@ -2599,7 +2596,7 @@ h2.panel-header {
     grid-template-columns: 1fr;
     align-items: stretch;
     gap: 14px;
-    padding: 32px 18px 12px;
+    padding: 14px 18px 12px;
   }
   .queue-header-sub {
     max-height: 4.8em;
@@ -2617,12 +2614,6 @@ h2.panel-header {
   .queue-header-status {
     align-items: flex-start;
     width: 100%;
-  }
-  .queue-content-disclaimer {
-    top: 7px;
-    left: 18px;
-    right: 18px;
-    text-align: left;
   }
 }
 
@@ -2713,11 +2704,12 @@ h2.panel-header {
   position: relative;
 }
 .h1-spinflip:not(.h1-spinflip-alt) {
-  background-image:
-    linear-gradient(to right, rgba(155, 158, 206, 0.025) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(155, 158, 206, 0.025) 1px, transparent 1px);
-  background-size: 80px 80px;
-  background-position: -1px -1px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.h1-spinflip:not(.h1-spinflip-alt) > .h1-spinflip-inner {
+  position: relative;
+  z-index: 1;
 }
 .h1-spinflip-alt { background: var(--surface-1); }
 
@@ -2752,7 +2744,12 @@ h2.panel-header {
 
 /* Doppler section */
 .h1-doppler {
-  background: var(--surface-1);
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(to right, rgba(155, 158, 206, 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(155, 158, 206, 0.025) 1px, transparent 1px);
+  background-size: 80px 80px;
+  background-position: -1px -1px;
   padding: 64px 24px 72px;
   /* Anchor-jump landing point clears the sticky queue header. */
   scroll-margin-top: 110px;
