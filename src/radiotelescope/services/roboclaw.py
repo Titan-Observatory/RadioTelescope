@@ -47,6 +47,7 @@ class RoboClawService:
         self._jog_sequences: dict[str, int] = {}
         self._active_jog: tuple[str, int] | None = None
         self._jog_watchdog_task: asyncio.Task | None = None
+        self._io_lock = asyncio.Lock()
 
     @property
     def client(self) -> RoboClawClient:
@@ -74,6 +75,18 @@ class RoboClawService:
             self._position_target = None
             return
         self._position_target = PositionTarget(m1=m1, m2=m2)
+
+    async def execute(self, command_id: str, args: dict[str, int | bool] | None = None):
+        async with self._io_lock:
+            return await asyncio.to_thread(self._client.execute, command_id, args or {})
+
+    async def stop_all(self):
+        async with self._io_lock:
+            return await asyncio.to_thread(self._client.stop_all)
+
+    async def snapshot(self) -> RoboClawTelemetry:
+        async with self._io_lock:
+            return await asyncio.to_thread(self._client.snapshot)
 
     def accept_jog_sequence(self, token: str, seq: int) -> bool:
         """Record a jog sequence if it is newer than any prior packet."""
@@ -107,7 +120,7 @@ class RoboClawService:
             if self._active_jog != (token, seq):
                 return
             self._active_jog = None
-            result = await asyncio.to_thread(self._client.stop_all)
+            result = await self.stop_all()
             failed = [item.error or item.command_id for item in result.values() if not item.ok]
             if failed:
                 logger.warning("Failed to stop expired jog %s/%s: %s", token, seq, "; ".join(failed))
@@ -119,8 +132,8 @@ class RoboClawService:
     async def refresh_stored_qpps(self) -> None:
         """Read each axis's velocity-PID QPPS from the controller and cache it."""
         try:
-            m1 = await asyncio.to_thread(self._client.execute, "read_m1_velocity_pid", {})
-            m2 = await asyncio.to_thread(self._client.execute, "read_m2_velocity_pid", {})
+            m1 = await self.execute("read_m1_velocity_pid", {})
+            m2 = await self.execute("read_m2_velocity_pid", {})
         except Exception as exc:
             logger.warning("Could not read stored QPPS from controller: %s", exc)
             return
@@ -173,7 +186,7 @@ class RoboClawService:
 
     async def refresh(self) -> RoboClawTelemetry:
         """Take a fresh hardware snapshot, update cached state, and notify subscribers."""
-        snap = await asyncio.to_thread(self._client.snapshot)
+        snap = await self.snapshot()
         self._tick_times.append(time.monotonic())
         updates: dict = {"poll": self._poll_stats()}
 
@@ -216,7 +229,7 @@ class RoboClawService:
             return
 
         self._position_target = None
-        result = await asyncio.to_thread(self._client.stop_all)
+        result = await self.stop_all()
         failed = [item.error or item.command_id for item in result.values() if not item.ok]
         if failed:
             logger.warning("Failed to stop after reaching target %s: %s", target, "; ".join(failed))
