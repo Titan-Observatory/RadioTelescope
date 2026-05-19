@@ -31,9 +31,9 @@ const TURNSTILE_SCRIPT_SRC =
 
 // Hero spectrum: 600×135 — animated playback of a real H I survey profile.
 const HW = 600;
-const HERO_CHART_TOP = -34;
-const HERO_BASE_Y = 112;          // y-coordinate of the 0-power baseline
-const HERO_PEAK_PX = 90;          // pixels of y-range allocated to the strongest peak
+const HERO_CHART_TOP = -42;
+const HERO_BASE_Y = 156;          // y-coordinate of the 0-power baseline
+const HERO_PEAK_PX = 128;         // pixels of y-range allocated to the strongest peak
 
 // LAB hydrogen-line profile supplied for the queue-page example spectrum.
 // Columns in the source file are v_lsr [km/s], T_B [K], frequency [MHz],
@@ -125,6 +125,7 @@ const SURVEY_MAIN_PEAK_X = (() => {
   }
   return indexToX(idx);
 })();
+const SURVEY_MAIN_PEAK_RATIO = SURVEY_MAIN_PEAK_X / HW;
 
 // Frequency tick labels placed at round intervals across the display.
 const FIRST_FREQ_TICK_MHZ = Math.ceil(DISPLAY_MIN_MHZ / DISPLAY_TICK_STEP_MHZ) * DISPLAY_TICK_STEP_MHZ;
@@ -251,6 +252,8 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
   const rafRef = useRef<number | null>(null);
   const linePathRef = useRef<SVGPathElement | null>(null);
   const fillPathRef = useRef<SVGPathElement | null>(null);
+  const peakFillPathRef = useRef<SVGPathElement | null>(null);
+  const glowPathRef = useRef<SVGPathElement | null>(null);
   const headerHeight = useStickyHeaderHeight();
   const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>(headerHeight);
   const initialPaths = buildHeroPaths(smoothedRef.current);
@@ -279,6 +282,8 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
       const { line, fill } = buildHeroPaths(buf);
       if (linePathRef.current) linePathRef.current.setAttribute('d', line);
       if (fillPathRef.current) fillPathRef.current.setAttribute('d', fill);
+      if (peakFillPathRef.current) peakFillPathRef.current.setAttribute('d', fill);
+      if (glowPathRef.current) glowPathRef.current.setAttribute('d', line);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => {
@@ -291,43 +296,144 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
       <figcaption className="h1-hero-figcaption">Hydrogen line</figcaption>
       <svg
         ref={svgRef}
-        viewBox={`0 ${HERO_CHART_TOP} ${HW} ${144 - HERO_CHART_TOP}`}
+        viewBox={`0 ${HERO_CHART_TOP} ${HW} ${190 - HERO_CHART_TOP}`}
         className="h1-svg"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
       >
       <defs>
-        <linearGradient id="h1HeroGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#ffbc42" stopOpacity="0.22" />
+        <linearGradient id="h1HeroBaseFillGrad" x1="0" y1={HERO_CHART_TOP} x2="0" y2={HERO_BASE_Y} gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#ffbc42" stopOpacity="0.18" />
+          <stop offset="52%" stopColor="#ffbc42" stopOpacity="0.08" />
           <stop offset="100%" stopColor="#ffbc42" stopOpacity="0" />
         </linearGradient>
+        <radialGradient
+          id="h1HeroPeakFillGrad"
+          cx={SURVEY_MAIN_PEAK_X}
+          cy="36"
+          r="150"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stopColor="#ffbc42" stopOpacity="0.36" />
+          <stop offset="45%" stopColor="#ffbc42" stopOpacity="0.14" />
+          <stop offset="100%" stopColor="#ffbc42" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id="h1HeroLineGlowGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset={`${Math.max(0, SURVEY_MAIN_PEAK_RATIO - 0.18) * 100}%`} stopColor="#ffbc42" stopOpacity="0.05" />
+          <stop offset={`${Math.max(0, SURVEY_MAIN_PEAK_RATIO - 0.07) * 100}%`} stopColor="#ffbc42" stopOpacity="0.5" />
+          <stop offset={`${SURVEY_MAIN_PEAK_RATIO * 100}%`} stopColor="#ffd37a" stopOpacity="0.95" />
+          <stop offset={`${Math.min(1, SURVEY_MAIN_PEAK_RATIO + 0.08) * 100}%`} stopColor="#ffbc42" stopOpacity="0.34" />
+          <stop offset={`${Math.min(1, SURVEY_MAIN_PEAK_RATIO + 0.2) * 100}%`} stopColor="#ffbc42" stopOpacity="0.04" />
+        </linearGradient>
+        <linearGradient id="h1PerseusArmGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#5ba4f5" stopOpacity="0.18" />
+          <stop offset="60%" stopColor="#5ba4f5" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="#5ba4f5" stopOpacity="0" />
+        </linearGradient>
       </defs>
-      {[HERO_CHART_TOP, -22, 5, 30, 55, 80, 105].map(y => (
+      {[HERO_CHART_TOP, -10, 25, 60, 95, 130, HERO_BASE_Y].map(y => (
         <line key={y} x1="0" y1={y} x2={HW} y2={y} stroke="#1a1d2e" strokeWidth="1" />
       ))}
       {FREQ_TICKS_MHZ.map(f => (
-        <line key={f} x1={fToX(f)} y1={HERO_CHART_TOP} x2={fToX(f)} y2="115" stroke="#1a1d2e" strokeWidth="1" />
+        <line key={f} x1={fToX(f)} y1={HERO_CHART_TOP} x2={fToX(f)} y2={HERO_BASE_Y} stroke="#1a1d2e" strokeWidth="1" />
       ))}
-      <path ref={fillPathRef} d={initialPaths.fill} fill="url(#h1HeroGrad)" />
-      <path ref={linePathRef} d={initialPaths.line} fill="none" stroke="#ffbc42" strokeWidth="2.5" strokeLinejoin="round" />
-      <line x1={fToX(H1_REST_MHZ)} y1="14" x2={fToX(H1_REST_MHZ)} y2="115" stroke="#ffbc42" strokeWidth="1" strokeDasharray="4,3" opacity="0.4" />
-      {/* Secondary blueshifted emission peak in the supplied LAB profile. */}
-      <line
-        x1={SURVEY_DOPPLER_PEAK_X} y1={SURVEY_DOPPLER_PEAK_Y} x2={SURVEY_DOPPLER_PEAK_X} y2="46"
-        stroke="#5ba4f5" strokeWidth="1" strokeDasharray="3,3" opacity="0.7"
+      <rect
+        x={SURVEY_DOPPLER_PEAK_X - 46}
+        y="50"
+        width="92"
+        height="106"
+        fill="url(#h1PerseusArmGrad)"
       />
-      {/* Modest pointer on the smaller peak, linking out to the Doppler explainer. */}
-      <a href="#h1-doppler-section" style={{ cursor: 'pointer' }}>
-        <title>Neutral hydrogen in the Perseus Arm, blueshifted by galactic rotation at l = 110°. Click to learn more about the Doppler effect.</title>
+      <path ref={fillPathRef} d={initialPaths.fill} fill="url(#h1HeroBaseFillGrad)" />
+      <path ref={peakFillPathRef} d={initialPaths.fill} fill="url(#h1HeroPeakFillGrad)" />
+      <path ref={glowPathRef} d={initialPaths.line} fill="none" stroke="url(#h1HeroLineGlowGrad)" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" opacity="0.42" />
+      <path ref={linePathRef} d={initialPaths.line} fill="none" stroke="#ffbc42" strokeWidth="3.25" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1={fToX(H1_REST_MHZ)} y1="-1" x2={fToX(H1_REST_MHZ)} y2={HERO_BASE_Y} stroke="#ffbc42" strokeWidth="1.35" strokeDasharray="5,4" opacity="0.72" />
+      <g>
+        <rect
+          x={fToX(H1_REST_MHZ) - 44}
+          y="-27"
+          width="88"
+          height="22"
+          rx="4"
+          fill="#251b0d"
+          stroke="#ffbc42"
+          strokeWidth="1"
+          opacity="0.96"
+        />
         <text
-          x={SURVEY_DOPPLER_PEAK_X} y="44"
+          x={fToX(H1_REST_MHZ)}
+          y="-12"
           textAnchor="middle"
-          fill="#5ba4f5" fontSize="9" opacity="0.6"
+          fill="#ffd37a"
+          fontSize="14"
+          fontWeight="800"
           fontFamily="ui-monospace,monospace"
-          style={{ textDecoration: 'underline' }}
         >
-          Perseus Arm
+          1420.4 MHz
         </text>
+      </g>
+      {/* Secondary blueshifted emission peak in the supplied LAB profile:
+          neutral hydrogen in the Perseus Arm. */}
+      <a href="#h1-doppler-section" style={{ cursor: 'pointer' }}>
+        <title>Neutral hydrogen in the Perseus Arm, a spiral arm of the Milky Way, blueshifted by galactic rotation at l = 110°. Click to learn more about the Doppler effect.</title>
+        <g>
+          <ellipse
+            cx={SURVEY_DOPPLER_PEAK_X}
+            cy={SURVEY_DOPPLER_PEAK_Y + 10}
+            rx="48"
+            ry="27"
+            fill="#5ba4f5"
+            opacity="0.08"
+          />
+          <ellipse
+            cx={SURVEY_DOPPLER_PEAK_X}
+            cy={SURVEY_DOPPLER_PEAK_Y + 8}
+            rx="43"
+            ry="23"
+            fill="none"
+            stroke="#5ba4f5"
+            strokeWidth="1.5"
+            strokeDasharray="4,3"
+            opacity="0.85"
+          />
+          <rect
+            x={SURVEY_DOPPLER_PEAK_X - 66}
+            y="19"
+            width="132"
+            height="33"
+            rx="5"
+            fill="#08172e"
+            stroke="#5ba4f5"
+            strokeWidth="1"
+            opacity="0.95"
+          />
+          <path
+            d={`M ${SURVEY_DOPPLER_PEAK_X - 10} 52 L ${SURVEY_DOPPLER_PEAK_X - 25} 64 L ${SURVEY_DOPPLER_PEAK_X - 25} ${SURVEY_DOPPLER_PEAK_Y + 5}`}
+            fill="none"
+            stroke="#5ba4f5"
+            strokeWidth="1.1"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.72"
+          />
+          <text
+            x={SURVEY_DOPPLER_PEAK_X} y="34"
+            textAnchor="middle"
+            fill="#d6e8ff" fontSize="10" fontWeight="700"
+            fontFamily="ui-monospace,monospace"
+          >
+            Perseus Arm
+          </text>
+          <text
+            x={SURVEY_DOPPLER_PEAK_X} y="46"
+            textAnchor="middle"
+            fill="#7ab8f7" fontSize="8"
+            fontFamily="ui-monospace,monospace"
+          >
+            Milky Way spiral arm
+          </text>
+        </g>
       </a>
       {/* Sideways bracket spanning the gap between the main (local-arm) peak
           and the H I rest marker, linking out to the Doppler explainer. */}
@@ -336,10 +442,10 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
         const leftX = Math.min(SURVEY_MAIN_PEAK_X, restX);
         const rightX = Math.max(SURVEY_MAIN_PEAK_X, restX);
         const midX = (leftX + rightX) / 2;
-        const barY = 4;
-        const prongY = 14;
-        const tickY = -6;
-        const labelY = -10;
+        const barY = -21;
+        const prongY = -10;
+        const tickY = -32;
+        const labelY = -35;
         return (
           <a href="#h1-doppler-section" style={{ cursor: 'pointer' }}>
             <title>The received peak is offset from the 1420.4 MHz rest line — that gap is the Doppler shift. Click to learn more.</title>
@@ -364,20 +470,20 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
           </a>
         );
       })()}
-      <line x1="0" y1="115" x2={HW} y2="115" stroke="#232640" strokeWidth="1" />
+      <line x1="0" y1={HERO_BASE_Y} x2={HW} y2={HERO_BASE_Y} stroke="#232640" strokeWidth="1" />
       {FREQ_TICKS_MHZ.map(f => {
         const isRest = Math.abs(f - 1420.4) < 0.001;
         return (
           <text
             key={f}
-            x={fToX(f)} y={isRest ? '133' : '129'}
+            x={fToX(f)} y={isRest ? '183' : '178'}
             textAnchor="middle"
-            fill={isRest ? '#ffbc42' : '#6f719a'}
-            fontSize={isRest ? '16' : '10'}
-            fontWeight={isRest ? 'bold' : 'normal'}
+            fill={isRest ? '#b9944f' : '#6f719a'}
+            fontSize={isRest ? '11' : '10'}
+            fontWeight={isRest ? '700' : 'normal'}
             fontFamily="ui-monospace,monospace"
           >
-            {isRest ? `${f.toFixed(1)} MHz` : f.toFixed(1)}
+            {f.toFixed(1)}
           </text>
         );
       })}
@@ -1105,7 +1211,7 @@ export function QueuePage({
             <div className="h1-hero-text">
               <span className="h1-eyebrow">What is it?</span>
               <h2 className="h1-hero-title">The Hydrogen Line</h2>
-              <p className="h1-hero-sub">Found at about 1420 MHz, with a corresponding wavelength of 21 cm, the hydrogen line is a characteristic radio signal emitted by electrically neutral hydrogen atoms, a common form of the most abundant element in the universe. Its discovery and use in radio astronomy in 1951 unlocked an entirely new set of tools for exploring the universe, allowing us to see through thick clouds of dust, measure the velocity and structure of nearby hydrogen, and, for the first time, learn what our own Milky Way galaxy looked like.</p>
+              <p className="h1-hero-sub">Found at about 1420 MHz, with a corresponding wavelength of 21 cm, the hydrogen line is a characteristic radio signal emitted by electrically neutral hydrogen atoms, a common form of the most abundant element in the universe. Its discovery and use in early days of radio astronomy unlocked an entirely new set of tools for exploring the universe, allowing us to see through thick clouds of dust, measure the velocity and structure of nearby hydrogen, and, for the first time, learn what our own Milky Way galaxy looked like.</p>
             </div>
             <div className="h1-hero-visual">
               <HeroSpectrum paused={animationsPaused} />
