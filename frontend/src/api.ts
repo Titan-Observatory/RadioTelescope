@@ -1,6 +1,8 @@
 import type { CommandInfo, CommandResult, LnaStatus, RaDecTarget, RoboClawTelemetry, TelescopeConfig } from './types';
 import type { QueueConfig, QueueStatus } from './queue';
 
+export type JogDirection = 'west' | 'east' | 'up' | 'down';
+
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
@@ -38,6 +40,16 @@ export const api = {
   commands: () => request<CommandInfo[]>('GET', '/api/roboclaw/commands'),
   execute: (commandId: string, args: Record<string, number | boolean>) =>
     request<CommandResult>('POST', `/api/roboclaw/commands/${commandId}`, { args }),
+  jog: (direction: JogDirection, speed: number, token: string, seq: number, timeoutMs = 650) =>
+    request<{ ok: boolean; accepted: boolean; stale?: boolean; seq?: number }>('POST', '/api/telescope/jog', {
+      direction,
+      speed,
+      token,
+      seq,
+      timeout_ms: timeoutMs,
+    }),
+  stopJog: (token: string, seq: number) =>
+    request<Record<string, CommandResult>>('POST', '/api/telescope/jog/stop', { token, seq }),
   telescopeConfig: () => request<TelescopeConfig>('GET', '/api/telescope/config'),
   gotoAltAz: (altitudeDeg: number, azimuthDeg: number, speedQpps?: number, accelQpps2?: number, decelQpps2?: number) =>
     request<CommandResult>('POST', '/api/telescope/goto', {

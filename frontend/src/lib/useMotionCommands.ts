@@ -7,10 +7,13 @@ import { api } from '../api';
 import { track } from '../analytics';
 import { startGuidedObservation } from '../guidedObservation';
 import { errorMessage } from './formatters';
+import type { JogDirection } from '../api';
 import type { CommandInfo, RoboClawTelemetry } from '../types';
 
 export interface UseMotionCommandsResult {
   runCommand: (commandId: string, args: Record<string, number | boolean>) => Promise<void>;
+  jog: (direction: JogDirection, speed: number, token: string, seq: number, timeoutMs?: number) => Promise<void>;
+  stopJog: (token: string, seq: number) => Promise<void>;
   gotoAltAz: (altDeg: number, azDeg: number) => Promise<void>;
   stopMotion: () => Promise<void>;
   startObservationGuide: () => void;
@@ -49,6 +52,29 @@ export function useMotionCommands(
     }
   }, [setTelemetry]);
 
+  const jog = useCallback(async (
+    direction: JogDirection,
+    speed: number,
+    token: string,
+    seq: number,
+    timeoutMs?: number,
+  ) => {
+    try {
+      await api.jog(direction, speed, token, seq, timeoutMs);
+    } catch (err) {
+      track('jog_failed', { direction, message: errorMessage(err).slice(0, 200) });
+    }
+  }, []);
+
+  const stopJog = useCallback(async (token: string, seq: number) => {
+    try {
+      await api.stopJog(token, seq);
+      setTelemetry(await api.status());
+    } catch (err) {
+      track('command_failed', { command_id: 'jog_stop', message: errorMessage(err).slice(0, 200) });
+    }
+  }, [setTelemetry]);
+
   const stopMotion = useCallback(async () => {
     track('motion_stop');
     try {
@@ -72,5 +98,5 @@ export function useMotionCommands(
     });
   }, [setTelemetry]);
 
-  return { runCommand, gotoAltAz, stopMotion, startObservationGuide };
+  return { runCommand, jog, stopJog, gotoAltAz, stopMotion, startObservationGuide };
 }

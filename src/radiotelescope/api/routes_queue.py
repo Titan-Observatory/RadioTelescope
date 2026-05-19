@@ -13,7 +13,7 @@ from radiotelescope.api.dependencies import (
     read_session_token,
     write_session_token,
 )
-from radiotelescope.services.queue import QueueFullError, QueueStatus
+from radiotelescope.services.queue import QueueFullError, QueueRateLimitedError, QueueStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["queue"])
@@ -72,6 +72,8 @@ async def queue_join(body: JoinRequest, request: Request, response: Response) ->
 
     try:
         token = await queue.join(client_ip(request) or "unknown")
+    except QueueRateLimitedError as exc:
+        raise HTTPException(429, str(exc)) from exc
     except QueueFullError as exc:
         raise HTTPException(503, str(exc)) from exc
 

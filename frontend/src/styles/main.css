@@ -2643,7 +2643,7 @@ h2.panel-header {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
   gap: clamp(36px, 5vw, 64px);
-  align-items: start;
+  align-items: stretch;
 }
 
 /* Shared eyebrow — small uppercase amber label preceded by a thin amber rule. */
@@ -2695,7 +2695,7 @@ h2.panel-header {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
-  padding-top: 38px;
+  min-height: 0;
 }
 
 /* Spin-flip section — wider visual side; quieter padding to break the
@@ -2839,10 +2839,8 @@ h2.panel-header {
 }
 
 .h1-misleading-popover {
-  position: absolute;
+  position: fixed;
   z-index: 20;
-  left: 50%;
-  bottom: calc(100% + 8px);
   width: min(260px, calc(100vw - 32px));
   padding: 5px;
   border: 1px solid var(--hairline-strong);
@@ -2851,8 +2849,8 @@ h2.panel-header {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 5px) scale(0.98);
-  transform-origin: bottom center;
+  transform: translateX(-50%) translateY(5px) scale(0.98);
+  transform-origin: top center;
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
@@ -2860,13 +2858,25 @@ h2.panel-header {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: -5px;
+  top: -5px;
   width: 8px;
   height: 8px;
-  border-right: 1px solid var(--hairline-strong);
-  border-bottom: 1px solid var(--hairline-strong);
+  border-left: 1px solid var(--hairline-strong);
+  border-top: 1px solid var(--hairline-strong);
   background: #fff;
   transform: translateX(-50%) rotate(45deg);
+}
+
+.h1-misleading-popover-above {
+  transform-origin: bottom center;
+}
+
+.h1-misleading-popover-above::after {
+  top: auto;
+  bottom: -5px;
+  border: 0;
+  border-right: 1px solid var(--hairline-strong);
+  border-bottom: 1px solid var(--hairline-strong);
 }
 
 .h1-misleading-popover img {
@@ -2876,10 +2886,9 @@ h2.panel-header {
   border-radius: 4px;
 }
 
-.h1-misleading-highlight:hover .h1-misleading-popover,
-.h1-misleading-highlight:focus-visible .h1-misleading-popover {
+.h1-misleading-popover-open {
   opacity: 1;
-  transform: translate(-50%, 0) scale(1);
+  transform: translateX(-50%) translateY(0) scale(1);
 }
 
 /* SVG containers — embedded instrument panel rather than a generic card.
@@ -2898,30 +2907,16 @@ h2.panel-header {
 
 .h1-hero-figure {
   margin: 0;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
 
-.h1-hero-figcaption {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--accent);
-  text-align: left;
-  padding-left: 2px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.h1-hero-figcaption::before {
-  content: '';
-  width: 18px;
-  height: 1px;
-  background: var(--accent-line);
+.h1-hero-figure .h1-svg {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
 }
 
 .h1-visual-caption {

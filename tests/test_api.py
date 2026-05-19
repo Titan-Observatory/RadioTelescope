@@ -2,9 +2,41 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from radiotelescope.main import create_app
+
+
+def _make_public_safe_config(simulated_config_path):
+    text = simulated_config_path.read_text(encoding="utf-8")
+    text = text.replace(
+        'host = "127.0.0.1"',
+        'host = "0.0.0.0"',
+    ).replace(
+        'cors_origins = ["*"]',
+        'cors_origins = ["https://telescope.example.test"]',
+    ).replace(
+        'allowed_clients = ["testclient"]',
+        'allowed_clients = ["10.0.27.1"]\ntrusted_proxies = ["127.0.0.1"]',
+    )
+    text += """
+[queue]
+enabled = true
+max_session_seconds = 600
+idle_timeout_seconds = 60
+max_sessions_per_ip = 10
+join_cooldown_seconds = 0
+cookie_secret = "prod-like-cookie-secret-for-tests"
+cookie_name = "rt_session"
+
+[turnstile]
+enabled = true
+site_key = "0x4AAAAAAAproductionLikeSiteKey"
+secret_key = "0x4AAAAAAAproductionLikeSecretKey"
+"""
+    simulated_config_path.write_text(text, encoding="utf-8")
+    return simulated_config_path
 
 
 def test_api_exposes_disconnected_health(simulated_config_path):
@@ -167,6 +199,38 @@ def test_api_accepts_alt_az_goto(simulated_config_path):
     assert body["response"]["alt_accel_qpps2"] == 7000
 
 
+def test_jog_rejects_stale_heartbeat_after_release(simulated_config_path):
+    with TestClient(create_app(simulated_config_path)) as client:
+        released = client.post("/api/telescope/jog/stop", json={"token": "jog-token-1", "seq": 2})
+        stale = client.post(
+            "/api/telescope/jog",
+            json={"token": "jog-token-1", "seq": 1, "direction": "west", "speed": 40},
+        )
+        status = client.get("/api/roboclaw/status")
+
+    assert released.status_code == 200
+    assert stale.status_code == 200
+    assert stale.json()["accepted"] is False
+    assert status.json()["motors"]["m1"]["raw_speed_qpps"] == 0
+
+
+def test_jog_watchdog_stops_when_heartbeats_stop(simulated_config_path):
+    import time
+
+    with TestClient(create_app(simulated_config_path)) as client:
+        started = client.post(
+            "/api/telescope/jog",
+            json={"token": "jog-token-2", "seq": 1, "direction": "west", "speed": 40, "timeout_ms": 1000},
+        )
+        service = client.app.state.roboclaw_service
+        assert service.client._speeds["m1"] > 0
+        time.sleep(1.2)
+        assert service.client._speeds["m1"] == 0
+
+    assert started.status_code == 200
+    assert started.json()["accepted"] is True
+
+
 def test_api_rejects_goto_outside_pointing_limit_triangle(simulated_config_path):
     simulated_config_path.write_text(
         simulated_config_path.read_text(encoding="utf-8").replace(
@@ -266,3 +330,94 @@ def test_api_rejects_unconfigured_client(simulated_config_path):
 
     assert response.status_code == 403
     assert response.text == "Client IP not allowed"
+
+
+def test_public_proxy_does_not_make_external_client_lan_admin(simulated_config_path):
+    cfg = _make_public_safe_config(simulated_config_path)
+    with TestClient(create_app(cfg), client=("127.0.0.1", 50000)) as client:
+        response = client.post(
+            "/api/roboclaw/commands/forward_m1",
+            headers={"x-forwarded-for": "203.0.113.44", "x-forwarded-proto": "https"},
+            json={"args": {"speed": 20}},
+        )
+
+    assert response.status_code == 403
+
+
+def test_public_proxy_allows_real_lan_admin_after_forwarding(simulated_config_path):
+    cfg = _make_public_safe_config(simulated_config_path)
+    with TestClient(create_app(cfg), client=("127.0.0.1", 50000)) as client:
+        response = client.post(
+            "/api/roboclaw/commands/forward_m1",
+            headers={"x-forwarded-for": "10.0.27.1", "x-forwarded-proto": "https"},
+            json={"args": {"speed": 20}},
+        )
+
+    assert response.status_code == 200
+
+
+def test_public_proxy_without_forwarded_for_is_not_lan_admin(simulated_config_path):
+    cfg = _make_public_safe_config(simulated_config_path)
+    with TestClient(create_app(cfg), client=("127.0.0.1", 50000)) as client:
+        response = client.post(
+            "/api/roboclaw/commands/forward_m1",
+            headers={"x-forwarded-proto": "https"},
+            json={"args": {"speed": 20}},
+        )
+
+    assert response.status_code == 403
+
+
+def test_unsafe_public_config_fails_startup(simulated_config_path):
+    simulated_config_path.write_text(
+        simulated_config_path.read_text(encoding="utf-8").replace(
+            'host = "127.0.0.1"',
+            'host = "0.0.0.0"',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="Unsafe public exposure"):
+        create_app(simulated_config_path)
+
+
+def test_feedback_rate_limit_and_log_rotation(simulated_config_path, tmp_path):
+    log_path = tmp_path / "feedback.jsonl"
+    rotated_seed = "x" * 128
+    log_path.write_text(rotated_seed, encoding="utf-8")
+    text = simulated_config_path.read_text(encoding="utf-8")
+    text = f'feedback_log_path = "{log_path.as_posix()}"\nfeedback_log_max_bytes = 64\n' + text
+    text += """
+[rate_limit]
+feedback_per_minute = 2
+"""
+    simulated_config_path.write_text(text, encoding="utf-8")
+
+    with TestClient(create_app(simulated_config_path)) as client:
+        first = client.post("/api/feedback", json={"rating": 5, "message": "ok"})
+        second = client.post("/api/feedback", json={"rating": 4, "message": "ok"})
+        limited = client.post("/api/feedback", json={"rating": 3, "message": "ok"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert limited.status_code == 429
+    assert log_path.exists()
+    assert list(tmp_path.glob("feedback.*.jsonl"))
+
+
+def test_events_reject_oversized_props(simulated_config_path, tmp_path):
+    log_path = tmp_path / "events.jsonl"
+    text = f'events_log_path = "{log_path.as_posix()}"\n' + simulated_config_path.read_text(encoding="utf-8")
+    simulated_config_path.write_text(text, encoding="utf-8")
+
+    with TestClient(create_app(simulated_config_path)) as client:
+        response = client.post(
+            "/api/events",
+            json={
+                "event": "page_view",
+                "session_id": "session-123",
+                "props": {"payload": "x" * 5000},
+            },
+        )
+
+    assert response.status_code == 422

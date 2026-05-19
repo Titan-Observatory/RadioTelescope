@@ -2,48 +2,79 @@ import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react'
 import React, { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { track } from '../analytics';
+import type { JogDirection } from '../api';
 
-// RoboClaw's firmware serial-timeout failsafe stops the motors if no command
-// arrives within ~1 s. Re-issuing the drive command at this cadence is safely
-// inside that window while still being light on the bus.
-const JOG_REPEAT_MS = 200;
+const JOG_REPEAT_MS = 250;
+const JOG_TIMEOUT_MS = 1000;
+
+function makeJogToken() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 // Hook: turn a button into a press-and-hold jog. Reissues `start` every
-// JOG_REPEAT_MS while pressed, sends `stop` on release / pointer-leave /
-// cancel / unmount. We avoid setPointerCapture so dragging off the button
-// is treated as a release (matches what the user sees on touch too).
-function useJog(start: () => Promise<void>, stop: () => Promise<void>, onPress?: () => void) {
+// JOG_REPEAT_MS while pressed, and every packet carries a per-press token plus
+// monotonically increasing sequence number. The backend ignores stale packets
+// and stops automatically if heartbeats stop arriving.
+function useJog(
+  direction: JogDirection,
+  speed: number,
+  jog: (direction: JogDirection, speed: number, token: string, seq: number, timeoutMs?: number) => Promise<void>,
+  stopJog: (token: string, seq: number) => Promise<void>,
+  onPress?: () => void,
+) {
   const [active, setActive] = useState(false);
   const timerRef = useRef<number | null>(null);
-  // Stash the latest callbacks so the interval always fires the current one
-  // even though we only set it up once per press.
-  const startRef = useRef(start);
-  const stopRef = useRef(stop);
+  const tokenRef = useRef<string | null>(null);
+  const seqRef = useRef(0);
+  const directionRef = useRef(direction);
+  const speedRef = useRef(speed);
+  const jogRef = useRef(jog);
+  const stopJogRef = useRef(stopJog);
   const onPressRef = useRef(onPress);
-  startRef.current = start;
-  stopRef.current = stop;
+  directionRef.current = direction;
+  speedRef.current = speed;
+  jogRef.current = jog;
+  stopJogRef.current = stopJog;
   onPressRef.current = onPress;
 
   const end = useCallback(() => {
-    if (timerRef.current == null) return;
+    const token = tokenRef.current;
+    if (timerRef.current == null || token == null) return;
     window.clearInterval(timerRef.current);
     timerRef.current = null;
+    tokenRef.current = null;
     setActive(false);
-    void stopRef.current();
+    void stopJogRef.current(token, ++seqRef.current);
   }, []);
 
   const begin = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return; // left-click only on mouse
     if (timerRef.current != null) return;
+    const token = makeJogToken();
+    tokenRef.current = token;
+    seqRef.current = 0;
     setActive(true);
     onPressRef.current?.();
-    void startRef.current();
-    timerRef.current = window.setInterval(() => { void startRef.current(); }, JOG_REPEAT_MS);
+    void jogRef.current(directionRef.current, speedRef.current, token, ++seqRef.current, JOG_TIMEOUT_MS);
+    timerRef.current = window.setInterval(() => {
+      const currentToken = tokenRef.current;
+      if (currentToken == null) return;
+      void jogRef.current(directionRef.current, speedRef.current, currentToken, ++seqRef.current, JOG_TIMEOUT_MS);
+    }, JOG_REPEAT_MS);
   }, []);
 
-  // If the component unmounts mid-press (e.g. queue revokes control and the
-  // page swaps to the spectator view), make sure we stop the motor.
-  useEffect(() => () => { if (timerRef.current != null) { window.clearInterval(timerRef.current); void stopRef.current(); } }, []);
+  useEffect(() => {
+    const stopOnPageLoss = () => end();
+    window.addEventListener('blur', stopOnPageLoss);
+    document.addEventListener('visibilitychange', stopOnPageLoss);
+    return () => {
+      window.removeEventListener('blur', stopOnPageLoss);
+      document.removeEventListener('visibilitychange', stopOnPageLoss);
+      end();
+    };
+  }, [end]);
 
   return {
     active,
@@ -55,8 +86,9 @@ function useJog(start: () => Promise<void>, stop: () => Promise<void>, onPress?:
   } as const;
 }
 
-function PointingPad({ runCommand, speed }: {
-  runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
+function PointingPad({ jog, stopJog, speed }: {
+  jog: (direction: JogDirection, speed: number, token: string, seq: number, timeoutMs?: number) => Promise<void>;
+  stopJog: (token: string, seq: number) => Promise<void>;
   speed: number;
 }) {
   // Track on press only (not every repeat tick) — useJog's start fires every
@@ -64,10 +96,10 @@ function PointingPad({ runCommand, speed }: {
   const onPress = (direction: 'west' | 'east' | 'up' | 'down') =>
     track('jog_pressed', { direction, speed });
 
-  const west = useJog(() => runCommand('forward_m1',  { speed }), () => runCommand('forward_m1',  { speed: 0 }), () => onPress('west'));
-  const east = useJog(() => runCommand('backward_m1', { speed }), () => runCommand('backward_m1', { speed: 0 }), () => onPress('east'));
-  const down = useJog(() => runCommand('backward_m2', { speed }), () => runCommand('backward_m2', { speed: 0 }), () => onPress('down'));
-  const up   = useJog(() => runCommand('forward_m2',  { speed }), () => runCommand('forward_m2',  { speed: 0 }), () => onPress('up'));
+  const west = useJog('west', speed, jog, stopJog, () => onPress('west'));
+  const east = useJog('east', speed, jog, stopJog, () => onPress('east'));
+  const down = useJog('down', speed, jog, stopJog, () => onPress('down'));
+  const up   = useJog('up', speed, jog, stopJog, () => onPress('up'));
 
   return (
     <div className="pointing-pad" role="group" aria-label="Pointing controls">
@@ -131,9 +163,10 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
 // the press-and-hold jog pad and the numeric GoTo form so a single overlay
 // holds both interaction modes without doubling the on-screen real estate.
 export function MotionControls({
-  runCommand, gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt, onStop,
+  jog, stopJog, gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt, onStop,
 }: {
-  runCommand: (id: string, args: Record<string, number | boolean>) => Promise<void>;
+  jog: (direction: JogDirection, speed: number, token: string, seq: number, timeoutMs?: number) => Promise<void>;
+  stopJog: (token: string, seq: number) => Promise<void>;
   gotoAltAz: (alt: number, az: number) => Promise<void>;
   targetAz: number;
   targetAlt: number;
@@ -189,7 +222,7 @@ export function MotionControls({
       </div>
       {mode === 'jog' ? (
         <div className="motion-card">
-          <PointingPad runCommand={runCommand} speed={speed} />
+          <PointingPad jog={jog} stopJog={stopJog} speed={speed} />
           <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={changeSpeed} />
         </div>
       ) : (

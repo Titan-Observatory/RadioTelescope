@@ -45,6 +45,36 @@ async def test_queue_full_raises():
         await queue.join("3.3.3.3")
 
 
+async def test_queue_limits_repeated_sessions_per_ip():
+    from radiotelescope.services.queue import QueueRateLimitedError
+
+    queue = QueueService(
+        max_session_seconds=60,
+        idle_timeout_seconds=30,
+        max_queue_size=10,
+        max_sessions_per_ip=1,
+        join_cooldown_seconds=0,
+    )
+    await queue.join("1.1.1.1")
+    with pytest.raises(QueueRateLimitedError):
+        await queue.join("1.1.1.1")
+
+
+async def test_queue_join_cooldown_limits_bursts():
+    from radiotelescope.services.queue import QueueRateLimitedError
+
+    queue = QueueService(
+        max_session_seconds=60,
+        idle_timeout_seconds=30,
+        max_queue_size=10,
+        max_sessions_per_ip=10,
+        join_cooldown_seconds=5,
+    )
+    await queue.join("1.1.1.1")
+    with pytest.raises(QueueRateLimitedError):
+        await queue.join("1.1.1.1")
+
+
 async def test_queue_lease_expires_on_idle(monkeypatch):
     queue = QueueService(max_session_seconds=60, idle_timeout_seconds=1, max_queue_size=10)
     a = await queue.join("1.1.1.1")
@@ -94,6 +124,8 @@ def _config_with_queue(simulated_config_path):
 enabled = true
 max_session_seconds = 600
 idle_timeout_seconds = 60
+max_sessions_per_ip = 10
+join_cooldown_seconds = 0
 cookie_secret = "test-secret-test-secret"
 cookie_name = "rt_session"
 

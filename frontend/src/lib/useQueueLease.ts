@@ -13,6 +13,8 @@ import type { QueueConfig, QueueStatus } from '../queue';
 export interface UseQueueLeaseResult {
   queueStatus: QueueStatus | null;
   queueConfig: QueueConfig | null;
+  /** True once the initial queue config request has completed. */
+  queueReady: boolean;
   /** True iff the server has a queue configured. */
   queueEnabled: boolean;
   /** True if either the queue is off OR we currently hold the lease. */
@@ -29,6 +31,7 @@ export interface UseQueueLeaseResult {
 export function useQueueLease(): UseQueueLeaseResult {
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [queueConfig, setQueueConfig] = useState<QueueConfig | null>(null);
+  const [queueReady, setQueueReady] = useState(false);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [continueAcked, setContinueAcked] = useState(false);
@@ -37,7 +40,10 @@ export function useQueueLease(): UseQueueLeaseResult {
 
   // Bootstrap.
   useEffect(() => {
-    void api.queueConfig().then(setQueueConfig).catch(() => { /* queue may be disabled */ });
+    void api.queueConfig()
+      .then(setQueueConfig)
+      .catch(() => { /* queue may be disabled */ })
+      .finally(() => setQueueReady(true));
     void api.queueStatus().then(setQueueStatus).catch(() => { /* not joined yet */ });
   }, []);
 
@@ -124,6 +130,7 @@ export function useQueueLease(): UseQueueLeaseResult {
   return {
     queueStatus,
     queueConfig,
+    queueReady,
     queueEnabled,
     hasControl,
     isActiveController,

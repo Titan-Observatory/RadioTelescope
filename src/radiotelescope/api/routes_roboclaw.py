@@ -8,7 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSo
 from radiotelescope.api.dependencies import is_lan_admin, require_control, require_lan_admin
 from radiotelescope.geometry import normalise_azimuth, point_in_triangle, unwrap_azimuth
 from radiotelescope.hardware.roboclaw import COMMANDS, OPERATOR_COMMAND_IDS, command_registry
-from radiotelescope.models.state import AltAzRequest, CommandInfo, CommandRequest, CommandResult, HealthStatus, RaDecRequest, RoboClawTelemetry, TelescopeConfig
+from radiotelescope.models.state import (
+    AltAzRequest,
+    CommandInfo,
+    CommandRequest,
+    CommandResult,
+    HealthStatus,
+    JogRequest,
+    JogStopRequest,
+    RaDecRequest,
+    RoboClawTelemetry,
+    TelescopeConfig,
+)
 from radiotelescope.pointing import radec_to_altaz
 from radiotelescope.services.geometry import altitude_to_encoder_counts
 
@@ -16,6 +27,13 @@ router = APIRouter(tags=["roboclaw"])
 
 GATEWAY_INTERNAL_COMMAND_IDS = {
     "speed_accel_decel_position_m1m2",
+}
+
+JOG_COMMANDS: dict[str, str] = {
+    "west": "forward_m1",
+    "east": "backward_m1",
+    "up": "forward_m2",
+    "down": "backward_m2",
 }
 
 
@@ -124,6 +142,36 @@ async def execute_command(command_id: str, body: CommandRequest, request: Reques
 @router.post("/api/roboclaw/stop", response_model=dict[str, CommandResult], dependencies=[Depends(require_control)])
 async def stop(request: Request):
     service = _service(request)
+    service.set_position_target()
+    return await asyncio.to_thread(service.client.stop_all)
+
+
+@router.post("/api/telescope/jog", dependencies=[Depends(require_control)])
+async def jog(body: JogRequest, request: Request):
+    service = _service(request)
+    if not service.accept_jog_sequence(body.token, body.seq):
+        return {"ok": True, "accepted": False, "stale": True}
+
+    service.set_position_target()
+    command_id = JOG_COMMANDS[body.direction]
+    result = await asyncio.to_thread(service.client.execute, command_id, {"speed": body.speed})
+    if not result.ok:
+        raise HTTPException(status_code=400, detail=result.error or "Jog command failed")
+
+    if not service.is_current_jog_sequence(body.token, body.seq):
+        await asyncio.to_thread(service.client.stop_all)
+        return {"ok": True, "accepted": False, "stale": True}
+
+    service.arm_jog_watchdog(body.token, body.seq, body.timeout_ms / 1000)
+    return {"ok": True, "accepted": True, "command_id": command_id, "seq": body.seq}
+
+
+@router.post("/api/telescope/jog/stop", response_model=dict[str, CommandResult], dependencies=[Depends(require_control)])
+async def stop_jog(body: JogStopRequest, request: Request):
+    service = _service(request)
+    if not service.accept_jog_sequence(body.token, body.seq):
+        return {}
+    service.clear_jog_watchdog(body.token, body.seq)
     service.set_position_target()
     return await asyncio.to_thread(service.client.stop_all)
 

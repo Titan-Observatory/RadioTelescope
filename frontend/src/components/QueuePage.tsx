@@ -26,14 +26,28 @@ declare global {
 const TURNSTILE_SCRIPT_ID = 'cf-turnstile-script';
 const TURNSTILE_SCRIPT_SRC =
   'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit';
+const MISLEADING_POPOVER_WIDTH = 260;
+const MISLEADING_POPOVER_HEIGHT = 245;
+const MISLEADING_POPOVER_GAP = 10;
+const MISLEADING_POPOVER_MARGIN = 12;
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 // ─── Precomputed path data ─────────────────────────────────────────────────────
 
-// Hero spectrum: 600×135 — animated playback of a real H I survey profile.
+// Hero spectrum: animated playback of a real H I survey profile.
 const HW = 600;
 const HERO_CHART_TOP = -42;
 const HERO_BASE_Y = 156;          // y-coordinate of the 0-power baseline
-const HERO_PEAK_PX = 128;         // pixels of y-range allocated to the strongest peak
+const HERO_CHART_BOTTOM = 190;
+const HERO_CHART_HEIGHT = HERO_BASE_Y - HERO_CHART_TOP;
+const HERO_PEAK_HEADROOM = 54;
+const HERO_PEAK_PX = HERO_CHART_HEIGHT - HERO_PEAK_HEADROOM;
+const HERO_AXIS_LABEL_Y = HERO_BASE_Y + 22;
+const HERO_REST_LABEL_Y = HERO_BASE_Y + 19;
+const HERO_REST_LABEL_BOX_Y = HERO_BASE_Y + 4;
+const HERO_PERSEUS_BAND_TOP = HERO_CHART_TOP + HERO_CHART_HEIGHT * 0.34;
+const HERO_PERSEUS_LABEL_Y = HERO_CHART_TOP + HERO_CHART_HEIGHT * 0.31;
 
 // LAB hydrogen-line profile supplied for the queue-page example spectrum.
 // Columns in the source file are v_lsr [km/s], T_B [K], frequency [MHz],
@@ -110,20 +124,20 @@ const fToX = (f: number) => ((DISPLAY_MAX_MHZ - f) / DISPLAY_SPAN_MHZ) * HW;
 const indexToX = (i: number) => fToX(SURVEY_FREQ_MHZ[i]);
 const SURVEY_X_START = indexToX(0);
 const SURVEY_X_END   = indexToX(SURVEY_TB_K.length - 1);
-const [SURVEY_DOPPLER_PEAK_X, SURVEY_DOPPLER_PEAK_Y] = (() => {
+const SURVEY_DOPPLER_PEAK_X = (() => {
   let idx = 0;
   for (let i = 0; i < SURVEY_POWER.length; i++) {
     const isBlueShifted = SURVEY_FREQ_MHZ[i] > H1_REST_MHZ + 0.05;
     if (isBlueShifted && SURVEY_POWER[i] > SURVEY_POWER[idx]) idx = i;
   }
-  return [indexToX(idx), HERO_BASE_Y - SURVEY_POWER[idx] * HERO_PEAK_PX];
+  return indexToX(idx);
 })();
-const SURVEY_MAIN_PEAK_X = (() => {
+const [SURVEY_MAIN_PEAK_X, SURVEY_MAIN_PEAK_Y] = (() => {
   let idx = 0;
   for (let i = 0; i < SURVEY_POWER.length; i++) {
     if (SURVEY_POWER[i] > SURVEY_POWER[idx]) idx = i;
   }
-  return indexToX(idx);
+  return [indexToX(idx), HERO_BASE_Y - SURVEY_POWER[idx] * HERO_PEAK_PX];
 })();
 const SURVEY_MAIN_PEAK_RATIO = SURVEY_MAIN_PEAK_X / HW;
 
@@ -293,10 +307,9 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
 
   return (
     <figure className="h1-hero-figure">
-      <figcaption className="h1-hero-figcaption">Hydrogen line</figcaption>
       <svg
         ref={svgRef}
-        viewBox={`0 ${HERO_CHART_TOP} ${HW} ${190 - HERO_CHART_TOP}`}
+        viewBox={`0 ${HERO_CHART_TOP} ${HW} ${HERO_CHART_BOTTOM - HERO_CHART_TOP}`}
         className="h1-svg"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
@@ -310,7 +323,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
         <radialGradient
           id="h1HeroPeakFillGrad"
           cx={SURVEY_MAIN_PEAK_X}
-          cy="36"
+          cy={SURVEY_MAIN_PEAK_Y + 28}
           r="150"
           gradientUnits="userSpaceOnUse"
         >
@@ -331,7 +344,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
           <stop offset="100%" stopColor="#5ba4f5" stopOpacity="0" />
         </linearGradient>
       </defs>
-      {[HERO_CHART_TOP, -10, 25, 60, 95, 130, HERO_BASE_Y].map(y => (
+      {Array.from({ length: 7 }, (_, i) => HERO_CHART_TOP + (HERO_CHART_HEIGHT / 6) * i).map(y => (
         <line key={y} x1="0" y1={y} x2={HW} y2={y} stroke="#1a1d2e" strokeWidth="1" />
       ))}
       {FREQ_TICKS_MHZ.map(f => (
@@ -339,96 +352,44 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
       ))}
       <rect
         x={SURVEY_DOPPLER_PEAK_X - 46}
-        y="50"
+        y={HERO_PERSEUS_BAND_TOP}
         width="92"
-        height="106"
+        height={HERO_BASE_Y - HERO_PERSEUS_BAND_TOP}
         fill="url(#h1PerseusArmGrad)"
       />
       <path ref={fillPathRef} d={initialPaths.fill} fill="url(#h1HeroBaseFillGrad)" />
       <path ref={peakFillPathRef} d={initialPaths.fill} fill="url(#h1HeroPeakFillGrad)" />
       <path ref={glowPathRef} d={initialPaths.line} fill="none" stroke="url(#h1HeroLineGlowGrad)" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" opacity="0.42" />
       <path ref={linePathRef} d={initialPaths.line} fill="none" stroke="#ffbc42" strokeWidth="3.25" strokeLinecap="round" strokeLinejoin="round" />
-      <line x1={fToX(H1_REST_MHZ)} y1="-1" x2={fToX(H1_REST_MHZ)} y2={HERO_BASE_Y} stroke="#ffbc42" strokeWidth="1.35" strokeDasharray="5,4" opacity="0.72" />
-      <g>
-        <rect
-          x={fToX(H1_REST_MHZ) - 44}
-          y="-27"
-          width="88"
-          height="22"
-          rx="4"
-          fill="#251b0d"
-          stroke="#ffbc42"
-          strokeWidth="1"
-          opacity="0.96"
-        />
-        <text
-          x={fToX(H1_REST_MHZ)}
-          y="-12"
-          textAnchor="middle"
-          fill="#ffd37a"
-          fontSize="14"
-          fontWeight="800"
-          fontFamily="ui-monospace,monospace"
-        >
-          1420.4 MHz
-        </text>
-      </g>
+      <line x1={fToX(H1_REST_MHZ)} y1={SURVEY_MAIN_PEAK_Y} x2={fToX(H1_REST_MHZ)} y2={HERO_BASE_Y} stroke="#ffbc42" strokeWidth="1.35" strokeDasharray="5,4" opacity="0.72" />
       {/* Secondary blueshifted emission peak in the supplied LAB profile:
           neutral hydrogen in the Perseus Arm. */}
       <a href="#h1-doppler-section" style={{ cursor: 'pointer' }}>
         <title>Neutral hydrogen in the Perseus Arm, a spiral arm of the Milky Way, blueshifted by galactic rotation at l = 110°. Click to learn more about the Doppler effect.</title>
         <g>
-          <ellipse
-            cx={SURVEY_DOPPLER_PEAK_X}
-            cy={SURVEY_DOPPLER_PEAK_Y + 10}
-            rx="48"
-            ry="27"
-            fill="#5ba4f5"
-            opacity="0.06"
-          />
-          <ellipse
-            cx={SURVEY_DOPPLER_PEAK_X}
-            cy={SURVEY_DOPPLER_PEAK_Y + 8}
-            rx="43"
-            ry="23"
-            fill="none"
-            stroke="#5ba4f5"
-            strokeWidth="1.5"
-            strokeDasharray="4,3"
-            opacity="0.58"
-          />
           <rect
-            x={SURVEY_DOPPLER_PEAK_X - 66}
-            y="19"
-            width="132"
-            height="33"
+            x={SURVEY_DOPPLER_PEAK_X - 72}
+            y={HERO_PERSEUS_LABEL_Y}
+            width="144"
+            height="36"
             rx="5"
             fill="#08172e"
             stroke="#5ba4f5"
             strokeWidth="1"
-            opacity="0.86"
-          />
-          <path
-            d={`M ${SURVEY_DOPPLER_PEAK_X - 10} 52 L ${SURVEY_DOPPLER_PEAK_X - 25} 64 L ${SURVEY_DOPPLER_PEAK_X - 25} ${SURVEY_DOPPLER_PEAK_Y + 5}`}
-            fill="none"
-            stroke="#5ba4f5"
-            strokeWidth="1.1"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity="0.56"
+            opacity="0.82"
           />
           <text
-            x={SURVEY_DOPPLER_PEAK_X} y="34"
+            x={SURVEY_DOPPLER_PEAK_X} y={HERO_PERSEUS_LABEL_Y + 16}
             textAnchor="middle"
-            fill="#c5ddfb" fontSize="9" fontWeight="700"
+            fill="#c5ddfb" fontSize="10.5" fontWeight="700"
             fontFamily="ui-monospace,monospace"
           >
             Perseus Arm
           </text>
           <text
-            x={SURVEY_DOPPLER_PEAK_X} y="46"
+            x={SURVEY_DOPPLER_PEAK_X} y={HERO_PERSEUS_LABEL_Y + 29}
             textAnchor="middle"
-            fill="#7ab8f7" fontSize="7.5"
+            fill="#7ab8f7" fontSize="8.25"
             fontFamily="ui-monospace,monospace"
           >
             Milky Way spiral arm
@@ -442,10 +403,11 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
         const leftX = Math.min(SURVEY_MAIN_PEAK_X, restX);
         const rightX = Math.max(SURVEY_MAIN_PEAK_X, restX);
         const midX = (leftX + rightX) / 2;
-        const barY = -21;
-        const prongY = -10;
-        const tickY = -32;
-        const labelY = -35;
+        const prongY = SURVEY_MAIN_PEAK_Y - 9;
+        const barY = prongY - 12;
+        const tickY = barY - 15;
+        const labelY = tickY - 3;
+        const linkBoxY = labelY - 13;
         return (
           <a href="#h1-doppler-section" style={{ cursor: 'pointer' }}>
             <title>The received peak is offset from the 1420.4 MHz rest line — that gap is the Doppler shift. Click to learn more.</title>
@@ -456,31 +418,79 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
               strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity="0.9"
+              opacity="0.72"
+            />
+            <rect
+              x={midX - 70}
+              y={linkBoxY}
+              width="140"
+              height="18"
+              rx="4"
+              fill="#0b1328"
+              stroke="#7ab8f7"
+              strokeWidth="1"
+              opacity="0.88"
             />
             <text
-              x={midX} y={labelY}
+              x={midX - 6} y={labelY}
               textAnchor="middle"
-              fill="#c8dcff" fontSize="12" fontWeight="bold" opacity="1"
+              fill="#d4e5ff" fontSize="11" fontWeight="bold" opacity="0.92"
               fontFamily="ui-monospace,monospace"
               style={{ textDecoration: 'underline' }}
             >
               Why the difference?
             </text>
+            <path
+              d={`M ${midX + 57} ${labelY - 5} L ${midX + 62} ${labelY - 5} L ${midX + 62} ${labelY} M ${midX + 62} ${labelY - 5} L ${midX + 55} ${labelY + 2}`}
+              fill="none"
+              stroke="#d4e5ff"
+              strokeWidth="1.1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.9"
+            />
           </a>
         );
       })()}
       <line x1="0" y1={HERO_BASE_Y} x2={HW} y2={HERO_BASE_Y} stroke="#232640" strokeWidth="1" />
       {FREQ_TICKS_MHZ.map(f => {
         const isRest = Math.abs(f - 1420.4) < 0.001;
+        if (isRest) {
+          return (
+            <g key={f}>
+              <rect
+                x={fToX(f) - 38}
+                y={HERO_REST_LABEL_BOX_Y}
+                width="76"
+                height="21"
+                rx="4"
+                fill="#251b0d"
+                stroke="#ffbc42"
+                strokeWidth="1"
+                opacity="0.94"
+              />
+              <text
+                x={fToX(f)}
+                y={HERO_REST_LABEL_Y}
+                textAnchor="middle"
+                fill="#ffd37a"
+                fontSize="12"
+                fontWeight="800"
+                fontFamily="ui-monospace,monospace"
+              >
+                {`${f.toFixed(1)} MHz`}
+              </text>
+            </g>
+          );
+        }
         return (
           <text
             key={f}
-            x={fToX(f)} y={isRest ? '183' : '178'}
+            x={fToX(f)} y={HERO_AXIS_LABEL_Y}
             textAnchor="middle"
-            fill={isRest ? '#b9944f' : '#6f719a'}
-            fontSize={isRest ? '11' : '10'}
-            fontWeight={isRest ? '700' : 'normal'}
+            fill="#6f719a"
+            fontSize="10"
+            fontWeight="normal"
             fontFamily="ui-monospace,monospace"
           >
             {f.toFixed(1)}
@@ -1048,17 +1058,72 @@ interface Props {
   onJoin: (token: string | null) => Promise<void>;
   hasControl: boolean;
   onContinue: () => void;
+  loading?: boolean;
 }
 
 export function QueuePage({
-  status, joining, joinError, siteKey, turnstileEnabled, onJoin, hasControl, onContinue,
+  status, joining, joinError, siteKey, turnstileEnabled, onJoin, hasControl, onContinue, loading = false,
 }: Props) {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const widgetRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
   const autoJoinedTokenRef = useRef<string | null>(null);
+  const misleadingButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [misleadingPopover, setMisleadingPopover] = useState<{
+    left: number;
+    top: number;
+    placement: 'above' | 'below';
+  } | null>(null);
   const inQueue = (status?.position ?? -1) >= 0;
+
+  const positionMisleadingPopover = () => {
+    const trigger = misleadingButtonRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const popoverWidth = Math.min(
+      MISLEADING_POPOVER_WIDTH,
+      viewportWidth - MISLEADING_POPOVER_MARGIN * 2,
+    );
+    const halfWidth = popoverWidth / 2;
+    const maxLeft = Math.max(
+      MISLEADING_POPOVER_MARGIN + halfWidth,
+      viewportWidth - MISLEADING_POPOVER_MARGIN - halfWidth,
+    );
+    const left = clamp(
+      rect.left + rect.width / 2,
+      MISLEADING_POPOVER_MARGIN + halfWidth,
+      maxLeft,
+    );
+    const roomAbove = rect.top - MISLEADING_POPOVER_MARGIN;
+    const roomBelow = viewportHeight - rect.bottom - MISLEADING_POPOVER_MARGIN;
+    const placement = roomAbove > roomBelow && roomAbove >= MISLEADING_POPOVER_HEIGHT ? 'above' : 'below';
+    const preferredTop = placement === 'above'
+      ? rect.top - MISLEADING_POPOVER_GAP - MISLEADING_POPOVER_HEIGHT
+      : rect.bottom + MISLEADING_POPOVER_GAP;
+    const maxTop = Math.max(
+      MISLEADING_POPOVER_MARGIN,
+      viewportHeight - MISLEADING_POPOVER_MARGIN - MISLEADING_POPOVER_HEIGHT,
+    );
+    const top = clamp(
+      preferredTop,
+      MISLEADING_POPOVER_MARGIN,
+      maxTop,
+    );
+    setMisleadingPopover({ left, top, placement });
+  };
+
+  useEffect(() => {
+    if (!misleadingPopover) return;
+    window.addEventListener('resize', positionMisleadingPopover);
+    window.addEventListener('scroll', positionMisleadingPopover, true);
+    return () => {
+      window.removeEventListener('resize', positionMisleadingPopover);
+      window.removeEventListener('scroll', positionMisleadingPopover, true);
+    };
+  }, [misleadingPopover]);
 
   useEffect(() => {
     const mobileQuery = window.matchMedia('(max-width: 720px)');
@@ -1131,7 +1196,7 @@ export function QueuePage({
   }, [inQueue, turnstileEnabled, siteKey]);
 
   // Non-turnstile flow: nothing to verify, so a plain landing page is fine.
-  if (!inQueue && !turnstileEnabled) {
+  if (!loading && !inQueue && !turnstileEnabled) {
     return (
       <div className="queue-landing">
         <div className="queue-card">
@@ -1169,9 +1234,11 @@ export function QueuePage({
       <header className={`queue-header${headerCollapsed ? ' queue-header-collapsed' : ''}`}>
         <div className="queue-header-inner">
           <div className="queue-header-title">
-            <h1>{inQueue ? 'You are in the queue' : 'Joining the queue'}</h1>
+            <h1>{loading ? 'Loading queue' : inQueue ? 'You are in the queue' : 'Joining the queue'}</h1>
             <p className="queue-header-sub">
-              {inQueue
+              {loading
+                ? "While the telescope checks your place, scroll on to learn what you'll be observing."
+                : inQueue
                 ? "While you wait, scroll on to learn what you'll be observing."
                 : 'Complete the quick verification to take your place in line.'}
             </p>
@@ -1232,15 +1299,30 @@ export function QueuePage({
               <h2 className="h1-section-heading">The spin-flip transition</h2>
               <p className="h1-section-body">
                 Neutral hydrogen consists of one proton and one electron, each with a quantum property known as spin. The term "spin" here is a bit{' '}
-                <button className="spectrum-doppler-term h1-misleading-highlight" type="button" aria-label="Show why the spin analogy is misleading">
+                <button
+                  ref={misleadingButtonRef}
+                  className="spectrum-doppler-term h1-misleading-highlight"
+                  type="button"
+                  aria-label="Show why the spin analogy is misleading"
+                  aria-expanded={misleadingPopover ? 'true' : 'false'}
+                  onMouseEnter={positionMisleadingPopover}
+                  onFocus={positionMisleadingPopover}
+                  onMouseLeave={() => setMisleadingPopover(null)}
+                  onBlur={() => setMisleadingPopover(null)}
+                  onClick={positionMisleadingPopover}
+                >
                   misleading
-                  <span className="h1-misleading-popover" role="tooltip">
+                  <span
+                    className={`h1-misleading-popover h1-misleading-popover-${misleadingPopover?.placement ?? 'below'}${misleadingPopover ? ' h1-misleading-popover-open' : ''}`}
+                    role="tooltip"
+                    style={misleadingPopover ? { left: misleadingPopover.left, top: misleadingPopover.top } : undefined}
+                  >
                     <img src="/Screenshot%202026-05-18%20202822.png" alt="Electron spin explained: imagine a ball that's rotating, except it's not a ball and it's not rotating." />
                   </span>
                 </button>{' '}
                 to say the least, so for this analogy, we'll simplify spin to its two possible states: "up" and "down". The spin of each particle induces a small magnetic moment, and the interaction between them gives the parallel configuration, where the proton and electron spins point in the same direction, slightly more energy than the anti-parallel configuration, where one is up and the other is down. A spin-flip transition happens when the electron's spin spontaneously flips, releasing a photon at 1420.4 MHz. That photon is the hydrogen line observed in radio astronomy.
               </p>
-              <p className="h1-section-body">Although an individual spin-flip transition is exceptionally rare, with an average wait of about 11 million years, neutral hydrogen is so abundant that the combined signal is constant and measurable, even with the smallest radio telescopes.</p>
+              <p className="h1-section-body">Although an individual spin-flip transition is exceptionally rare, with an average wait of about 11 million years, neutral hydrogen is so abundant that the combined signal is constant and measurable, even with a home-built radio telescope.</p>
             </div>
             <div className="h1-spinflip-visual" />
           </div>

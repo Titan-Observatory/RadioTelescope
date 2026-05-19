@@ -105,6 +105,19 @@ class CommandRequest(BaseModel):
     args: dict[str, int | bool] = Field(default_factory=dict)
 
 
+class JogRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=80)
+    seq: int = Field(ge=0)
+    direction: Literal["west", "east", "up", "down"]
+    speed: int = Field(ge=0, le=127)
+    timeout_ms: int = Field(default=650, ge=250, le=2000)
+
+
+class JogStopRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=80)
+    seq: int = Field(ge=0)
+
+
 class AltAzPoint(BaseModel):
     altitude_deg: float = Field(ge=0, le=90)
     azimuth_deg: float = Field(ge=0, le=360)

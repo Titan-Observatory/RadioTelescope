@@ -328,12 +328,13 @@ async def do_login(request: Request, password: str = Form(...)) -> HTMLResponse 
         auth.record_success(ip)
         logger.info("Auth: successful login from %s", ip)
         resp = RedirectResponse(url="/", status_code=303)
+        server_cfg = request.app.state.config.server
         resp.set_cookie(
             key=_COOKIE_NAME,
             value=auth.make_cookie_value(),
             max_age=30 * 24 * 60 * 60,  # 30 days
             httponly=True,
-            secure=request.url.scheme == "https",
+            secure=server_cfg.public_exposure or request.url.scheme == "https",
             samesite="lax",
             path="/",
         )

@@ -56,13 +56,14 @@ function App() {
   const sessionStartedRef = useRef(false);
   useEffect(() => {
     if (sessionStartedRef.current) return;
+    if (!queue.queueReady) return;
     if (queue.queueEnabled && queue.queueStatus == null) return;
     sessionStartedRef.current = true;
     track('session_start', {
       queue_enabled: queue.queueEnabled,
       entered_as: queue.isActiveController ? 'controller' : 'spectator',
     });
-  }, [queue.queueEnabled, queue.queueStatus, queue.isActiveController]);
+  }, [queue.queueReady, queue.queueEnabled, queue.queueStatus, queue.isActiveController]);
 
   // Offer the first-visit guided tour once the user actually has the controls
   // in front of them — no point prompting while they're still on the queue page.
@@ -74,7 +75,7 @@ function App() {
 
   // Queue gating: when the queue is enabled and we are not the active
   // controller, render the spectator/queue page instead of the control UI.
-  if (queue.queueEnabled && !queue.isActiveController) {
+  if (!queue.queueReady || (queue.queueEnabled && !queue.isActiveController)) {
     return (
       <QueuePage
         status={queue.queueStatus}
@@ -85,6 +86,7 @@ function App() {
         onJoin={queue.join}
         hasControl={queue.hasControl}
         onContinue={queue.acknowledgeContinue}
+        loading={!queue.queueReady}
       />
     );
   }
@@ -124,7 +126,8 @@ function App() {
           <div className="skymap-bottom-dock">
             <div className="skymap-overlay-controls">
               <MotionControls
-                runCommand={motion.runCommand}
+                jog={motion.jog}
+                stopJog={motion.stopJog}
                 gotoAltAz={motion.gotoAltAz}
                 targetAz={map.targetAz}
                 targetAlt={map.targetAlt}
