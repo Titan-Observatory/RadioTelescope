@@ -1399,9 +1399,9 @@ export function QueuePage({
           <div className="h1-spinflip-inner">
             <div className="h1-spinflip-text">
               <span className="h1-eyebrow">How was it found?</span>
-              <h2 className="h1-section-heading">A brief history of radio astronomy</h2>
-              <p className="h1-section-body">In the 1930's, while working at Bell Labs in it's formative years, Karl G. Jansky was tasked with identifying sources of radio noise which could interefere with overseas radio communication (a bleeding edge technology at the time). Among more mundane sources like thunderstorms, Jansky observed a peculiar background "hiss" of unknown origin which seemed to cycle in intensity once per day, leading Jansky to assume this noise originated from the sun. However, after a few more months of observation, the point of maximum "static" had noticibly shifted from the position of the sun. Recognizing that he was at the edge of his expertise as a radio engineer, Janksky discussed the puzzle with his friend and astrophysicist Albert Melvin Skellett, who pointed out that the now refined 23 hours and 56 minute period of the signal was the exact length of a sidereal day.</p>
-              <p className="h1-section-body">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+              <h2 className="h1-section-heading">An example of science at it's best</h2>
+              <p className="h1-section-body">By 1951, thanks in part to the postwar boom in radar technologies, radio had established itself as a serious branch of astronomy. However, the surveys, solar studies, and detections were limited to telling us </p>
+              <p className="h1-section-body">Applications of the hydrogen line were obvious from the first detection. Doc Ewen, noticing an unanticipated shift in the observed frequency relative to the rest frequency of hydrogen, called the Harvard Observatory asking for the radial velocity correction for an observation at that time of that location in the sky. When asked why he needed the information, Ewen explained that he was attempting to detect the hyperfine transition of hydrogen in space, and needed to calculate the doppler shift. After a moment of silence, there was a click as the Observatory disconnected the call.</p>
             </div>
             <div className="h1-spinflip-visual" />
           </div>
@@ -1413,7 +1413,7 @@ export function QueuePage({
             <div className="h1-doppler-text">
               <span className="h1-eyebrow">How do we use it?</span>
               <h2 className="h1-section-heading">The Doppler Effect</h2>
-              <p className="h1-section-body">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+              <p className="h1-section-body"></p>
               <p className="h1-section-body">Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est qui dolorem ipsum quia dolor sit amet.</p>
             </div>
             <div className="h1-doppler-visual">
@@ -1422,6 +1422,18 @@ export function QueuePage({
                 The relative velocity of hydrogen gas along our line of sight shifts the observed frequency: approaching gas is blueshifted, receding gas is redshifted.
               </p>
             </div>
+          </div>
+        </section>
+
+        <section className="h1-spinflip h1-spinflip-alt" id="h1-history-section">
+          <div className="h1-spinflip-inner">
+            <div className="h1-spinflip-text">
+              <span className="h1-eyebrow">How was it found?</span>
+              <h2 className="h1-section-heading">A brief history of radio astronomy</h2>
+              <p className="h1-section-body">In the 1930's, while working at Bell Labs in it's formative years, Karl G. Jansky was tasked with identifying sources of radio noise which could interefere with overseas radio communication (a bleeding edge technology at the time). Among more mundane sources like thunderstorms, Jansky observed a peculiar background "hiss" of unknown origin which seemed to cycle in intensity once per day, leading Jansky to assume this noise originated from the sun. However, after a few more months of observation, the point of maximum "static" had noticibly shifted from the position of the sun. Recognizing that this was reaching outside his expertise as a radio engineer, Janksky discussed the puzzle with his friend and astrophysicist Albert Melvin Skellett, who pointed out that the now refined 23 hours and 56 minute period of the signal was the exact length of a sidereal day.</p>
+              <p className="h1-section-body">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+            </div>
+            <div className="h1-spinflip-visual" />
           </div>
         </section>
 
