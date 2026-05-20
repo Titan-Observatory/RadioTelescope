@@ -292,12 +292,15 @@ def public_exposure_errors(cfg: AppConfig) -> list[str]:
         errors.append("queue.enabled must be true for public exposure")
     if _placeholder_secret(cfg.queue.cookie_secret):
         errors.append("queue.cookie_secret must be a generated production secret")
-    if not cfg.turnstile.enabled:
-        errors.append("turnstile.enabled must be true for public queue joins")
-    if not cfg.turnstile.site_key or _turnstile_test_key(cfg.turnstile.site_key):
-        errors.append("turnstile.site_key must be a production site key")
-    if not cfg.turnstile.secret_key or _turnstile_test_key(cfg.turnstile.secret_key):
-        errors.append("turnstile.secret_key must be a production secret key")
+    # When auth (beta password) is enabled it already gates every queue join,
+    # so Turnstile is not required as an additional bot check.
+    if not cfg.auth.enabled:
+        if not cfg.turnstile.enabled:
+            errors.append("turnstile.enabled must be true for public queue joins")
+        if not cfg.turnstile.site_key or _turnstile_test_key(cfg.turnstile.site_key):
+            errors.append("turnstile.site_key must be a production site key")
+        if not cfg.turnstile.secret_key or _turnstile_test_key(cfg.turnstile.secret_key):
+            errors.append("turnstile.secret_key must be a production secret key")
     if cfg.server.cors_origins == ["*"] or "*" in cfg.server.cors_origins:
         errors.append("server.cors_origins must list the production origin, not '*'")
     if not cfg.server.trusted_proxies:
