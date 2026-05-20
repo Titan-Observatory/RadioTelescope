@@ -1233,7 +1233,7 @@ export function QueuePage({
     : 0;
 
   // Keep the animated spectrum quiet while the join verification widget is active.
-  const animationsPaused = !inQueue && turnstileEnabled;
+  const animationsPaused = false;
 
   return (
     <div className="queue-waiting">
@@ -1256,7 +1256,17 @@ export function QueuePage({
                 ? "While the telescope checks your place, scroll on to learn what you'll be observing."
                 : inQueue
                 ? "While you wait, scroll on to learn what you'll be observing."
-                : 'Enter the beta password here to join the line; the telescope information stays available below.'}
+                : (
+                    <>
+                      Password required to join.{' '}
+                      <span className="beta-interest-link">
+                        Don&apos;t have one?{' '}
+                        <a href="https://forms.gle/qPtCGmJdvtG6W8Ky6" target="_blank" rel="noopener noreferrer">
+                          Apply for access
+                        </a>
+                      </span>
+                    </>
+                  )}
             </p>
             <p className="queue-content-disclaimer">
               All content was researched and written by humans :)
@@ -1277,12 +1287,6 @@ export function QueuePage({
                         value={betaPassword}
                         onChange={(e) => setBetaPassword(e.target.value)}
                       />
-                      <p className="beta-interest-link">
-                        Don&apos;t have one?{' '}
-                        <a href="https://forms.gle/qPtCGmJdvtG6W8Ky6" target="_blank" rel="noopener noreferrer">
-                          Apply for access
-                        </a>
-                      </p>
                     </div>
                   )}
                   {turnstileEnabled && (
@@ -1295,20 +1299,14 @@ export function QueuePage({
                       ? 'Joining...'
                       : rateLimited
                         ? `Try again in ${joinRateLimitedSec}s`
-                        : turnstileEnabled && !captchaToken
-                          ? 'Complete verification'
-                          : 'Join queue'}
+                        : 'Join queue'}
                   </button>
                   <p className={`queue-status-line${joinError || rateLimited ? ' queue-status-line-error' : ''}`}>
                     {rateLimited
                       ? `You're trying too fast - try again in ${joinRateLimitedSec}s.`
                       : joinError
                         ? joinError
-                        : turnstileEnabled && !captchaToken
-                          ? 'Verification is required before joining.'
-                          : betaPasswordEnabled && !betaPassword
-                            ? 'Password required to join.'
-                            : 'Ready to join.'}
+                        : 'Ready to join.'}
                   </p>
                 </form>
               )}
