@@ -360,6 +360,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
       />
       <path ref={fillPathRef} d={initialPaths.fill} fill="url(#h1HeroBaseFillGrad)" />
       <path ref={peakFillPathRef} d={initialPaths.fill} fill="url(#h1HeroPeakFillGrad)" />
+      <line x1="0" y1={HERO_BASE_Y} x2={HW} y2={HERO_BASE_Y} stroke="#232640" strokeWidth="1" />
       <path ref={glowPathRef} d={initialPaths.line} fill="none" stroke="url(#h1HeroLineGlowGrad)" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" opacity="0.42" />
       <path ref={linePathRef} d={initialPaths.line} fill="none" stroke="#ffbc42" strokeWidth="3.25" strokeLinecap="round" strokeLinejoin="round" />
       <line x1={fToX(H1_REST_MHZ)} y1={SURVEY_MAIN_PEAK_Y} x2={fToX(H1_REST_MHZ)} y2={HERO_BASE_Y} stroke="#ffbc42" strokeWidth="1.35" strokeDasharray="5,4" opacity="0.72" />
@@ -453,7 +454,6 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
           </a>
         );
       })()}
-      <line x1="0" y1={HERO_BASE_Y} x2={HW} y2={HERO_BASE_Y} stroke="#232640" strokeWidth="1" />
       {FREQ_TICKS_MHZ.map(f => {
         const isRest = Math.abs(f - 1420.4) < 0.001;
         if (isRest) {
