@@ -2637,7 +2637,7 @@ h2.panel-header {
     gap: 14px;
     padding: 14px 18px 12px;
   }
-  .queue-header-sub {
+  .queue-header-password {
     max-height: 4.8em;
     overflow: hidden;
     transition:
@@ -2645,13 +2645,10 @@ h2.panel-header {
       margin-top 180ms ease,
       opacity 140ms ease;
   }
-  .queue-header-collapsed .queue-header-sub {
+  .queue-header-collapsed .queue-header-password {
     max-height: 0;
     margin-top: 0;
     opacity: 0;
-  }
-  .queue-header-collapsed .queue-access-link {
-    display: none;
   }
   .queue-header-status {
     align-items: flex-start;
@@ -3091,8 +3088,8 @@ h2.panel-header {
     overflow: hidden;
   }
   .h1-hero-figure .h1-svg {
-    width: 520px;
-    max-width: none;
+    width: 100%;
+    max-width: 100%;
     align-self: center;
   }
 
