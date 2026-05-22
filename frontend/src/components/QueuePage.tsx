@@ -1348,9 +1348,51 @@ export function QueuePage({
           </div>
         </section>
 
-        {/* ── Spin-flip section ─────────────────────────────────────────────── */}
-        <section className="h1-spinflip" id="h1-spinflip-section">
+        {/* ── Radio Astronomy History section ─────────────────────────────────────────────── */}
+        <section className="h1-spinflip h1-discovery-section" id="h1-history-section">
           <StarsBackground />
+          <div className="h1-spinflip-inner">
+            <div className="h1-spinflip-text">
+              <span className="h1-eyebrow">How was it discovered?</span>
+              <h2 className="h1-section-heading">Science at its best</h2>
+              <p className="h1-section-body">In the decades after radio waves were first detected from space in 1931, radio astronomy was mostly a way of measuring continuum emission, giving us a general "brightness" of a source. It could reveal that something was there, but not much else.</p>
+              <p className="h1-section-body">Astronomers already knew the power of spectral lines from visible-light astronomy, but applying that idea to radio astronomy required a unique skillset between astronomy and RF engineering.</p>
+              <p className="h1-section-body">Doc Ewen, after noticing an unanticipated shift in the observed frequency relative to the rest frequency of hydrogen, called the Harvard Observatory asking for the radial velocity correction for an observation at that time of that location in the sky. When asked why he needed the information, Ewen explained that he was attempting to detect the hyperfine transition of hydrogen in space, and needed to calculate the doppler shift. After a moment of silence, there was a click as the Observatory disconnected the call.</p>
+            </div>
+            <figure className="h1-ewen-figure">
+              <img
+                src="/ewen.jpg"
+                alt="Doc Ewen inspecting patchwork inside the horn antenna"
+                className="h1-ewen-image"
+              />
+              <figcaption className="h1-ewen-caption">
+                <blockquote>
+                  After one year, parts of the copper skin had cracked and peeled away from the plywood. I purchased fifty feet of rope from a local hardware store, tied one end around my waist and the other to the lower section of the antenna mount. With a large soldering iron, solder, and a bristle brush I went over the side, four floors up, and slid into the horn. About an hour later, I managed to climb out of the horn back on to the parapet. This picture of me inspecting the patchwork was taken about two days later. The line was detected within the next few weeks.
+                </blockquote>
+                <cite>Doc Ewen</cite>
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+        {/* ── Doppler section ───────────────────────────────────────────────── */}
+        <section className="h1-spinflip h1-spinflip-alt" id="h1-doppler-section">
+          <div className="h1-doppler-inner">
+            <div className="h1-doppler-text">
+              <span className="h1-eyebrow">How do we use it?</span>
+              <h2 className="h1-section-heading">The Doppler Effect</h2>
+              <p className="h1-section-body"></p>
+              <p className="h1-section-body"></p>
+            </div>
+            <div className="h1-doppler-visual">
+              <DopplerAnimation paused={animationsPaused} />
+              <p className="h1-visual-caption">
+                The relative velocity of hydrogen gas along our line of sight shifts the observed frequency: approaching gas is blueshifted, receding gas is redshifted.
+              </p>
+            </div>
+          </div>
+        </section>
+        {/* ── Spin-flip section ─────────────────────────────────────────────── */}
+        <section className="h1-doppler" id="h1-spinflip-section">
           <div className="h1-spinflip-inner">
             <div className="h1-spinflip-text">
               <span className="h1-eyebrow">What causes it?</span>
@@ -1388,51 +1430,6 @@ export function QueuePage({
             <div className="h1-spinflip-visual" />
           </div>
         </section>
-        
-        {/* ── Radio Astronomy History section ─────────────────────────────────────────────── */}
-        <section className="h1-spinflip h1-spinflip-alt h1-discovery-section" id="h1-history-section">
-          <div className="h1-spinflip-inner">
-            <div className="h1-spinflip-text">
-              <span className="h1-eyebrow">How was it discovered?</span>
-              <h2 className="h1-section-heading">Science at its best</h2>
-              <p className="h1-section-body">In the decades after radio waves were first detected from space in 1931, radio astronomy was mostly a way of measuring continuum emission, giving us a general "brightness" of a source. It could reveal that something was there, but not much else.</p>
-              <p className="h1-section-body">Astronomers already knew the power of spectral lines from visible-light astronomy, but applying that idea to radio astronomy required a unique skillset between astronomy and RF engineering.</p>
-              <p className="h1-section-body">Doc Ewen, after noticing an unanticipated shift in the observed frequency relative to the rest frequency of hydrogen, called the Harvard Observatory asking for the radial velocity correction for an observation at that time of that location in the sky. When asked why he needed the information, Ewen explained that he was attempting to detect the hyperfine transition of hydrogen in space, and needed to calculate the doppler shift. After a moment of silence, there was a click as the Observatory disconnected the call.</p>
-            </div>
-            <figure className="h1-ewen-figure">
-              <img
-                src="/ewen.jpg"
-                alt="Doc Ewen inspecting patchwork inside the horn antenna"
-                className="h1-ewen-image"
-              />
-              <figcaption className="h1-ewen-caption">
-                <blockquote>
-                  After one year, parts of the copper skin had cracked and peeled away from the plywood. I purchased fifty feet of rope from a local hardware store, tied one end around my waist and the other to the lower section of the antenna mount. With a large soldering iron, solder, and a bristle brush I went over the side, four floors up, and slid into the horn. About an hour later, I managed to climb out of the horn back on to the parapet. This picture of me inspecting the patchwork was taken about two days later. The line was detected within the next few weeks.
-                </blockquote>
-                <cite>Doc Ewen</cite>
-              </figcaption>
-            </figure>
-          </div>
-        </section>
-        
-        {/* ── Doppler section ───────────────────────────────────────────────── */}
-        <section className="h1-doppler" id="h1-doppler-section">
-          <div className="h1-doppler-inner">
-            <div className="h1-doppler-text">
-              <span className="h1-eyebrow">How do we use it?</span>
-              <h2 className="h1-section-heading">The Doppler Effect</h2>
-              <p className="h1-section-body"></p>
-              <p className="h1-section-body"></p>
-            </div>
-            <div className="h1-doppler-visual">
-              <DopplerAnimation paused={animationsPaused} />
-              <p className="h1-visual-caption">
-                The relative velocity of hydrogen gas along our line of sight shifts the observed frequency: approaching gas is blueshifted, receding gas is redshifted.
-              </p>
-            </div>
-          </div>
-        </section>
-
         <section className="h1-spinflip h1-spinflip-alt h1-jansky-section" id="h1-history-section">
           <div className="h1-spinflip-inner">
             <div className="h1-spinflip-text">

@@ -3,17 +3,19 @@
 Infrastructure for the public deploy. Topology:
 
 ```text
-Internet --443--> nginx (LAN, SSL edge)
-                 -> caddy.lan:8080 (app host)
-                    -> serves /srv/telescope/ static bundle
-                    -> proxies /api/* and /ws/* to pi.lan:8000
+Internet --443--> upstream SSL terminator (Cloudflare or similar)
+                 -> nginx (LAN, plain HTTP forward)
+                    -> caddy.lan:8080 (app host)
+                       -> serves /srv/telescope/ static bundle
+                       -> proxies /api/* and /ws/* to pi.lan:8000
 ```
+
+SSL is terminated upstream of nginx; nginx plain-HTTP-proxies to Caddy on the LAN.
 
 ## Files
 
 | Path | Purpose |
 |------|---------|
-| [`nginx/telescope.conf`](nginx/telescope.conf) | Public SSL terminator. Installed once and proxies every path to Caddy. |
 | [`caddy/Caddyfile.live`](caddy/Caddyfile.live) | Serves the SPA from `dist/` and reverse-proxies `/api/*` and `/ws/*` to the Pi. |
 | [`systemd/radiotelescope.service`](systemd/radiotelescope.service) | Pi-side systemd unit. |
 | [`secrets.example.env`](secrets.example.env) | Template for production secrets. Never commit the real file. |
@@ -22,18 +24,6 @@ Internet --443--> nginx (LAN, SSL edge)
 The deploy script lives at [`../scripts/deploy.sh`](../scripts/deploy.sh).
 
 ## One-time bootstrap
-
-### nginx host
-
-```bash
-sudo cp infra/nginx/telescope.conf /etc/nginx/sites-available/telescope.conf
-sudo ln -sf /etc/nginx/sites-available/telescope.conf /etc/nginx/sites-enabled/telescope.conf
-sudo certbot --nginx -d telescope.example.com
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-Edit `telescope.conf`: replace `telescope.example.com` with the real
-hostname and `caddy.lan:8080` with the LAN address Caddy listens on.
 
 ### caddy host
 
