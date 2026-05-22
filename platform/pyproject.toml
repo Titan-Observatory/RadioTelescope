@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rt-platform"
+version = "0.1.0"
+description = "RadioTelescope platform service (UI, queue, auth, hardware proxy)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.0",
+    "httpx>=0.27",
+    "itsdangerous>=2.2",
+    "python-multipart>=0.0.9",
+    # Used by SpectrumBridge to subscribe to the hardware's /ws/spectrum.
+    # Already a transitive dep via uvicorn[standard]; pinned here so the
+    # import in services/spectrum_bridge.py is explicit.
+    "websockets>=12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+rt-platform = "rt_platform.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

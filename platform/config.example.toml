@@ -1,0 +1,46 @@
+# Example platform service config — copy to config.toml and edit.
+
+[general]
+log_level = "INFO"
+
+[server]
+host = "0.0.0.0"
+port = 8000
+cors_origins = ["*"]
+allowed_clients = ["10.0.27.1", "10.0.27.2"]
+trusted_proxies = ["127.0.0.1", "::1"]
+lan_only = false
+
+[rate_limit]
+enabled = true
+
+[queue]
+enabled = true
+max_session_seconds = 600
+idle_timeout_seconds = 60
+max_queue_size = 100
+cookie_secret = "change-me-in-config"
+cookie_name = "rt_session"
+max_sessions_per_ip = 3
+join_cooldown_seconds = 5
+
+[auth]
+enabled = false
+passwords_file = "passwords.txt"
+secret_key = "change-me-in-config"
+max_attempts = 5
+lockout_minutes = 15
+
+[turnstile]
+enabled = true
+site_key = ""
+secret_key = ""
+
+# URL of the rt-hardware service. In Docker Compose use the service name;
+# in a bare-metal LAN deployment, the Pi's IP and port.
+hardware_url = "http://hardware:8001"
+sdr_bridge_enabled = true
+
+feedback_log_path = "feedback.jsonl"
+events_log_path = "events.jsonl"
+motion_log_path = "motion.jsonl"

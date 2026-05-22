@@ -2,85 +2,93 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Layout
+
+Monorepo with two independently deployable services:
+
+- `hardware/` — `rt-hardware` package. Pi-side: motors, SDR, camera. Trusted-network only; no users, no queue, no UI.
+- `platform/` — `rt-platform` package. Web-facing: UI, queue, auth, proxies HTTP/WS to `rt-hardware`. Includes the React frontend at `platform/frontend/`.
+
+The two services communicate exclusively over HTTP/WebSocket (`platform.config.hardware_url`). The platform has no Python imports from the hardware package.
+
 ## Commands
 
 ```bash
-# Backend install (editable, with dev deps)
+# ── Docker (default user experience) ────────────────────────────────────
+docker compose up                             # production-style stack
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up   # no USB pass-through
+
+# ── Bare metal: hardware service ────────────────────────────────────────
+cd hardware
 pip install -e ".[dev]"
+rt-hardware -c config.toml                    # listens on 0.0.0.0:8001
+pytest                                        # hardware tests
 
-# Frontend install + build (required for serving the UI from the backend)
-cd frontend && npm install && npm run build
+# ── Bare metal: platform service ────────────────────────────────────────
+cd platform
+pip install -e ".[dev]"
+rt-platform -c config.toml                    # listens on 0.0.0.0:8000
+pytest                                        # platform tests
 
-# Run server
-radiotelescope -c config.toml
+# ── Frontend dev server ────────────────────────────────────────────────
+cd platform/frontend
+npm install
+npm run dev                                   # Vite at :5173, proxies API to :8000
 
-# Frontend dev server (Vite, hot reload at :5173, proxies API to :8000)
-cd frontend && npm run dev
-
-# Run all tests
-pytest
-
-# Run single test file or filter
-pytest tests/test_roboclaw_service.py
-pytest -k "test_goto"
+# ── Type sync (run when models change) ──────────────────────────────────
+cd hardware && python -m rt_hardware.scripts.dump_types
+# Writes ../platform/frontend/src/types.gen.ts
 ```
 
 ## Architecture
 
-Layered: hardware → services → API → React frontend. There is no separate "safety layer"; limit checks live in the routes/service that need them.
+### Hardware service (`hardware/src/rt_hardware/`)
 
-**Deployment modes** (`HardwareConfig.mode`):
-- `local` — single box owns hardware and UI.
-- `gateway-server` — Pi owns motor/SDR/camera, exposes hardware routes only; headless.
-- `gateway-client` — separate host runs the UI and DSP, talks to a `gateway-server` over LAN. Uses `RemoteRoboClawClient` (HTTP/WS to the Pi) and `SpectrumBridge` (subscribes once to the Pi's `/ws/spectrum` and fans frames out to browsers, since the Pi 3B+'s 100 Mbps NIC can't carry raw IQ).
+Owns the physical hardware. Routes are unauthenticated — the service binds on a trusted network only (Docker internal bridge, or a LAN with firewall rules).
 
-**Startup flow** (`main.py` lifespan):
-1. Build a `RoboClawClient` (local serial via `make_client`, or `RemoteRoboClawClient` in `gateway-client` mode).
-2. Build a `katpoint.Antenna` from `[observer]` config; stash it on `app.state.antenna`.
-3. Instantiate `RoboClawService(client, update_rate_hz, mount_cfg, antenna)` and `QueueService`.
-4. In `local`/`gateway-server` mode with `sdr.enabled`, instantiate `SpectrumService(SDRReceiver(cfg.sdr), cfg.sdr)`. In `gateway-client` mode, instantiate `SpectrumBridge` instead.
-5. Start each service's background task. All instances live on `app.state`.
+- `hardware/roboclaw.py` — Packet Serial driver for a RoboClaw motor controller over USB serial. M1 = azimuth, M2 = elevation. `COMMANDS` / `OPERATOR_COMMAND_IDS` define the API surface.
+- `hardware/sdr.py` — `SDRReceiver` wraps SoapySDR's `airspy` driver. Optional 4.5 V bias tee for an inline LNA.
+- `hardware/host_stats.py` — CPU/memory/temp readers folded into telemetry.
+- `services/roboclaw.py` — `RoboClawService`: polls telemetry, serialises I/O behind an `asyncio.Lock`, broadcasts `RoboClawTelemetry`. Tracks position targets, runs the jog watchdog. Computes RA/Dec via `pointing.altaz_to_radec`.
+- `services/spectrum.py` — `SpectrumService`: pulls IQ from `SDRReceiver`, computes Hann-windowed FFTs, EMA-integrated spectrum. Persists baseline to `spectrum_baseline.json`.
+- `geometry.py` / `pointing.py` — encoder ↔ altitude and katpoint J2000 conversions.
+- `models/state.py` — canonical Pydantic response models. Frontend types are generated from this via `scripts/dump_types.py`.
+- `api/routes_roboclaw.py`, `api/routes_spectrum.py`, `api/routes_camera.py` — the three HTTP routers. Hardware has no queue/auth dependencies; mutations are unrestricted.
 
-**Hardware layer** (`hardware/`):
-- `roboclaw.py` — Packet Serial driver for a RoboClaw motor controller over USB serial (`/dev/ttyACM0` by default, address 0x80). Two motors (M1 = azimuth, M2 = elevation). Command registry pattern: each operation is a `CommandSpec` with typed args and a response decoder; `COMMANDS` / `OPERATOR_COMMAND_IDS` enumerate what the API exposes. Encoder counts are the source of position truth — no separate INA226 current sensor; battery/current/temperature come from RoboClaw status reads.
-- `remote.py` — `RemoteRoboClawClient`: same interface as the local client, but sends commands over HTTP and subscribes to `/ws/roboclaw` on the gateway.
-- `sdr.py` — `SDRReceiver` wraps SoapySDR's `airspy` driver. Bridges blocking `readStream` onto asyncio via `to_thread`. Supports optional 4.5 V bias tee for an inline LNA.
-- `host_stats.py` — CPU/memory/temp readers folded into the telemetry payload.
+### Platform service (`platform/src/rt_platform/`)
 
-**Service layer** (`services/`):
-- `RoboClawService` — owns the client, polls telemetry at `telemetry.update_rate_hz` (default 5 Hz), serialises all I/O behind an `asyncio.Lock`, broadcasts `RoboClawTelemetry` via `Broadcaster`. Tracks active position targets so the poll loop can stop motion on arrival, and runs a jog watchdog. Computes RA/Dec each tick (via `pointing.altaz_to_radec`) when an antenna is configured.
-- `SpectrumService` — pulls IQ from `SDRReceiver`, computes Hann-windowed FFTs, maintains an EMA-integrated spectrum, and broadcasts `SpectrumFrame` dicts. Persists the baseline to `spectrum_baseline.json` next to the launch dir.
-- `SpectrumBridge` — subscriber-only counterpart used by `gateway-client`; reuses the same broadcaster pattern.
-- `QueueService` — multi-user control queue with session cookies, per-IP caps, idle timeouts, and a join cooldown.
-- `geometry.py` — encoder-counts ↔ altitude conversions, including the empirical `AltitudeCalibrationConfig` (2 points → linear, 3+ → quadratic) when configured.
-- `_pubsub.py` — `Broadcaster[T]` is the drop-oldest fan-out used by every telemetry stream.
+Web-facing. Enforces the queue and motion audit log; proxies all motor/spectrum/camera traffic to the hardware service.
 
-**Pointing** (`pointing.py`): thin wrapper around `katpoint`. `make_antenna(ObserverConfig)` builds the antenna; `altaz_to_radec` / `radec_to_altaz` do J2000 conversions at the current timestamp; `compute_fwhm_deg` returns the beam from dish + observing frequency unless overridden.
+- `services/queue.py` — `QueueService`: multi-user control queue with session cookies, per-IP caps, idle timeouts, join cooldown.
+- `services/spectrum_bridge.py` — `SpectrumBridge`: holds one upstream WS to the hardware's `/ws/spectrum` and fans frames out to browser subscribers. Lazy: connects only while at least one browser is subscribed.
+- `services/hardware_client.py` — thin httpx wrapper bound to `config.hardware_url`.
+- `services/_pubsub.py` — `Broadcaster[T]` drop-oldest fanout, shared by queue and bridge.
+- `api/routes_motor.py` — proxies all motor/telescope HTTP endpoints to the hardware service; bridges `/ws/roboclaw`. Enforces `require_control` on mutations; writes motion audit log to `motion.jsonl`. Read-only endpoints (`/api/health`, status, commands listing, `/api/telescope/config`) are unauthenticated.
+- `api/routes_spectrum.py` — proxies spectrum HTTP, bridges `/ws/spectrum` via `SpectrumBridge`.
+- `api/routes_camera.py` — proxies camera MJPEG stream + status.
+- `api/routes_queue.py`, `api/routes_feedback.py`, `api/routes_events.py` — fully local.
+- `api/auth.py` — optional `PasswordAuthMiddleware`.
+- Cross-cutting middleware: `SecurityHeadersMiddleware`, `RateLimitMiddleware`, `CORSMiddleware`, `ClientAllowlistMiddleware`, `PasswordAuthMiddleware`. Auth helpers: `require_control` (must hold the queue), `require_lan_admin` / `is_lan_admin`.
 
-**Geometry** (`geometry.py`): pure-Python azimuth wrapping (`normalise_azimuth`, `unwrap_azimuth`) and a `point_in_triangle` test used by the optional `pointing_limit_altaz` keep-out triangle. A TypeScript copy lives in `frontend/src/lib/altaz.ts` and is kept manually in sync.
+### Frontend (`platform/frontend/`)
 
-**API** (`api/`): FastAPI routers wired in `main.py` based on the deployment mode.
-- Motor / telescope (`routes_roboclaw.py`): `GET /api/health`, `GET /api/roboclaw/status`, `GET /api/roboclaw/commands`, `POST /api/roboclaw/commands/{id}`, `POST /api/roboclaw/stop`, `POST /api/telescope/jog`, `POST /api/telescope/jog/stop`, `GET|POST /api/telescope/goto`, `POST /api/telescope/goto_radec`, `POST /api/telescope/sync`, `GET /api/telescope/config`, `POST /api/telescope/home/{elevation,azimuth,altitude}`, `WS /ws/roboclaw`. Motion endpoints write a JSONL audit log to `motion.jsonl`.
-- Spectrum (`routes_spectrum.py` / `routes_spectrum_proxy.py`): status, baseline get/post/delete, reset, reconnect, LNA bias-tee toggle, `WS /ws/spectrum`. The proxy variant is mounted in `gateway-client` mode.
-- Queue (`routes_queue.py`): config, status, join, leave, `WS /ws/queue`.
-- Camera (`routes_camera.py` / `routes_camera_proxy.py`): MJPEG stream + status; proxy variant for `gateway-client`.
-- Auth (`auth.py`): optional password gate (`AuthManager` + `PasswordAuthMiddleware`) with lockout. Login routes are excluded from the schema.
-- Feedback / events (`routes_feedback.py`, `routes_events.py`): JSONL append-only logs.
-- Cross-cutting middleware: `SecurityHeadersMiddleware`, `RateLimitMiddleware`, `CORSMiddleware`, `ClientAllowlistMiddleware`, `PasswordAuthMiddleware`. Auth helpers: `require_control` (must hold the queue), `require_lan_admin` / `is_lan_admin` (LAN-only admin override).
+Vite + React + TypeScript. `LiveShell.tsx` is the root. Subdirs: `components/`, `ui/`, `ws/` (telemetry/spectrum/queue WebSocket clients), `lib/` (incl. `altaz.ts` — a hand-synced TS port of `hardware/geometry.py`), `types/` and `types.gen.ts` (auto-generated from `rt_hardware.models.state`). The platform serves `frontend/dist/` from `/` with a SPA fallback for unknown GETs.
 
-**Models** (`models/state.py`): single source of truth for request and response shapes — `RoboClawTelemetry`, `CommandInfo`/`CommandResult`/`CommandRequest`, `AltAzRequest`/`RaDecRequest`, `JogRequest`/`JogStopRequest`, `ElevationHomeRequest`, `TelescopeConfig`, `HealthStatus`, `AltAzPoint`, `PollStats`, `ConnectionStatus`. `scripts/dump_types.py` re-emits these as TypeScript for the frontend.
+### Config
 
-**Config** (`config.py`): Pydantic v2 loaded from TOML, with `${ENV_VAR:-default}` expansion so secrets come from the systemd `EnvironmentFile`. Top-level sections: `general`, `hardware`, `roboclaw`, `telemetry`, `mount`, `server`, `rate_limit`, `observer`, `camera`, `sdr`, `queue`, `turnstile`, `auth`, plus the feedback / events / motion log paths. `public_exposure_errors(cfg)` runs at startup and refuses to boot a public-facing bind that has placeholder secrets, wildcard CORS, no Turnstile, etc.
+Each service has its own Pydantic v2 config loaded from TOML with `${ENV_VAR:-default}` expansion. `HARDWARE_URL` env var on the platform overrides `hardware_url` from the TOML (Docker Compose uses this).
 
-**Frontend** (`frontend/`): Vite + React + TypeScript. `LiveShell.tsx` is the root; subdirs are `components/`, `ui/`, `ws/` (telemetry/spectrum/queue WebSocket clients), `lib/` (incl. the synced `altaz.ts`), `types/` (auto-generated from `dump_types.py`). Build output goes to `frontend/dist/` and the backend serves it from `/`. A SPA fallback route serves `index.html` for unknown GETs.
+- Hardware: `general`, `server` (just host/port), `roboclaw`, `telemetry`, `mount`, `observer`, `camera`, `sdr`.
+- Platform: `general`, `server`, `rate_limit`, `queue`, `auth`, `turnstile`, plus `hardware_url`, `sdr_bridge_enabled`, and feedback/events/motion log paths. `public_exposure_errors(cfg)` runs at startup and refuses to boot a public-facing bind that has placeholder secrets, wildcard CORS, no Turnstile, etc.
 
 ## Testing
 
-Tests use `pytest-asyncio` with `asyncio_mode = "auto"`. Hardware is faked by `tests/fake_roboclaw.py::SimulatedRoboClaw` — the `simulated_config_path` fixture monkey-patches `radiotelescope.main.make_client` to return it. No real hardware needed.
+Tests use `pytest-asyncio` with `asyncio_mode = "auto"`. Each package has its own `tests/` directory and runs independently. Hardware tests use `tests/fake_roboclaw.py::SimulatedRoboClaw` to stand in for the real driver — no real hardware required.
+
+> The test suite was originally written against the unified `radiotelescope` package and is being re-partitioned as part of the migration. See `docs/separation-plan.md` for the move map.
 
 ## Hardware Notes (Raspberry Pi)
 
-- Motors: RoboClaw 2xN over USB serial (Packet Serial mode, default address 0x80, 38400 baud). Encoders are the only source of position — calibrate `mount.az_counts_per_degree`, `alt_counts_per_degree`, zero offsets, and (optionally) `altitude_calibration.points` for a non-linear elevation axis.
-- SDR: SoapySDR Airspy driver. Install on the Pi with `sudo apt install soapysdr-module-airspy python3-soapysdr` (bindings aren't on PyPI). Verify with `SoapySDRUtil --probe="driver=airspy"`. Airspy Mini sample rate must be 3 Msps or 6 Msps.
+- Motors: RoboClaw 2xN over USB serial (Packet Serial mode, default address 0x80, 38400 baud). Encoders are the only source of position — calibrate `mount.az_counts_per_degree`, `alt_counts_per_degree`, zero offsets, and (optionally) `altitude_calibration.points`.
+- SDR: SoapySDR Airspy driver. Install on the Pi with `sudo apt install soapysdr-module-airspy python3-soapysdr` (bindings aren't on PyPI). Airspy Mini sample rate must be 3 Msps or 6 Msps. In Docker, the hardware image already installs these packages.
 - Camera: V4L2 device via OpenCV; configured under `[camera]`.
-- `setuptools<72` required on Python 3.13 for `pkg_resources` availability.

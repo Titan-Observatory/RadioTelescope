@@ -1,0 +1,55 @@
+# Example hardware service config — copy to config.toml and edit.
+
+[general]
+log_level = "INFO"
+
+[server]
+host = "0.0.0.0"
+port = 8001
+
+[roboclaw]
+port = "/dev/ttyACM0"
+baudrate = 38400
+address = 128
+timeout_s = 0.25
+# "auto" tries a real serial port and falls back to a null/disconnected client
+# when not present (useful for boot-on-laptop). Set to "serial" to require it.
+connect_mode = "auto"
+
+[telemetry]
+update_rate_hz = 5
+
+[mount]
+az_counts_per_degree = 1000.0
+alt_counts_per_degree = 1000.0
+az_zero_count = 0
+alt_zero_count = 0
+goto_speed_qpps = 10000
+goto_accel_qpps2 = 25000
+goto_decel_qpps2 = 25000
+max_slew_deg_per_command = 45.0
+
+[observer]
+name = "Radio Telescope"
+latitude_deg = 51.5
+longitude_deg = -0.1
+altitude_m = 0.0
+dish_diameter_m = 2.286
+observing_freq_hz = 1.42e9
+
+[camera]
+enabled = true
+device = 0
+fps = 15
+width = 1280
+height = 720
+label = "Cam A"
+
+[sdr]
+enabled = true
+center_freq_hz = 1.4204e9
+sample_rate_hz = 3.0e6
+fft_size = 2048
+lna_bias_tee_enabled = false
+integration_frames = 32
+publish_rate_hz = 5.0

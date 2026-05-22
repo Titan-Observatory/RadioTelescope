@@ -1,93 +1,98 @@
-# RoboClaw Controller
+# Radio Telescope
 
-FastAPI backend and React web UI for controlling a RoboClaw motor controller over USB packet serial. The app can start without hardware by falling back to a simulator, which makes it useful for iterative UI and command workflow development.
+Two-service stack for controlling a RoboClaw-driven radio telescope with an Airspy SDR. The Raspberry Pi runs the **hardware** service (motors, SDR, camera); a web-facing **platform** service runs the React UI, the user queue, auth, and proxies all traffic to the hardware. They talk over HTTP/WebSocket.
 
-## System Requirements
-
-```bash
-# RoboClaw USB serial usually appears as /dev/ttyACM0 or /dev/ttyUSB0.
-# Add the app user to dialout for serial-port access, then log out and back in.
-sudo usermod -aG dialout $USER
+```
+┌──────────────┐         ┌────────────────────────┐         ┌──────────────┐
+│  Browser     │ ◀────▶  │  platform  (port 8000) │ ◀────▶  │  hardware    │
+│  (Vite SPA)  │   HTTP  │  - queue, auth, UI     │   HTTP  │  (port 8001) │
+│              │   WS    │  - proxies to hardware │   WS    │  motors+SDR  │
+└──────────────┘         └────────────────────────┘         └──────────────┘
 ```
 
-## Install
+## Quickstart — Docker (default)
 
 ```bash
-python -m venv .env
-source .env/bin/activate
-pip install -e .[dev]
+git clone <repo>
+cd radiotelescope
+cp hardware/config.example.toml hardware/config.toml
+cp platform/config.example.toml platform/config.toml
+docker compose up
+```
 
-cd frontend
+The UI is on `http://localhost:8000/`. The hardware service is **not** published — it is only reachable from the platform container over the internal bridge network.
+
+For development on a machine without the RoboClaw / SDR plugged in:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+This drops the `/dev/ttyACM0` USB pass-through, and the hardware service falls back to a disconnected (simulated) state.
+
+## Quickstart — bare metal
+
+In two terminals:
+
+```bash
+# Terminal 1 — hardware service (Pi, or any host with the RoboClaw plugged in)
+cd hardware
+pip install -e ".[dev]"
+cp config.example.toml config.toml
+rt-hardware -c config.toml
+
+# Terminal 2 — platform service (any web-facing host on the LAN)
+cd platform
+pip install -e ".[dev]"
+cp config.example.toml config.toml
+# edit config.toml to set hardware_url = "http://<pi-ip>:8001"
+rt-platform -c config.toml
+```
+
+For frontend dev with hot reload:
+
+```bash
+cd platform/frontend
 npm install
+npm run dev          # Vite on :5173, proxies /api → platform on :8000
 ```
 
-## Run
-
-Backend:
+## Pi serial-port access
 
 ```bash
-radiotelescope -c config.toml
+sudo usermod -aG dialout $USER   # then log out and back in
 ```
 
-Frontend dev server:
+## Internet exposure
 
-```bash
-cd frontend
-npm run dev
+The platform has a public-view / queued-control model: visitors may see the live dashboard, but mutating endpoints require the active queue lease. Operator endpoints (homing, sync) remain LAN-admin-only.
+
+For an internet-facing deployment of the **platform** (the **hardware** service must never be exposed publicly):
+
+- Run TLS at nginx / Caddy in front of the platform and forward `X-Forwarded-For` + `X-Forwarded-Proto`.
+- Set `server.lan_only = false`, configure real `cors_origins`, generate a real `queue.cookie_secret`, and set production Turnstile keys (or enable `auth.enabled` with a real `secret_key`).
+- `platform/main.py` runs `public_exposure_errors(cfg)` at startup and refuses to boot with placeholder secrets.
+
+## Project layout
+
+```
+hardware/                Pi-side service: motors, SDR, camera
+  src/rt_hardware/
+  config.example.toml
+  Dockerfile
+  pyproject.toml
+
+platform/                Web-facing service: UI, queue, auth, proxy
+  src/rt_platform/
+  frontend/              Vite + React + TS
+  config.example.toml
+  Dockerfile
+  pyproject.toml
+
+docker-compose.yml       Two-service stack (the default user experience)
+docker-compose.dev.yml   Overrides for laptop / no-hardware dev
+deploy.sh                git pull + docker compose up -d --build
+docs/separation-plan.md  Rationale for the two-service split
 ```
 
-Open `http://localhost:5173/`. For a production build, run `npm run build`; the FastAPI app serves `frontend/dist` from `/`.
-
-## Internet Exposure
-
-The app has a public-view/queued-control model: visitors may see the live
-dashboard, but mutating control endpoints require the active queue lease.
-Operator endpoints such as homing and sync remain LAN-admin-only.
-
-For an internet-facing deployment:
-
-- Run the public TLS endpoint at nginx/Caddy and forward
-  `X-Forwarded-For` plus `X-Forwarded-Proto` to the FastAPI process.
-- Set `[server].trusted_proxies` to only the immediate reverse proxy IPs.
-- Set `[server].cors_origins` to the exact HTTPS origin, not `["*"]`.
-- Set `[queue].enabled = true`, configure production Turnstile keys, and
-  replace all `CHANGE-ME` secrets.
-- Keep a `gateway-server` Pi reachable only from the web host on the LAN.
-
-When `[server].host` is `0.0.0.0` or `::` and `lan_only = false`, startup
-fails if the public safety settings above are incomplete.
-
-## Configuration
-
-```toml
-[roboclaw]
-port = "/dev/ttyACM0"
-baudrate = 38400
-address = 0x80
-timeout_s = 0.25
-connect_mode = "auto" # auto, serial, simulated
-
-[telemetry]
-update_rate_hz = 5
-
-[terminal]
-enabled = true
-# shell = "powershell.exe" # Windows
-# shell = "/bin/bash"      # Linux/Raspberry Pi
-```
-
-`auto` tries the serial RoboClaw first and falls back to the simulator. `serial` reports an error mode if the port cannot be opened. `simulated` never touches hardware.
-
-## API
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/health` | App status and connection mode |
-| `GET` | `/api/roboclaw/status` | Latest telemetry snapshot |
-| `GET` | `/api/roboclaw/commands` | Operator command registry |
-| `POST` | `/api/roboclaw/commands/{command_id}` | Execute an operator command |
-| `POST` | `/api/roboclaw/stop` | Stop M1 and M2 |
-| `WS` | `/ws/roboclaw` | Live telemetry stream |
-| `WS` | `/ws/terminal` | Browser terminal connected to the host shell |
-
-The browser terminal executes commands on the machine running the backend. Keep the server on a trusted network or disable `[terminal].enabled` when not needed.
+See [CLAUDE.md](CLAUDE.md) for the deeper architecture notes.

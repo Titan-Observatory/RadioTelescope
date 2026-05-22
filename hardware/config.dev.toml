@@ -1,0 +1,31 @@
+# Dev hardware config — simulated mode for laptop work.
+[general]
+log_level = "INFO"
+
+[server]
+host = "0.0.0.0"
+port = 8001
+
+[roboclaw]
+# `connect_mode = "auto"` falls back to a NullRoboClaw when no serial port is
+# present, so this works on a machine without the hardware plugged in.
+connect_mode = "auto"
+port = "/dev/ttyACM0"
+
+[telemetry]
+update_rate_hz = 5
+
+[mount]
+az_counts_per_degree = 1000.0
+alt_counts_per_degree = 1000.0
+max_slew_deg_per_command = 45.0
+
+[observer]
+latitude_deg = 51.5
+longitude_deg = -0.1
+
+[camera]
+enabled = false
+
+[sdr]
+enabled = false

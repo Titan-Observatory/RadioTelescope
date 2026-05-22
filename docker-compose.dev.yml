@@ -1,0 +1,14 @@
+# Dev overrides: no USB device pass-through, simulated hardware, no SDR.
+# Use:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  hardware:
+    # Drop the /dev/ttyACM0 mount so this works on a laptop without the
+    # RoboClaw plugged in. Hardware service falls back to "disconnected"
+    # mode (NullRoboClaw client) when the serial port is missing.
+    devices: []
+    volumes:
+      - ./hardware/config.dev.toml:/app/config.toml:ro
+
+  platform:
+    volumes:
+      - ./platform/config.dev.toml:/app/config.toml:ro
