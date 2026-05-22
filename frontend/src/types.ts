@@ -136,6 +136,15 @@ export interface QueueStatus {
   has_active_user: boolean;
 }
 
+export interface QueueConfigResponse {
+  enabled: boolean;
+  turnstile_site_key: string;
+  turnstile_enabled: boolean;
+  max_session_seconds: number;
+  idle_timeout_seconds: number;
+  beta_password_enabled: boolean;
+}
+
 export interface RaDecTarget {
   ra_deg: number;
   dec_deg: number;

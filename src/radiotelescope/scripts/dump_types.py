@@ -27,6 +27,7 @@ from typing import Any, Iterable, Literal, get_args, get_origin
 
 from pydantic import BaseModel
 
+from radiotelescope.api.routes_queue import QueueConfigResponse
 from radiotelescope.models import state
 from radiotelescope.services.queue import QueueStatus
 
@@ -48,6 +49,7 @@ EXPORTED_MODELS: tuple[type[BaseModel], ...] = (
     state.CommandInfo,
     state.CommandResult,
     QueueStatus,
+    QueueConfigResponse,
 )
 
 # Type aliases emitted as TypeScript union literals.

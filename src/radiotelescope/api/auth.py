@@ -1,9 +1,8 @@
-"""Password-based auth: middleware, login/logout routes, and brute-force protection."""
+"""Password-based auth: middleware, logout route, and brute-force protection."""
 
 from __future__ import annotations
 
 import hmac
-import html
 import logging
 import secrets
 import time
@@ -11,19 +10,15 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Response
+from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.types import ASGIApp, Receive, Scope, Send
-
-from radiotelescope.api.dependencies import client_ip
 
 logger = logging.getLogger("radiotelescope.auth")
 
 _COOKIE_NAME = "rt_auth"
 _EXEMPT_PATHS = frozenset({
-    "/login",
-    "/api/auth/login",
     "/api/auth/logout",
     # The SPA root and queue bootstrap/join must be reachable before the user
     # has an auth cookie so the inline password form can load and submit.
@@ -231,158 +226,9 @@ async def _http_response(send: Send, status: int, content_type: bytes, body: byt
     await send({"type": "http.response.body", "body": body})
 
 
-# ── Login page HTML ──────────────────────────────────────────────────────────
-
-_LOGIN_PAGE = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Radio Telescope — Sign In</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #0b0f1a;
-    font-family: system-ui, -apple-system, sans-serif;
-    color: #c9cfe8;
-  }
-  .card {
-    background: #131929;
-    border: 1px solid #2a3050;
-    border-radius: 10px;
-    padding: 2.25rem 2rem;
-    width: 100%;
-    max-width: 360px;
-    box-shadow: 0 8px 32px rgba(0,0,0,.5);
-  }
-  h1 {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: #e8ecff;
-    margin-bottom: 1.75rem;
-    text-align: center;
-    letter-spacing: .02em;
-  }
-  label {
-    display: block;
-    font-size: 0.8125rem;
-    color: #8b91b0;
-    margin-bottom: 0.4rem;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-  }
-  input[type="password"] {
-    width: 100%;
-    padding: 0.55rem 0.75rem;
-    background: #0b0f1a;
-    border: 1px solid #2a3050;
-    border-radius: 6px;
-    color: #e8ecff;
-    font-size: 1rem;
-    outline: none;
-    margin-bottom: 1.1rem;
-    transition: border-color .15s;
-  }
-  input[type="password"]:focus {
-    border-color: #c9a84c;
-    box-shadow: 0 0 0 3px rgba(201,168,76,.12);
-  }
-  button {
-    width: 100%;
-    padding: 0.6rem;
-    background: #c9a84c;
-    color: #0b0f1a;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.9375rem;
-    font-weight: 700;
-    cursor: pointer;
-    letter-spacing: .03em;
-    transition: background .15s;
-  }
-  button:hover { background: #dfc06a; }
-  .error {
-    color: #f87171;
-    font-size: 0.8125rem;
-    margin-bottom: 0.9rem;
-    padding: 0.5rem 0.625rem;
-    background: rgba(248,113,113,.08);
-    border-radius: 5px;
-    border: 1px solid rgba(248,113,113,.25);
-  }
-</style>
-</head>
-<body>
-<div class="card">
-  <h1>Radio Telescope</h1>
-  <form method="post" action="/api/auth/login">
-    <label for="pw">Beta Access Password</label>
-    <input type="password" id="pw" name="password" autofocus required autocomplete="current-password">
-    ERROR_PLACEHOLDER
-    <button type="submit">Sign In</button>
-  </form>
-</div>
-</body>
-</html>"""
-
-
-def _login_html(error: str = "") -> str:
-    block = f'<p class="error">{html.escape(error)}</p>' if error else ""
-    return _LOGIN_PAGE.replace("ERROR_PLACEHOLDER", block)
-
-
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 router = APIRouter()
-
-
-@router.get("/login", include_in_schema=False, response_model=None)
-async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
-    auth: AuthManager = request.app.state.auth
-    if not auth.enabled:
-        return RedirectResponse("/")
-    return RedirectResponse("/")
-
-
-@router.post("/api/auth/login", include_in_schema=False, response_model=None)
-async def do_login(request: Request, password: str = Form(...)) -> HTMLResponse | RedirectResponse:
-    auth: AuthManager = request.app.state.auth
-    ip = client_ip(request) or "unknown"
-
-    if auth.is_locked(ip):
-        logger.warning("Auth: blocked request from locked IP %s", ip)
-        return HTMLResponse(
-            _login_html("Too many failed attempts. Try again later."),
-            status_code=429,
-        )
-
-    if auth.check_password(password):
-        auth.record_success(ip)
-        logger.info("Auth: successful login from %s", ip)
-        resp = RedirectResponse(url="/", status_code=303)
-        server_cfg = request.app.state.config.server
-        resp.set_cookie(
-            key=_COOKIE_NAME,
-            value=auth.make_cookie_value(),
-            max_age=30 * 24 * 60 * 60,  # 30 days
-            httponly=True,
-            secure=server_cfg.public_exposure or request.url.scheme == "https",
-            samesite="lax",
-            path="/",
-        )
-        return resp
-
-    locked = auth.record_failure(ip)
-    if locked:
-        msg = f"Too many failed attempts. Try again in {auth.lockout_seconds // 60} minutes."
-    else:
-        msg = "Incorrect password."
-    return HTMLResponse(_login_html(msg), status_code=401)
 
 
 @router.post("/api/auth/logout", include_in_schema=False)
