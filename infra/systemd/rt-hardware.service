@@ -10,6 +10,7 @@ Group=telescope
 # `dialout` for serial-port access (/dev/ttyACM0), `plugdev` for Airspy USB.
 SupplementaryGroups=dialout plugdev video
 WorkingDirectory=/opt/radiotelescope/hardware
+Environment=PYTHONPATH=/usr/lib/python3/dist-packages
 
 ExecStart=/opt/radiotelescope/hardware/.venv/bin/rt-hardware -c /etc/radiotelescope/hardware.toml
 

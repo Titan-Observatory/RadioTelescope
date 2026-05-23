@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -44,10 +45,12 @@ class SpectrumService(SDRDriverTask[SpectrumFrame]):
         self._frames_seen: int = 0
         self._window = np.hanning(cfg.fft_size).astype(np.float32)
         self._freqs_mhz = self._build_freq_axis()
-        # Measured wall-clock cadence between FFT iterations. The driver yields
-        # one IQ chunk per Soapy read regardless of `fft_size`, so the theoretical
-        # `fft_size / sample_rate` underestimates the period by ~10×. We seed with
-        # that theoretical value and let the EMA below drift it to reality.
+        # Wall-clock cadence between FFT iterations. We keep a sliding window
+        # of recent dt's and report the median — an EMA tracked drifts in
+        # real-world conditions (thermal throttling, WS backpressure) makes
+        # the reported integration time grow without bound. Median over ~64
+        # frames is robust to transient stalls and stable in steady state.
+        self._dt_window: deque[float] = deque(maxlen=64)
         self._frame_period_s: float = cfg.fft_size / cfg.sample_rate_hz
         self._last_frame_monotonic: float | None = None
 
@@ -125,6 +128,7 @@ class SpectrumService(SDRDriverTask[SpectrumFrame]):
         self._integrated = None
         self._frames_seen = 0
         self._last_frame_monotonic = None
+        self._dt_window.clear()
 
     async def _run(self) -> None:
         cfg = self._cfg
@@ -152,11 +156,17 @@ class SpectrumService(SDRDriverTask[SpectrumFrame]):
 
             now = time.monotonic()
             # Track real FFT cadence so the UI can show wall-clock integration
-            # time honestly. EMA over ~32 frames smooths Soapy chunk-size jitter.
+            # time honestly. Sliding-window median over ~64 frames — stable
+            # in steady state, robust to transient stalls (which would otherwise
+            # pull an EMA upward and never come back down).
             if self._last_frame_monotonic is not None:
                 dt = now - self._last_frame_monotonic
                 if 0 < dt < 1.0:
-                    self._frame_period_s += 0.03125 * (dt - self._frame_period_s)
+                    self._dt_window.append(dt)
+                    if self._dt_window:
+                        sorted_dts = sorted(self._dt_window)
+                        mid = len(sorted_dts) // 2
+                        self._frame_period_s = sorted_dts[mid]
             self._last_frame_monotonic = now
 
             if now - last_publish < publish_interval:

@@ -940,44 +940,22 @@ input:focus-visible {
 
 .spectrum-counter { font-variant-numeric: tabular-nums; }
 
+/* Subtle one-line caption beneath the spectrum. flex:0 0 auto keeps it
+   from being squeezed out by the chart-wrap (flex:1) in the dashboard
+   right column, but without forcing a tall card that crowds the chart. */
 .spectrum-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0 0 12px;
-  padding: 8px 12px;
-  border: 1px solid var(--panel-border, #262a44);
-  border-radius: 6px;
-  background: rgba(16, 18, 30, 0.4);
-}
-.spectrum-stat {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.spectrum-stat dt {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--fg-faint, #6f719a);
-  margin: 0 0 2px;
-}
-.spectrum-stat dd {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  font-variant-numeric: tabular-nums;
-}
-.spectrum-stat-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--fg, #eaebf5);
-  line-height: 1.1;
-}
-.spectrum-stat-sub {
+  flex: 0 0 auto;
+  margin: 6px 0 0;
+  padding: 0;
   font-size: 11px;
+  line-height: 1.4;
   color: var(--fg-faint, #6f719a);
-  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.spectrum-stats strong {
+  color: var(--fg, #eaebf5);
+  font-weight: 600;
 }
 
 .spectrum-chart-wrap {
@@ -1208,6 +1186,91 @@ input:focus-visible {
   font-size: 16px;
   line-height: 1;
 }
+
+/* ── Hydrogen-atom spin-flip depiction ────────────────────────────────── */
+.hydrogen-atom {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 60px;
+  padding: 16px;
+}
+.hydrogen-atom-particle {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.hydrogen-atom-arrow {
+  font-size: 48px;
+  line-height: 1;
+  color: #ffd479;
+  text-shadow: 0 0 6px rgba(255, 188, 66, 0.7);
+  transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  will-change: transform, filter;
+}
+.hydrogen-atom-arrow.is-up { transform: rotate(0deg); }
+/* Spin-flip event: vibrate with rising amplitude, flash white, then snap
+ * instantly to the new orientation (steps(1) holds the rotation flat until
+ * the discrete jump). The arrow scales up + brightens during the flash so
+ * the moment of "flip" reads as an event, not a rotation. */
+.hydrogen-atom-arrow.flip-to-down {
+  animation: arrow-flip-down 0.55s linear forwards;
+}
+.hydrogen-atom-arrow.flip-to-up {
+  animation: arrow-flip-up 0.55s linear forwards;
+}
+@keyframes arrow-flip-down {
+  0%   { transform: rotate(0deg)   scale(1);   filter: none; }
+  20%  { transform: rotate(-2deg)  scale(1); }
+  35%  { transform: rotate(3deg)   scale(1); }
+  48%  { transform: rotate(-5deg)  scale(1.03); }
+  60%  { transform: rotate(6deg)   scale(1.05); }
+  70%  { transform: rotate(-8deg)  scale(1.08); }
+  78%  { transform: rotate(9deg)   scale(1.1); }
+  85%  { transform: rotate(-11deg) scale(1.12); filter: brightness(1.4) drop-shadow(0 0 6px rgba(255, 230, 168, 0.6)); }
+  /* steps(1, end) holds rotate(0deg) flat through 92%, then jumps to 180 */
+  88%  { transform: rotate(0deg)   scale(1.4); filter: brightness(3) drop-shadow(0 0 16px #fff); animation-timing-function: steps(1, end); }
+  92%  { transform: rotate(180deg) scale(1.4); filter: brightness(3) drop-shadow(0 0 16px #fff); }
+  100% { transform: rotate(180deg) scale(1);   filter: none; }
+}
+@keyframes arrow-flip-up {
+  0%   { transform: rotate(180deg) scale(1);   filter: none; }
+  20%  { transform: rotate(182deg) scale(1); }
+  35%  { transform: rotate(177deg) scale(1); }
+  48%  { transform: rotate(185deg) scale(1.03); }
+  60%  { transform: rotate(174deg) scale(1.05); }
+  70%  { transform: rotate(188deg) scale(1.08); }
+  78%  { transform: rotate(171deg) scale(1.1); }
+  85%  { transform: rotate(191deg) scale(1.12); filter: brightness(1.4) drop-shadow(0 0 6px rgba(255, 230, 168, 0.6)); }
+  88%  { transform: rotate(180deg) scale(1.4); filter: brightness(3) drop-shadow(0 0 16px #fff); animation-timing-function: steps(1, end); }
+  92%  { transform: rotate(360deg) scale(1.4); filter: brightness(3) drop-shadow(0 0 16px #fff); }
+  100% { transform: rotate(360deg) scale(1);   filter: none; }
+}
+.hydrogen-atom-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* Proton: a small, tight cluster of jittering dots (a localised but
+ * still quantum-fuzzy nucleus). Electron: a wide SVG-turbulence probability
+ * cloud filling most of the cell. Both animate on a sub-second cadence so
+ * they read as actively jittery, not slowly breathing. */
+.fuzzy { position: relative; display: block; }
+.fuzzy-proton   { width: 50px;  height: 50px; }
+.fuzzy-electron { width: 200px; height: 200px; }
+.fuzzy-goo svg  { display: block; overflow: visible; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fuzzy-goo svg { animation: none; }
+}
+.hydrogen-atom[data-paused] .fuzzy-goo svg { animation-play-state: paused; }
 
 .spectrum-toolbar {
   display: flex;

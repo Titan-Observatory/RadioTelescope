@@ -17,6 +17,7 @@ services:
     privileged: true   # Airspy USB; see hardware/docker-compose.yml note
     volumes:
       - ./hardware/config.toml:/app/config.toml:ro
+      - /dev/bus/usb:/dev/bus/usb
       - hardware_state:/app/state
     networks:
       - internal

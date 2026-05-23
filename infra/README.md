@@ -34,7 +34,7 @@ The deploy script lives at [`../deploy.sh`](../deploy.sh) and now drives `docker
 
 ```bash
 # system deps
-sudo apt install -y soapysdr-module-airspy python3-soapysdr
+sudo apt install -y airspy soapysdr-tools soapysdr-module-airspy python3-soapysdr
 sudo useradd --system --create-home --shell /usr/sbin/nologin telescope
 sudo usermod -aG dialout,plugdev,video telescope
 
@@ -46,9 +46,16 @@ sudo install -d -o telescope -g telescope \
 
 # install
 sudo -u telescope git clone <repo> /opt/radiotelescope/checkout
-sudo -u telescope python3 -m venv /opt/radiotelescope/hardware/.venv
+sudo -u telescope python3 -m venv --system-site-packages /opt/radiotelescope/hardware/.venv
 sudo -u telescope /opt/radiotelescope/hardware/.venv/bin/pip install --upgrade pip
 sudo -u telescope /opt/radiotelescope/hardware/.venv/bin/pip install /opt/radiotelescope/checkout/hardware
+
+# verify the venv can see the apt-installed SoapySDR binding
+sudo -u telescope /opt/radiotelescope/hardware/.venv/bin/python -c "import SoapySDR; print(SoapySDR.__file__)"
+
+# verify the OS and SoapySDR can see the Airspy
+lsusb | grep -i airspy
+SoapySDRUtil --find="driver=airspy"
 
 # config
 sudo cp /opt/radiotelescope/checkout/hardware/config.example.toml /etc/radiotelescope/hardware.toml
