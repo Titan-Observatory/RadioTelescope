@@ -141,9 +141,17 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
     if frontend_dist.exists():
         app.mount("/assets", CachedStaticFiles(directory=frontend_dist / "assets"), name="assets")
 
+        # Pre-compute index.html bytes with the gtag async script tag injected so
+        # that (a) Google's tag-detection crawler finds it in the static HTML and
+        # (b) the browser starts fetching gtag.js during HTML parsing rather than
+        # waiting for the JS bundle to run.  The tag is just the external <script>
+        # element; the dataLayer/gtag() init and gtag('config') call stay in
+        # analytics.ts (served from 'self', so no CSP changes needed).
+        _index_bytes = _build_index_bytes(frontend_dist / "index.html", cfg.gtag_id)
+
         @app.get("/")
         async def serve_index():
-            return _file_response(frontend_dist / "index.html", INDEX_CACHE_CONTROL)
+            return _index_response(_index_bytes, frontend_dist / "index.html")
 
         _frontend_root = frontend_dist.resolve()
 
@@ -160,10 +168,10 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         async def _serve_spa_file(path: str, frontend_dist: Path, frontend_root: Path):
             target = (frontend_dist / path).resolve()
             if not target.is_relative_to(frontend_root):
-                return _file_response(frontend_dist / "index.html", INDEX_CACHE_CONTROL)
+                return _index_response(_index_bytes, frontend_dist / "index.html")
             if target.is_file():
                 return _file_response(target, _cache_control_for_spa_file(target, frontend_root))
-            return _file_response(frontend_dist / "index.html", INDEX_CACHE_CONTROL)
+            return _index_response(_index_bytes, frontend_dist / "index.html")
     else:
         logger.warning("Frontend build not found; run `npm run build` in platform/frontend/")
 
@@ -190,6 +198,34 @@ def _find_frontend_dist() -> Path:
         if (candidate / "index.html").exists():
             return candidate
     return candidates[0]
+
+
+def _build_index_bytes(index_path: Path, gtag_id: str) -> bytes | None:
+    """Read index.html and inject the gtag async script tag, or return None if not found."""
+    if not index_path.exists() or not gtag_id:
+        return None
+    html = index_path.read_text(encoding="utf-8")
+    tag = f'<script async src="https://www.googletagmanager.com/gtag/js?id={gtag_id}"></script>'
+    # Insert immediately after <head> so the browser starts fetching gtag.js
+    # as early as possible, before any other scripts run.
+    marker = "<head>"
+    idx = html.find(marker)
+    if idx == -1:
+        return html.encode()
+    insert_at = idx + len(marker)
+    injected = html[:insert_at] + "\n    " + tag + html[insert_at:]
+    return injected.encode()
+
+
+def _index_response(prebuilt: bytes | None, fallback_path: Path) -> Response | FileResponse:
+    """Return a Response using pre-injected bytes, or fall back to a plain FileResponse."""
+    if prebuilt is not None:
+        return Response(
+            content=prebuilt,
+            media_type="text/html",
+            headers={"Cache-Control": INDEX_CACHE_CONTROL},
+        )
+    return _file_response(fallback_path, INDEX_CACHE_CONTROL)
 
 
 def _file_response(path: Path, cache_control: str) -> FileResponse:

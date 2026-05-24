@@ -55,9 +55,7 @@ const HERO_PERSEUS_LABEL_Y = HERO_CHART_TOP + HERO_CHART_HEIGHT * 0.31;
 // Mobile: crop dead wings so the peaks fill the screen. x=[70,430] covers all
 // labelled content (Perseus box at x≈87, bracket at x≈392) and clips the
 // low-signal tails. The 1.67× effective zoom makes labels readable at ~12px.
-// Extra 16 units of top padding so the "Why the difference?" annotation box
-// doesn't crowd the chart border on narrow screens.
-const HERO_MOBILE_VIEWBOX = `70 ${HERO_CHART_TOP - 16} 360 ${HERO_CHART_BOTTOM - HERO_CHART_TOP + 16}`;
+const HERO_MOBILE_VIEWBOX = `70 ${HERO_CHART_TOP} 360 ${HERO_CHART_BOTTOM - HERO_CHART_TOP}`;
 const HERO_DESKTOP_VIEWBOX = `0 ${HERO_CHART_TOP} ${HW} ${HERO_CHART_BOTTOM - HERO_CHART_TOP}`;
 
 // LAB hydrogen-line profile supplied for the queue-page example spectrum.
@@ -425,9 +423,9 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
               opacity="0.72"
             />
             <rect
-              x={midX - 78}
+              x={midX - 90}
               y={linkBoxY}
-              width="156"
+              width="180"
               height="20"
               rx="4"
               fill="#0b1328"
@@ -436,7 +434,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
               opacity="0.88"
             />
             <text
-              x={midX - 6} y={labelY}
+              x={midX - 9} y={labelY}
               textAnchor="middle"
               fill="#d4e5ff" fontSize="13" fontWeight="bold" opacity="0.92"
               fontFamily="ui-monospace,monospace"
@@ -445,7 +443,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
               Why the difference?
             </text>
             <path
-              d={`M ${midX + 65} ${labelY - 5} L ${midX + 70} ${labelY - 5} L ${midX + 70} ${labelY} M ${midX + 70} ${labelY - 5} L ${midX + 63} ${labelY + 2}`}
+              d={`M ${midX + 73} ${labelY - 5} L ${midX + 80} ${labelY - 5} L ${midX + 80} ${labelY} M ${midX + 80} ${labelY - 5} L ${midX + 71} ${labelY + 2}`}
               fill="none"
               stroke="#d4e5ff"
               strokeWidth="1.1"

@@ -39,22 +39,33 @@ function initGtag() {
   const gtagId = window.RT_PUBLIC_CONFIG?.gtagId?.trim() ?? '';
   if (!gtagId || gtagId === loadedGtagId) return;
   loadedGtagId = gtagId;
-  const gtagDebug = window.RT_PUBLIC_CONFIG?.gtagDebug ?? true;
+  const gtagDebug = window.RT_PUBLIC_CONFIG?.gtagDebug ?? false;
 
   window.dataLayer = window.dataLayer ?? [];
   window.gtag = window.gtag ?? function gtag(...args: Parameters<Gtag>) {
     window.dataLayer?.push(args);
   };
 
-  const script = document.createElement('script');
-  script.async = true;
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gtagId)}`;
-  document.head.appendChild(script);
+  // The server injects <script async src="gtag.js?id=..."> into index.html so
+  // the browser starts fetching gtag.js before any JS runs.  Only create the
+  // script element dynamically when it wasn't already injected (e.g. Vite dev
+  // server, or a deployment without a gtag_id at build time).
+  const alreadyInjected = !!document.querySelector(
+    `script[src*="googletagmanager.com/gtag/js"]`,
+  );
+  if (!alreadyInjected) {
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gtagId)}`;
+    document.head.appendChild(script);
+  }
 
+  // These dataLayer pushes must always run — gtag.js (whether pre-injected or
+  // dynamically created above) will process them when it loads.
   window.gtag('js', new Date());
   window.gtag('config', gtagId, {
     page_path: window.location.pathname,
-    debug_mode: gtagDebug,
+    ...(gtagDebug ? { debug_mode: true } : {}),
   });
 }
 
