@@ -236,7 +236,7 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
         <ProtonSwarm />
       </div>
       <div ref={electronRef} className="hydrogen-atom-particle">
-        <ElectronCloud cloudRef={electronCloudRef} />
+        <ElectronCloud cloudRef={electronCloudRef} paused={paused} />
       </div>
       <span ref={protonPartLabelRef} className="hydrogen-particle-label hydrogen-particle-label-proton">
         <span className="hydrogen-particle-label-main">Proton</span>
@@ -476,8 +476,16 @@ function ProtonSwarm() {
 
 // ── Electron: Gaussian dot cloud ──────────────────────────────────────────
 
-function ElectronCloud({ cloudRef }: { cloudRef?: React.Ref<HTMLSpanElement> }) {
+function ElectronCloud({ cloudRef, paused }: { cloudRef?: React.Ref<HTMLSpanElement>; paused?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pausedRef = useRef(Boolean(paused));
+  const rafRef    = useRef(0);
+  const startRef  = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    pausedRef.current = Boolean(paused);
+    if (!paused && startRef.current) startRef.current();
+  }, [paused]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -538,10 +546,14 @@ function ElectronCloud({ cloudRef }: { cloudRef?: React.Ref<HTMLSpanElement> }) 
     });
 
     const FRAME_MS = 1000 / fps;
-    let raf = 0, lastTime = 0;
+    let lastTime = 0;
 
     function draw(now: number) {
-      raf = requestAnimationFrame(draw);
+      if (pausedRef.current) {
+        rafRef.current = 0;
+        return;
+      }
+      rafRef.current = requestAnimationFrame(draw);
       if (now - lastTime < FRAME_MS) return;
       lastTime = now;
 
@@ -581,8 +593,20 @@ function ElectronCloud({ cloudRef }: { cloudRef?: React.Ref<HTMLSpanElement> }) 
       }
     }
 
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    startRef.current = () => {
+      if (rafRef.current !== 0 || pausedRef.current) return;
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    if (!pausedRef.current) {
+      rafRef.current = requestAnimationFrame(draw);
+    }
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+      startRef.current = null;
+    };
   }, []);
 
   return (

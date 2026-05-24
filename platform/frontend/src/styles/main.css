@@ -3176,10 +3176,10 @@ h2.panel-header {
 .h1-doppler-inner {
   position: relative;
   z-index: 1;
-  max-width: 1080px;
+  max-width: 1160px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
   gap: clamp(36px, 5vw, 64px);
   align-items: center;
 }

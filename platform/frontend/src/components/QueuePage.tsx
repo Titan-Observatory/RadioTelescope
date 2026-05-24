@@ -519,15 +519,15 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
 
 const DA_W = 600;
 const DA_H = 380;                   // total SVG height (scene + mini spectrum)
-const DA_AXIS_Y = 108;              // y of horizontal axis through source
-const DA_TELESCOPE_X = 64;          // x of dish centre
+const DA_AXIS_Y = 96;               // y of horizontal axis through source
+const DA_TELESCOPE_X = 52;          // x of dish centre
 const DA_DISH_BACK_X = DA_TELESCOPE_X - 0.5;
 const DA_DISH_FEED_X = DA_TELESCOPE_X + 26;
-const DA_SOURCE_CENTER_X = 380;     // mean x position of source
+const DA_SOURCE_CENTER_X = 430;     // mean x position of source
 const DA_C_PX_S = 94;               // wavefront expansion speed (px/s)
 const DA_T_EMIT_S = 0.78;           // seconds between successive emissions
-const DA_MAX_R = 360;               // wavefront fade-out radius
-const DA_WAVE_AMP = 14;             // sine-wave amplitude in px
+const DA_MAX_R = 420;               // wavefront fade-out radius
+const DA_WAVE_AMP = 16;             // sine-wave amplitude in px
 
 // Velocity profile. Pure sin never lets the shift "settle"; tanh-shaped sin
 // has the right dwell but transitions through zero too quickly. We instead
@@ -597,13 +597,13 @@ const sourceXAt = (time: number) => {
 // Mini-spectrum panel below the main scene. Styled to match the hero
 // spectrum: gradient fill under a continuous noisy trace, grid lines, dashed
 // rest-frequency marker, faint frequency-tick labels along the axis.
-const DA_MINI_LEFT_X = 96;
-const DA_MINI_W = 408;
+const DA_MINI_LEFT_X = 64;
+const DA_MINI_W = 472;
 const DA_MINI_CX = DA_MINI_LEFT_X + DA_MINI_W / 2;
-const DA_MINI_TOP_Y = 232;             // panel top
-const DA_MINI_HEADER_Y = 246;          // "telescope receives" label baseline
-const DA_MINI_PLOT_TOP_Y = 256;        // top of plottable region
-const DA_MINI_BASE_Y = 336;            // baseline / x-axis y
+const DA_MINI_TOP_Y = 214;             // panel top
+const DA_MINI_HEADER_Y = 229;          // "telescope receives" label baseline
+const DA_MINI_PLOT_TOP_Y = 241;        // top of plottable region
+const DA_MINI_BASE_Y = 338;            // baseline / x-axis y
 const DA_MINI_PLOT_LEFT_X = DA_MINI_LEFT_X + 12;
 const DA_MINI_PLOT_RIGHT_X = DA_MINI_LEFT_X + DA_MINI_W - 12;
 const DA_MINI_PLOT_W = DA_MINI_PLOT_RIGHT_X - DA_MINI_PLOT_LEFT_X;
@@ -863,17 +863,17 @@ function DopplerAnimation({ renderTimeSeconds, paused = false }: { renderTimeSec
           d={segment.d}
           fill="none"
           stroke={segment.color}
-          strokeWidth="2.5"
+          strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
       ))}
 
       <Cloud
-        x={sourceX - 58}
-        y={DA_AXIS_Y - 39}
-        width="116"
-        height="87"
+        x={sourceX - 66}
+        y={DA_AXIS_Y - 45}
+        width="132"
+        height="99"
         fill="#ffbc42"
         fillOpacity="0.18"
         color="#ffd273"
@@ -885,7 +885,7 @@ function DopplerAnimation({ renderTimeSeconds, paused = false }: { renderTimeSec
         y={DA_AXIS_Y + 10}
         textAnchor="middle"
         fill="#ffd273"
-        fontSize="26"
+        fontSize="30"
         fontWeight="800"
         fontFamily="ui-monospace,monospace"
         opacity="0.82"
@@ -1280,6 +1280,8 @@ export function QueuePage({
   // Keep the animated spectrum quiet while the join verification widget is active.
   const animationsPaused = false;
 
+  const [spinFlipRef, spinFlipActive] = useVisibleAnimation<HTMLDivElement>(STICKY_HEADER_ANIMATION_MARGIN_PX);
+
   return (
     <div className="queue-waiting">
       <header className={`queue-header${headerCollapsed ? ' queue-header-collapsed' : ''}`}>
@@ -1397,6 +1399,68 @@ export function QueuePage({
           </div>
         </section>
 
+        {/* ── Radio Astronomy History section ─────────────────────────────────────────────── */}
+        <section className="h1-spinflip h1-discovery-section" id="h1-history-section">
+          <StarsBackground />
+          <div className="h1-spinflip-inner">
+            <div className="h1-spinflip-text">
+              <span className="h1-eyebrow">How was it discovered?</span>
+              <h2 className="h1-section-heading">Science at its best</h2>
+              <p className="h1-section-body">
+                In the decades following the first detection of radio waves from space in 1931, radio astronomy was mostly limited to measuring continuum emission, giving us a general "brightness" of a source, but not much else. While the power of{' '}
+                <InlineHoverPopover
+                  label="spectral lines"
+                  ariaLabel="Show what spectral lines are"
+                  height={SPECTRAL_LINES_POPOVER_HEIGHT}
+                  popoverClassName="h1-spectral-lines-popover"
+                >
+                  <strong>Spectral lines act as fingerprints.</strong>
+                  <span>
+                    When atoms or molecules interact with light, their unique structure causes them to absorb and reemit photons at very specific wavelengths. Becuase the laws of physics are universal, we are able to use these highly specific "fingerprints" to identify the chemical composition of materials from anyhwere in the universe! 
+                  </span>
+                </InlineHoverPopover>{' '}
+                was well-known in visible-light astronomy, it's application was not immediately investigated due to the time it took to develop both the technical skills and the collaborative framework between fields of RF engineering and astronomy.
+              </p>
+              <p className="h1-section-body">By the 1950s, thanks in large part to the efforts of radio engineer Grote Reber, our understanding of radio astronomy had matured enough for more speculative ideas to form. In this case, it would be a paper by Van de Hulst predicting the existence of the 21 cm line emitted by galactic hydrogen. But the discovery wouldnt come from a research team with the latest and greatest technology, instead it would come from a graduate student who built their own telescope sticking out of the fourth floor of the Lyman Lab at Harvard (pictured)</p>
+              <p className="h1-section-body">When Doc Ewen started work on the experiment under the guidance of Purcell, there was little expectation of actually detecting anything, as even Van de Hulst himself expressed doubt that such a signal would be strong enough to detect. However, in science, looking for something and not finding it is still able to teach us something. In this case, they hoped to at least set an upper limit on how strong such a signal must be, if it existed.</p>
+              <p className="h1-section-body">Between working 40 hours a week on Harvards new cycletron, Ewen turned on the modified receiver was turned on for the first time during the Easter weekend in 1951. As Ewen put it: By 3:00 AM on Sunday morning March 25, I was convinced that the line had been detected.</p>
+            </div>
+            <figure className="h1-ewen-figure">
+              <img
+                src="/ewen.jpg"
+                alt="Doc Ewen inspecting patchwork inside the horn antenna"
+                className="h1-ewen-image"
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption className="h1-ewen-caption">
+                <blockquote>
+                  After one year, parts of the copper skin had cracked and peeled away from the plywood. I purchased fifty feet of rope from a local hardware store, tied one end around my waist and the other to the lower section of the antenna mount. With a large soldering iron, solder, and a bristle brush I went over the side, four floors up, and slid into the horn. About an hour later, I managed to climb out of the horn back on to the parapet. This picture of me inspecting the patchwork was taken about two days later. The line was detected within the next few weeks.
+                </blockquote>
+                <cite>Doc Ewen</cite>
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+        {/* ── Doppler section ───────────────────────────────────────────────── */}
+        <section className="h1-spinflip h1-spinflip-alt" id="h1-doppler-section">
+          <div className="h1-doppler-inner">
+            <div className="h1-doppler-text">
+              <span className="h1-eyebrow">How do we use it?</span>
+              <h2 className="h1-section-heading">The Doppler Effect</h2>
+              <p className="h1-section-body">You may be familiar with the Doppler effect as it relates to sound, but did you know the same thing happens to light? In the same way that an approaching ambulance siren sounds higher in pitch as it gets closer and lower as it moves away, electromagnetic waves shift in frequency based on the relative motion between the source and the observer. It's far too subtle to notice in everyday life, but it's one of the most foundational tools in all of astronomy.</p>
+              <p className="h1-section-body"></p>
+              <p className="h1-section-body">The obvious challenge with this method is that in order to tell how much a frequency has shifted, you first need to know what it was originally. How do you do that for a photon that came from the other side of the Milky Way? This is where the power of spectral lines becomes clear.</p>
+              <p className="h1-section-body">Since we can measure the exact frequency of light emitted by hydrogen in a controlled lab, and because every neutral hydrogen atom in the universe is identical, we can use that reference frequency to measure the relative velocity of hydrogen across the Milky Way.</p>
+            </div>
+            <div className="h1-doppler-visual">
+              <DopplerAnimation paused={animationsPaused} />
+              <p className="h1-visual-caption">
+                The relative velocity of hydrogen gas along our line of sight shifts the observed frequency: approaching gas is blueshifted, receding gas is redshifted.
+              </p>
+            </div>
+          </div>
+        </section>
         {/* ── Donation banner ───────────────────────────────────────────────── */}
         <div className="donation-banner">
           <div className="donation-banner-inner">
@@ -1428,66 +1492,6 @@ export function QueuePage({
           </div>
           </div>
         </div>
-
-        {/* ── Radio Astronomy History section ─────────────────────────────────────────────── */}
-        <section className="h1-spinflip h1-discovery-section" id="h1-history-section">
-          <StarsBackground />
-          <div className="h1-spinflip-inner">
-            <div className="h1-spinflip-text">
-              <span className="h1-eyebrow">How was it discovered?</span>
-              <h2 className="h1-section-heading">Science at its best</h2>
-              <p className="h1-section-body">
-                In the decades following the first detection of radio waves from space in 1931, radio astronomy was mostly limited to measuring continuum emission, giving us a general "brightness" of a source, but not much else. While the power of{' '}
-                <InlineHoverPopover
-                  label="spectral lines"
-                  ariaLabel="Show what spectral lines are"
-                  height={SPECTRAL_LINES_POPOVER_HEIGHT}
-                  popoverClassName="h1-spectral-lines-popover"
-                >
-                  <strong>Spectral lines act as fingerprints.</strong>
-                  <span>
-                    When atoms or molecules interact with light, their unique structure causes them to absorb and reemit photons at very specific wavelengths. Becuase the laws of physics are universal, we are able to use these highly specific "fingerprints" to identify the chemical composition of materials from anyhwere in the universe! 
-                  </span>
-                </InlineHoverPopover>{' '}
-                was well-known in visible-light astronomy, it's application was not immediately investigated due to the time it took to develop both the technical skills and the collaborative framework between fields of RF engineering and astronomy.
-              </p>
-              <p className="h1-section-body">By the 1950s, thanks in large part to the efforts of radio engineer Grote Reber, our understanding of radio astronomy had matured enough for more speculative ideas to form. In this case, it would be the possibility of detecting the hyperfine transition of hydrogen in the Milky Way.</p>
-              <p className="h1-section-body">Doc Ewen, after noticing an unanticipated shift in the observed frequency relative to the rest frequency of hydrogen, called the Harvard Observatory asking for the radial velocity correction for an observation at that time of that location in the sky. When asked why he needed the information, Ewen explained that he was attempting to detect the hyperfine transition of hydrogen in space, and needed to calculate the doppler shift. After a moment of silence, there was a click as the Observatory disconnected the call.</p>
-            </div>
-            <figure className="h1-ewen-figure">
-              <img
-                src="/ewen.jpg"
-                alt="Doc Ewen inspecting patchwork inside the horn antenna"
-                className="h1-ewen-image"
-              />
-              <figcaption className="h1-ewen-caption">
-                <blockquote>
-                  After one year, parts of the copper skin had cracked and peeled away from the plywood. I purchased fifty feet of rope from a local hardware store, tied one end around my waist and the other to the lower section of the antenna mount. With a large soldering iron, solder, and a bristle brush I went over the side, four floors up, and slid into the horn. About an hour later, I managed to climb out of the horn back on to the parapet. This picture of me inspecting the patchwork was taken about two days later. The line was detected within the next few weeks.
-                </blockquote>
-                <cite>Doc Ewen</cite>
-              </figcaption>
-            </figure>
-          </div>
-        </section>
-        {/* ── Doppler section ───────────────────────────────────────────────── */}
-        <section className="h1-spinflip h1-spinflip-alt" id="h1-doppler-section">
-          <div className="h1-doppler-inner">
-            <div className="h1-doppler-text">
-              <span className="h1-eyebrow">How do we use it?</span>
-              <h2 className="h1-section-heading">The Doppler Effect</h2>
-              <p className="h1-section-body">You may be familiar with the Doppler effect as it relates to sound, but did you know the same thing happens to light? In the same way that an approaching ambulance siren sounds higher in pitch as it gets closer and lower as it moves away, electromagnetic waves shift in frequency based on the relative motion between the source and the observer. It's far too subtle to notice in everyday life, but it's one of the most foundational tools in all of astronomy.</p>
-              <p className="h1-section-body"></p>
-              <p className="h1-section-body">The obvious challenge with this method is that in order to tell how much a frequency has shifted, you first need to know what it was originally. How do you do that for a photon that came from the other side of the Milky Way? This is where the power of spectral lines becomes clear.</p>
-              <p className="h1-section-body">Since we can measure the exact frequency of light emitted by hydrogen in a controlled lab, and because every hydrogen atom in the universe is identical, we can use that reference frequency to measure the relative velocity of hydrogen across the Milky Way.</p>
-            </div>
-            <div className="h1-doppler-visual">
-              <DopplerAnimation paused={animationsPaused} />
-              <p className="h1-visual-caption">
-                The relative velocity of hydrogen gas along our line of sight shifts the observed frequency: approaching gas is blueshifted, receding gas is redshifted.
-              </p>
-            </div>
-          </div>
-        </section>
         {/* ── Spin-flip section ─────────────────────────────────────────────── */}
         <section className="h1-doppler" id="h1-spinflip-section">
           <div className="h1-spinflip-inner">
@@ -1500,18 +1504,18 @@ export function QueuePage({
                   label="misleading"
                   ariaLabel="Show why the spin analogy is misleading"
                 >
-                  <img src="/Screenshot%202026-05-18%20202822.png" alt="Electron spin explained: imagine a ball that's rotating, except it's not a ball and it's not rotating." />
+                  <img src="/Screenshot%202026-05-18%20202822.png" alt="Electron spin explained: imagine a ball that's rotating, except it's not a ball and it's not rotating." loading="lazy" decoding="async" />
                 </InlineHoverPopover>{' '}
-                to say the least, so for this analogy, we'll simply represent it's two possible states: "up" and "down". When the proton and electron spins are parallel, pointing in the same direction, the atom has a slightly higher energy level than when the spins are anti-parallel.
+                to say the least, so for this analogy, we'll simply represent it's two possible states: "up" and "down". When the proton and electron spins are parallel, pointing in the same direction, the atom has a slightly higher energy level than when the spins are anti-parallel (due to complex interactions between their magnetic moments).
               </p>
               <p className="h1-section-body">
                 Very rarely, a hydrogen atom in the higher-energy parallel configuration transitions, or “flips,” into the lower-energy anti-parallel configuration. Because energy is conserved, the atom cannot simply lose that extra energy. It must carry the energy away somehow, and in this case it is released as a radio photon at 1420.4 MHz, corresponding to a wavelength of about 21 centimeters.
               </p>
               <p className="h1-section-body">Although any individual spin-flip transition is exceptionally rare, neutral hydrogen is so abundant in the galaxy that the combined signal is constant and measurable, even with a home-built radio telescope!</p>
             </div>
-            <div className="h1-spinflip-visual-wrap">
+            <div className="h1-spinflip-visual-wrap" ref={spinFlipRef}>
               <div className="h1-spinflip-visual">
-                <HydrogenAtomDepiction paused={animationsPaused} />
+                <HydrogenAtomDepiction paused={!spinFlipActive} />
               </div>
               <p className="h1-visual-caption">
                 In neutral hydrogen, a rare flip from parallel to anti-parallel spin releases a 1420.4 MHz radio photon: the 21 cm hydrogen line.
@@ -1526,12 +1530,15 @@ export function QueuePage({
               <h2 className="h1-section-heading">The beginning of radio astronomy</h2>
               <p className="h1-section-body">In the 1930's, while working at Bell Labs in it's formative years, Karl Jansky was tasked with identifying sources of radio noise which could interefere with overseas radio communication (a bleeding edge technology at the time). Among more mundane sources like thunderstorms, Jansky observed a peculiar background "hiss" of unknown origin which seemed to cycle in intensity once per day, leading Jansky to assume this noise originated from the sun.</p>
               <p className="h1-section-body">However, after a few more months of observation, the point of maximum "static" had noticibly shifted from the position of the sun. Recognizing that this puzzle was beyond the realm of RF engineering, Janksky met with his friend and astrophysicist Albert Melvin Skellett, who pointed out that the now refined 23 hours and 56 minute period of the signal was the exact length of a sidereal day.</p>
+              <p className="h1-section-body">There's a whole lot more to the story, but fitting everything on one page is hard. In the future, I would like to expand each of these sections into their own page.</p>
             </div>
             <figure className="h1-jansky-figure">
               <img
                 src="/Jansky.jpg"
                 alt="Karl Jansky's rotating directional radio antenna array"
                 className="h1-jansky-image"
+                loading="lazy"
+                decoding="async"
               />
               <figcaption className="h1-jansky-caption">
                 Karl Jansky, working at Bell Telephone Laboratories in Holmdel, NJ, built this antenna to receive radio waves at a frequency of 20.5 MHz (wavelength about 14.5 meters). It was mounted on a turntable that allowed it to rotate in any direction, earning it the name "Jansky's merry-go-round".

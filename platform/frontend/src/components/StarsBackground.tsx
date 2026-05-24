@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface Star {
   x: number;
@@ -26,90 +26,116 @@ export function StarsBackground({
   className,
 }: StarsBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [stars, setStars] = useState<Star[]>([]);
-
-  const generateStars = useCallback(
-    (width: number, height: number): Star[] => {
-      const numStars = Math.floor(width * height * starDensity);
-      return Array.from({ length: numStars }, () => {
-        const shouldTwinkle =
-          allStarsTwinkle || Math.random() < twinkleProbability;
-        return {
-          x: Math.random() * width,
-          y: Math.random() * height,
-          radius: Math.random() * 0.05 + 0.5,
-          opacity: Math.random() * 0.5 + 0.5,
-          twinkleSpeed: shouldTwinkle
-            ? minTwinkleSpeed +
-              Math.random() * (maxTwinkleSpeed - minTwinkleSpeed)
-            : null,
-        };
-      });
-    },
-    [starDensity, allStarsTwinkle, twinkleProbability, minTwinkleSpeed, maxTwinkleSpeed],
-  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const parent = canvas?.parentElement;
     if (!canvas || !parent) return;
 
-    const resize = () => {
-      const width = parent.clientWidth;
-      const height = parent.clientHeight;
-      if (width === 0 || height === 0) return;
-      canvas.width = width;
-      canvas.height = height;
-      setStars(generateStars(width, height));
-    };
-
-    resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(parent);
-    return () => observer.disconnect();
-  }, [generateStars]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let frameId: number;
-    let lastFrame = 0;
-    const frameInterval = 1000 / 20;
+    let stars: Star[] = [];
+    let rafId = 0;
+    let inView = false;
+    let tabVisible = document.visibilityState === 'visible';
 
-    const render = () => {
-      if (document.hidden) {
-        frameId = requestAnimationFrame(render);
-        return;
-      }
-      const now = performance.now();
+    function generateStars(width: number, height: number) {
+      const numStars = Math.floor(width * height * starDensity);
+      stars = Array.from({ length: numStars }, () => {
+        const shouldTwinkle = allStarsTwinkle || Math.random() < twinkleProbability;
+        return {
+          x: Math.random() * width,
+          y: Math.random() * height,
+          radius: Math.random() * 0.05 + 0.5,
+          opacity: Math.random() * 0.5 + 0.5,
+          twinkleSpeed: shouldTwinkle
+            ? minTwinkleSpeed + Math.random() * (maxTwinkleSpeed - minTwinkleSpeed)
+            : null,
+        };
+      });
+    }
+
+    const frameInterval = 1000 / 20;
+    let lastFrame = 0;
+
+    function render(now: number) {
       if (now - lastFrame < frameInterval) {
-        frameId = requestAnimationFrame(render);
+        rafId = requestAnimationFrame(render);
         return;
       }
       lastFrame = now;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx!.clearRect(0, 0, canvas!.width, canvas!.height);
       for (const star of stars) {
-        ctx.beginPath();
-        ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`;
-        ctx.fill();
+        ctx!.beginPath();
+        ctx!.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+        ctx!.fillStyle = `rgba(255, 255, 255, ${star.opacity})`;
+        ctx!.fill();
 
         if (star.twinkleSpeed !== null) {
-          star.opacity =
-            0.5 +
-            Math.abs(Math.sin((Date.now() * 0.001) / star.twinkleSpeed) * 0.5);
+          star.opacity = 0.5 + Math.abs(Math.sin((Date.now() * 0.001) / star.twinkleSpeed) * 0.5);
         }
       }
 
-      frameId = requestAnimationFrame(render);
+      rafId = requestAnimationFrame(render);
+    }
+
+    function startLoop() {
+      if (rafId !== 0) return;
+      rafId = requestAnimationFrame(render);
+    }
+
+    function stopLoop() {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+
+    function setActive(nowActive: boolean) {
+      if (nowActive) startLoop();
+      else stopLoop();
+    }
+
+    const update = () => setActive(inView && tabVisible);
+
+    const onVisibilityChange = () => {
+      tabVisible = document.visibilityState === 'visible';
+      update();
     };
-    render();
-    return () => cancelAnimationFrame(frameId);
-  }, [stars]);
+
+    const resizeObserver = new ResizeObserver(() => {
+      const w = parent.clientWidth;
+      const h = parent.clientHeight;
+      if (w === 0 || h === 0) return;
+      canvas!.width = w;
+      canvas!.height = h;
+      generateStars(w, h);
+    });
+
+    const intersectionObserver = new IntersectionObserver(([entry]) => {
+      inView = entry.isIntersecting;
+      update();
+    }, { threshold: 0.01 });
+
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
+    if (w > 0 && h > 0) {
+      canvas.width = w;
+      canvas.height = h;
+      generateStars(w, h);
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    resizeObserver.observe(parent);
+    intersectionObserver.observe(canvas);
+
+    return () => {
+      stopLoop();
+      resizeObserver.disconnect();
+      intersectionObserver.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [starDensity, allStarsTwinkle, twinkleProbability, minTwinkleSpeed, maxTwinkleSpeed]);
 
   return <canvas ref={canvasRef} className={className ?? 'stars-background'} />;
 }
