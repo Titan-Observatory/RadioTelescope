@@ -28,7 +28,7 @@
  * Arrow colour / glow: .hydrogen-atom-arrow in main.css.
  */
 
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 
 // ── Sequence timing (seconds) ─────────────────────────────────────────────
@@ -103,7 +103,7 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
   const protonLabelRef   = useRef<HTMLSpanElement>(null);
   const electronLabelRef = useRef<HTMLSpanElement>(null);
   const atomLabelRef     = useRef<HTMLSpanElement>(null);
-  const photonRef        = useRef<HTMLCanvasElement>(null);
+  const wavefieldRef     = useRef<RadialGridWavefieldHandle>(null);
   const tlRef            = useRef<gsap.core.Timeline | null>(null);
   const offsetRef        = useRef(0);
   const arrowRotRef      = useRef(0); // tracks accumulated rotation so flips chain correctly
@@ -166,20 +166,14 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
 
       // Instant snap to opposite orientation.
       ft.set(arrow, { rotation: end });
+      ft.call(triggerRadialWave);
 
       // Settle back to neutral.
       ft.to(arrow, { scale: 1, filter: 'none', duration: FLIP.settle, ease: 'power2.out' });
     }
 
-    function triggerPhoton() {
-      const photon = photonRef.current;
-      if (!photon) return;
-      gsap.killTweensOf(photon);
-      gsap.set(photon, { y: 0, opacity: 0 });
-      const pt = gsap.timeline();
-      pt.to(photon, { opacity: 1, duration: 0.5, ease: 'power2.in' });
-      pt.to(photon, { y: -320, duration: 3.2, ease: 'power1.inOut' }, 0);
-      pt.to(photon, { opacity: 0, duration: 0.9, ease: 'power2.out' }, 1.7);
+    function triggerRadialWave() {
+      wavefieldRef.current?.emit();
     }
 
     const tl = gsap.timeline({ repeat: -1 });
@@ -202,7 +196,6 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
       .to({}, { duration: T.holdBeforeFlip })
       .call(triggerFlip)
       .to({}, { duration: T.flipDuration })
-      .call(triggerPhoton)
       .to({}, { duration: T.holdAfterFlip })
       .to(ui, { opacity: 0, duration: T.fadeOutUI })
       .to(proton,   { x:  offset, y: 0, duration: T.recombine, ease: 'power3.inOut' })
@@ -215,7 +208,6 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
 
     return () => {
       tl.kill();
-      gsap.killTweensOf(photonRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -226,7 +218,7 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
 
   return (
     <div className="hydrogen-atom" aria-hidden data-paused={paused || undefined}>
-      <PhotonRay canvasRef={photonRef} />
+      <RadialGridWavefield ref={wavefieldRef} sourceRef={electronRef} paused={paused} />
       <span ref={atomLabelRef} className="hydrogen-atom-title">Hydrogen Atom</span>
       <div ref={protonRef} className="hydrogen-atom-particle">
         <ProtonSwarm />
@@ -246,98 +238,161 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
   );
 }
 
-// ── 21 cm photon: animated traveling wave packet ──────────────────────────
+// 21 cm wave: section-scale radial pulse that bends the background grid.
 
-const PHOTON = {
-  W: 52, H: 88,
-  A: 12,      // amplitude px
-  λ: 18,      // wavelength px
-  σ: 18,      // Gaussian envelope sigma
-  phaseRate: 0.28,  // radians per frame — controls oscillation speed
-  color: '#22d3ee',  // tailwind cyan-400
-  glowColor: '#06b6d4',
+type RadialGridWavefieldHandle = { emit: () => void };
+
+const WAVEFIELD = {
+  grid: 80,
+  sample: 8,
+  durationMs: 2600,
+  bandPx: 54,
+  pushPx: 22,
+  color: 'rgba(170, 185, 255, 0.34)',
+  coreColor: 'rgba(212, 250, 255, 0.62)',
+  glowColor: 'rgba(34, 211, 238, 0.2)',
 };
 
-function PhotonRay({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasElement | null> }) {
-  const { W, H, A, λ, σ, phaseRate, color, glowColor } = PHOTON;
+const RadialGridWavefield = React.forwardRef<
+  RadialGridWavefieldHandle,
+  { sourceRef: React.RefObject<HTMLElement | null>; paused?: boolean }
+>(function RadialGridWavefield({ sourceRef, paused }, ref) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef(0);
+  const startRef = useRef<number | null>(null);
+  const pausedRef = useRef(Boolean(paused));
 
   useEffect(() => {
+    pausedRef.current = Boolean(paused);
+  }, [paused]);
+
+  useEffect(() => {
+    const section = document.getElementById('h1-spinflip-section');
+    if (!section) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'hydrogen-radial-wavefield';
+    canvasRef.current = canvas;
+    section.prepend(canvas);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      canvas.remove();
+      canvasRef.current = null;
+    };
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    emit() {
+      startRef.current = performance.now();
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(draw);
+    },
+  }));
+
+  function draw(now: number) {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.width  = W;
-    canvas.height = H;
+    const section = document.getElementById('h1-spinflip-section');
+    const source = sourceRef.current;
+    const startedAt = startRef.current;
+    if (!canvas || !section || !source || startedAt === null) return;
 
-    const cx = W / 2, ctr = H / 2;
-    let phase = 0, raf = 0;
-
-    function tracePath(ctx: CanvasRenderingContext2D) {
-      ctx.beginPath();
-      for (let y = 0; y <= H; y++) {
-        const env = Math.exp(-((y - ctr) ** 2) / (2 * σ * σ));
-        const x   = cx + A * Math.sin((2 * Math.PI * y) / λ - phase) * env;
-        y === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
+    if (pausedRef.current) {
+      rafRef.current = requestAnimationFrame(draw);
+      return;
     }
 
-    function draw() {
-      raf = requestAnimationFrame(draw);
-      const ctx = canvas!.getContext('2d');
-      if (!ctx) return;
-      ctx.clearRect(0, 0, W, H);
-
-      // Soft outer glow
-      ctx.shadowBlur   = 22;
-      ctx.shadowColor  = glowColor;
-      ctx.strokeStyle  = color;
-      ctx.lineWidth    = 4.5;
-      ctx.lineCap      = 'round';
-      ctx.lineJoin     = 'round';
-      ctx.globalAlpha  = 0.35;
-      tracePath(ctx);
-      ctx.stroke();
-
-      // Mid layer
-      ctx.shadowBlur   = 10;
-      ctx.globalAlpha  = 0.75;
-      ctx.lineWidth    = 2.8;
-      tracePath(ctx);
-      ctx.stroke();
-
-      // Bright core
-      ctx.shadowBlur   = 4;
-      ctx.shadowColor  = '#e0f7fa';
-      ctx.strokeStyle  = '#cffafe';
-      ctx.lineWidth    = 1.4;
-      ctx.globalAlpha  = 1;
-      tracePath(ctx);
-      ctx.stroke();
-
-      ctx.shadowBlur  = 0;
-      ctx.globalAlpha = 1;
-      phase += phaseRate;
+    const rect = section.getBoundingClientRect();
+    const sourceRect = source.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
     }
 
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'absolute',
-        left:       '50%',
-        top:        '50%',
-        marginLeft: `-${W / 2}px`,
-        marginTop:  `-${H / 2}px`,
-        opacity:    0,
-        pointerEvents: 'none',
-      }}
-    />
-  );
-}
+    const t = Math.min(1, (now - startedAt) / WAVEFIELD.durationMs);
+    const attack = Math.min(1, t / 0.055);
+    const decay = Math.exp(-Math.max(0, t - 0.055) * 4.9);
+    const strength = attack * decay;
+    const alpha = strength * 0.86;
+    const sx = sourceRect.left + sourceRect.width / 2 - rect.left;
+    const sy = sourceRect.top + sourceRect.height / 2 - rect.top;
+    const maxRadius = Math.hypot(Math.max(sx, width - sx), Math.max(sy, height - sy)) + 90;
+    const radius = t * maxRadius;
 
-// ── Proton: metaball goo swarm ────────────────────────────────────────────
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = WAVEFIELD.color;
+    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = alpha;
+
+    for (let x = -WAVEFIELD.grid; x <= width + WAVEFIELD.grid; x += WAVEFIELD.grid) {
+      traceDistortedLine(ctx, sx, sy, radius, strength, x, -WAVEFIELD.grid, x, height + WAVEFIELD.grid);
+    }
+    for (let y = -WAVEFIELD.grid; y <= height + WAVEFIELD.grid; y += WAVEFIELD.grid) {
+      traceDistortedLine(ctx, sx, sy, radius, strength, -WAVEFIELD.grid, y, width + WAVEFIELD.grid, y);
+    }
+
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = WAVEFIELD.glowColor;
+    ctx.strokeStyle = WAVEFIELD.coreColor;
+    ctx.lineWidth = 1.45;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    if (t < 1) {
+      rafRef.current = requestAnimationFrame(draw);
+    } else {
+      ctx.clearRect(0, 0, width, height);
+      startRef.current = null;
+    }
+  }
+
+  function traceDistortedLine(
+    ctx: CanvasRenderingContext2D,
+    sx: number,
+    sy: number,
+    radius: number,
+    strength: number,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ) {
+    const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / WAVEFIELD.sample);
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const f = i / steps;
+      const x = x0 + (x1 - x0) * f;
+      const y = y0 + (y1 - y0) * f;
+      const dx = x - sx;
+      const dy = y - sy;
+      const dist = Math.max(0.001, Math.hypot(dx, dy));
+      const band = Math.exp(-((dist - radius) ** 2) / (2 * WAVEFIELD.bandPx * WAVEFIELD.bandPx));
+      const ripple = Math.cos(((dist - radius) / WAVEFIELD.bandPx) * Math.PI);
+      const push = band * ripple * WAVEFIELD.pushPx * strength;
+      const px = x + (dx / dist) * push;
+      const py = y + (dy / dist) * push;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  return null;
+});
 
 function ProtonSwarm() {
   return (
