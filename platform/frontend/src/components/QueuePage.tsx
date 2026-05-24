@@ -1408,7 +1408,7 @@ export function QueuePage({
               <span className="h1-eyebrow">How was it discovered?</span>
               <h2 className="h1-section-heading">Science at its best</h2>
               <p className="h1-section-body">
-                In the decades after radio waves were first detected from space in 1931, radio astronomy was mostly limited to measuring continuum emission. That could reveal a source's general "brightness," but not much else. The power of{' '}
+                In the decades after radio waves were first detected from space in 1931, radio astronomy was mostly limited to measuring continuum emission. That could reveal a source's general "brightness," but not much else. While the power of{' '}
                 <InlineHoverPopover
                   label="spectral lines"
                   ariaLabel="Show what spectral lines are"
@@ -1420,7 +1420,7 @@ export function QueuePage({
                     When atoms or molecules interact with light, their unique structure causes them to absorb and reemit photons at very specific wavelengths. Because the laws of physics are universal, we can use these highly specific "fingerprints" to identify the chemical composition of material from anywhere in the universe!
                   </span>
                 </InlineHoverPopover>{' '}
-                was already well known in visible-light astronomy, but its application to radio astronomy was not immediately explored. It took time to develop both the technical skills and the collaboration between RF engineering and astronomy needed to pursue it.
+                was already well known in visible-light astronomy, its application to radio astronomy was not immediately explored. It would take time to develop both the technical skills and the collaboration between RF engineering and astronomy, which had been completely separate fields until that point.
               </p>
               <p className="h1-section-body">By the 1950s, thanks in large part to the efforts of radio engineer Grote Reber, radio astronomy had matured enough for more speculative ideas to form. One of those ideas came from a paper by Van de Hulst predicting the existence of the 21 cm line emitted by galactic hydrogen. But the discovery would not come from a research team with the latest technology, it would come from a graduate student who built his own telescope on a $500 budget, sticking out of the fourth floor of Harvard's Lyman Lab (pictured).</p>
               <p className="h1-section-body">When Doc Ewen began the experiment under Purcell's guidance, there was little expectation of actually detecting anything. Even Van de Hulst had expressed doubt that the signal would be strong enough to observe. Still, in science, looking for something and not finding it still teaches us something. In this case, they hoped to at least set an upper limit on how strong the signal could be, if it did exist.</p>
