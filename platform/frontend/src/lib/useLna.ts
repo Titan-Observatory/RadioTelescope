@@ -18,7 +18,7 @@ export interface UseLnaResult {
   toggleLna: () => Promise<void>;
 }
 
-export function useLna(): UseLnaResult {
+export function useLna(enabled = true): UseLnaResult {
   const [lnaStatus, setLnaStatus] = useState<LnaStatus | null>(null);
   const [lnaChanging, setLnaChanging] = useState(false);
 
@@ -34,6 +34,7 @@ export function useLna(): UseLnaResult {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const tick = async () => { if (!cancelled) await refresh(); };
     void tick();
@@ -42,7 +43,7 @@ export function useLna(): UseLnaResult {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   const toggleLna = useCallback(async () => {
     if (lnaChanging) return;

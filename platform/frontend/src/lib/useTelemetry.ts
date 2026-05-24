@@ -11,6 +11,7 @@ import type { RoboClawTelemetry } from '../types';
 
 export interface UseTelemetryOptions {
   onError: (source: string, message: string) => void;
+  enabled?: boolean;
 }
 
 export interface UseTelemetryResult {
@@ -18,17 +19,19 @@ export interface UseTelemetryResult {
   setTelemetry: (next: RoboClawTelemetry) => void;
 }
 
-export function useTelemetry({ onError }: UseTelemetryOptions): UseTelemetryResult {
+export function useTelemetry({ onError, enabled = true }: UseTelemetryOptions): UseTelemetryResult {
   const [telemetry, setTelemetry] = useState<RoboClawTelemetry | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     void api.status().then((next) => {
       setTelemetry(next);
       if (next.last_error) onError('RoboClaw', next.last_error);
     }).catch((err) => onError('API', errorMessage(err)));
-  }, [onError]);
+  }, [enabled, onError]);
 
   useJsonSocket<RoboClawTelemetry>('/ws/roboclaw', {
+    enabled,
     onMessage: (next) => {
       setTelemetry(next);
       if (next.last_error) onError('RoboClaw', next.last_error);

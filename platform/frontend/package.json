@@ -8,7 +8,6 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "render:doppler": "node scripts/render-doppler-frames.mjs",
     "sync-types": "cd .. && python -m radiotelescope.scripts.dump_types > frontend/src/types.ts"
   },
   "dependencies": {

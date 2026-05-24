@@ -243,7 +243,7 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
       </span>
       <span ref={electronPartLabelRef} className="hydrogen-particle-label hydrogen-particle-label-electron">
         <span className="hydrogen-particle-label-main">Electron</span>
-        <span className="hydrogen-particle-label-sub">probability cloud</span>
+        <span className="hydrogen-particle-label-sub">(probability cloud)</span>
       </span>
       <div className="hydrogen-spin-readout hydrogen-spin-readout-proton">
         <span ref={protonArrowRef} className="hydrogen-atom-arrow">↑</span>

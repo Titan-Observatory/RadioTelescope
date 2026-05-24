@@ -9,8 +9,8 @@
   color-scheme: dark;
 
   /* Type */
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
 
   /* Surfaces — deep navy, close to Titan Observatory depth */
   --bg:              #0b0d16;
@@ -3170,6 +3170,7 @@ h2.panel-header {
   border: 1px solid var(--hairline-strong);
   border-radius: 6px;
   background: #fff;
+  color: #182033;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
   opacity: 0;
   pointer-events: none;
@@ -3208,6 +3209,26 @@ h2.panel-header {
   width: 100%;
   height: auto;
   border-radius: 4px;
+}
+
+.h1-spectral-lines-popover {
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px 11px;
+  text-align: left;
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.h1-spectral-lines-popover strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.h1-spectral-lines-popover span {
+  color: #334155;
 }
 
 .h1-misleading-popover-open {

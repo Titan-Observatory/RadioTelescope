@@ -6,7 +6,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 # CSP notes:
 #   script-src — Turnstile loader from Cloudflare; wasm-unsafe-eval for Aladin
-#   style-src https: + unsafe-inline — Inter font CSS (rsms.me) + inline styles
+#   style-src https: + unsafe-inline — third-party widget styles + inline styles
 #   img-src https: data: blob: — Aladin sky map tiles + data URIs
 #   connect-src https: + ws/wss + data: — telemetry sockets, CDS HiPS services,
 #     Turnstile verify, Aladin's data:-URL wasm fetch

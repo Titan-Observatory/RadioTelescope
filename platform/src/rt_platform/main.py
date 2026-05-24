@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -7,7 +8,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from rt_platform.api import (
@@ -28,6 +29,11 @@ from rt_platform.services.queue import QueueService
 from rt_platform.services.spectrum_bridge import SpectrumBridge
 
 logger = logging.getLogger("rt_platform")
+
+ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+PUBLIC_FILE_CACHE_CONTROL = "public, max-age=2592000"
+INDEX_CACHE_CONTROL = "no-cache"
+RT_ENV_CACHE_CONTROL = "public, max-age=86400, must-revalidate"
 
 
 @asynccontextmanager
@@ -113,13 +119,27 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
     app.include_router(routes_feedback.router)
     app.include_router(routes_events.router)
 
+    @app.get("/rt-env.js", include_in_schema=False)
+    async def serve_rt_env_js(request: Request):
+        gtag_id = request.app.state.config.gtag_id
+        public_config = {"gtagId": gtag_id} if gtag_id else {}
+        body = (
+            f"window.RT_PUBLIC_CONFIG = {json.dumps(public_config)};\n"
+            "window.dispatchEvent(new Event('rt-public-config-ready'));\n"
+        )
+        return Response(
+            content=body,
+            media_type="application/javascript",
+            headers={"Cache-Control": RT_ENV_CACHE_CONTROL},
+        )
+
     frontend_dist = _find_frontend_dist()
     if frontend_dist.exists():
-        app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+        app.mount("/assets", CachedStaticFiles(directory=frontend_dist / "assets"), name="assets")
 
         @app.get("/")
         async def serve_index():
-            return FileResponse(frontend_dist / "index.html")
+            return _file_response(frontend_dist / "index.html", INDEX_CACHE_CONTROL)
 
         _frontend_root = frontend_dist.resolve()
 
@@ -136,10 +156,10 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
         async def _serve_spa_file(path: str, frontend_dist: Path, frontend_root: Path):
             target = (frontend_dist / path).resolve()
             if not target.is_relative_to(frontend_root):
-                return FileResponse(frontend_dist / "index.html")
+                return _file_response(frontend_dist / "index.html", INDEX_CACHE_CONTROL)
             if target.is_file():
-                return FileResponse(target)
-            return FileResponse(frontend_dist / "index.html")
+                return _file_response(target, _cache_control_for_spa_file(target, frontend_root))
+            return _file_response(frontend_dist / "index.html", INDEX_CACHE_CONTROL)
     else:
         logger.warning("Frontend build not found; run `npm run build` in platform/frontend/")
 
@@ -166,6 +186,30 @@ def _find_frontend_dist() -> Path:
         if (candidate / "index.html").exists():
             return candidate
     return candidates[0]
+
+
+def _file_response(path: Path, cache_control: str) -> FileResponse:
+    return FileResponse(path, headers={"Cache-Control": cache_control})
+
+
+def _cache_control_for_spa_file(path: Path, frontend_root: Path) -> str:
+    try:
+        path.relative_to(frontend_root / "assets")
+    except ValueError:
+        pass
+    else:
+        return ASSET_CACHE_CONTROL
+
+    if path.name == "index.html":
+        return INDEX_CACHE_CONTROL
+    return PUBLIC_FILE_CACHE_CONTROL
+
+
+class CachedStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", ASSET_CACHE_CONTROL)
+        return response
 
 
 def cli() -> None:

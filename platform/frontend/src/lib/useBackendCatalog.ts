@@ -8,6 +8,7 @@ import type { CommandInfo, TelescopeConfig } from '../types';
 
 export interface UseBackendCatalogOptions {
   onError: (source: string, message: string) => void;
+  enabled?: boolean;
 }
 
 export interface UseBackendCatalogResult {
@@ -15,15 +16,16 @@ export interface UseBackendCatalogResult {
   telescopeConfig: TelescopeConfig | null;
 }
 
-export function useBackendCatalog({ onError }: UseBackendCatalogOptions): UseBackendCatalogResult {
+export function useBackendCatalog({ onError, enabled = true }: UseBackendCatalogOptions): UseBackendCatalogResult {
   const [commands, setCommands] = useState<CommandInfo[]>([]);
   const [telescopeConfig, setTelescopeConfig] = useState<TelescopeConfig | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     void api.commands().then(setCommands).catch((err) => onError('API', errorMessage(err)));
     // telescope config is non-critical — the SkyMap renders without it.
     void api.telescopeConfig().then(setTelescopeConfig).catch(() => { /* non-critical */ });
-  }, [onError]);
+  }, [enabled, onError]);
 
   return { commands, telescopeConfig };
 }

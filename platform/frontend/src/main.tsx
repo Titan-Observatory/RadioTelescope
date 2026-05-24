@@ -1,9 +1,9 @@
 import './styles/main.css';
 
 import { createRoot } from 'react-dom/client';
-import LiveShell from './LiveShell';
+import App from './App';
 
 const root = document.getElementById('root');
 if (root) {
-  createRoot(root).render(<LiveShell />);
+  createRoot(root).render(<App />);
 }

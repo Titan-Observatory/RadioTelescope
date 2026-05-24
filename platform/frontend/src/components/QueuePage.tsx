@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { HydrogenAtomDepiction } from './HydrogenAtom';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { Cloud } from 'lucide-react';
 
 import queueSpectrumRaw from '../data/queueSpectrum.txt?raw';
@@ -32,6 +32,8 @@ const MISLEADING_POPOVER_WIDTH = 260;
 const MISLEADING_POPOVER_HEIGHT = 245;
 const MISLEADING_POPOVER_GAP = 10;
 const MISLEADING_POPOVER_MARGIN = 12;
+const SPECTRAL_LINES_POPOVER_HEIGHT = 142;
+const STICKY_HEADER_ANIMATION_MARGIN_PX = 96;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -244,20 +246,6 @@ function useVisibleAnimation<T extends Element>(rootMarginTopPx = 0) {
   return [ref, active] as const;
 }
 
-function useStickyHeaderHeight() {
-  const [height, setHeight] = useState(0);
-  useEffect(() => {
-    const el = document.querySelector('.queue-header') as HTMLElement | null;
-    if (!el) return;
-    const measure = () => setHeight(el.getBoundingClientRect().height);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return height;
-}
-
 const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: boolean }) {
   // Live trace = survey shape + per-frame noise, lightly low-passed across
   // frames so the line breathes instead of strobing. Smoothing constant α
@@ -275,8 +263,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
   const fillPathRef = useRef<SVGPathElement | null>(null);
   const peakFillPathRef = useRef<SVGPathElement | null>(null);
   const glowPathRef = useRef<SVGPathElement | null>(null);
-  const headerHeight = useStickyHeaderHeight();
-  const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>(headerHeight);
+  const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>(STICKY_HEADER_ANIMATION_MARGIN_PX);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 760px)').matches);
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 760px)');
@@ -690,11 +677,10 @@ function TelescopeIllustration({ cx, cy }: { cx: number; cy: number }) {
   );
 }
 
-export function DopplerAnimation({ renderTimeSeconds, paused = false }: { renderTimeSeconds?: number; paused?: boolean } = {}) {
+function DopplerAnimation({ renderTimeSeconds, paused = false }: { renderTimeSeconds?: number; paused?: boolean } = {}) {
   const [now, setNow] = useState(0);
   const startRef = useRef(0);
-  const headerHeight = useStickyHeaderHeight();
-  const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>(headerHeight);
+  const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>(STICKY_HEADER_ANIMATION_MARGIN_PX);
   const isRenderFrame = renderTimeSeconds != null;
   // Smoothed noisy bin values for the mini spectrum trace. Updated in the rAF
   // loop so render stays a pure function of `now` plus this ref.
@@ -1072,43 +1058,43 @@ interface Props {
   loading?: boolean;
 }
 
-export function QueuePage({
-  status, joining, joinError, joinRateLimitedSec = null,
-  siteKey, turnstileEnabled, betaPasswordEnabled, onJoin, hasControl, onContinue, loading = false,
-}: Props) {
-  const rateLimited = joinRateLimitedSec != null && joinRateLimitedSec > 0;
-  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [betaPassword, setBetaPassword] = useState('');
-  const [headerCollapsed, setHeaderCollapsed] = useState(false);
-  const widgetRef = useRef<HTMLDivElement | null>(null);
-  const widgetIdRef = useRef<string | null>(null);
-  const autoJoinedTokenRef = useRef<string | null>(null);
-  const misleadingButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [misleadingPopover, setMisleadingPopover] = useState<{
-    left: number;
-    top: number;
-    placement: 'above' | 'below';
-    open: boolean;
-  } | null>(null);
-  const inQueue = (status?.position ?? -1) >= 0;
-  const passwordRequired = betaPasswordEnabled && !betaPassword.trim();
-  const waitingForCaptcha = turnstileEnabled && !captchaToken;
-  const joinDisabled = joining || rateLimited || passwordRequired || waitingForCaptcha;
+type InlinePopoverState = {
+  left: number;
+  top: number;
+  placement: 'above' | 'below';
+  open: boolean;
+};
 
-  const submitHeaderJoin = (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    if (joinDisabled) return;
-    void onJoin(captchaToken, betaPasswordEnabled ? betaPassword : null);
-  };
+type InlineHoverPopoverProps = {
+  label: ReactNode;
+  ariaLabel: string;
+  children: ReactNode;
+  className?: string;
+  popoverClassName?: string;
+  width?: number;
+  height?: number;
+};
 
-  const positionMisleadingPopover = () => {
-    const trigger = misleadingButtonRef.current;
+function InlineHoverPopover({
+  label,
+  ariaLabel,
+  children,
+  className = '',
+  popoverClassName = '',
+  width = MISLEADING_POPOVER_WIDTH,
+  height = MISLEADING_POPOVER_HEIGHT,
+}: InlineHoverPopoverProps) {
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [popover, setPopover] = useState<InlinePopoverState | null>(null);
+
+  const positionPopover = () => {
+    const trigger = buttonRef.current;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const popoverWidth = Math.min(
-      MISLEADING_POPOVER_WIDTH,
+      width,
       viewportWidth - MISLEADING_POPOVER_MARGIN * 2,
     );
     const halfWidth = popoverWidth / 2;
@@ -1123,35 +1109,82 @@ export function QueuePage({
     );
     const roomAbove = rect.top - MISLEADING_POPOVER_MARGIN;
     const roomBelow = viewportHeight - rect.bottom - MISLEADING_POPOVER_MARGIN;
-    const placement = roomAbove > roomBelow && roomAbove >= MISLEADING_POPOVER_HEIGHT ? 'above' : 'below';
+    const placement = roomAbove > roomBelow && roomAbove >= height ? 'above' : 'below';
     const preferredTop = placement === 'above'
-      ? rect.top - MISLEADING_POPOVER_GAP - MISLEADING_POPOVER_HEIGHT
+      ? rect.top - MISLEADING_POPOVER_GAP - height
       : rect.bottom + MISLEADING_POPOVER_GAP;
     const maxTop = Math.max(
       MISLEADING_POPOVER_MARGIN,
-      viewportHeight - MISLEADING_POPOVER_MARGIN - MISLEADING_POPOVER_HEIGHT,
+      viewportHeight - MISLEADING_POPOVER_MARGIN - height,
     );
     const top = clamp(
       preferredTop,
       MISLEADING_POPOVER_MARGIN,
       maxTop,
     );
-    setMisleadingPopover({ left, top, placement, open: true });
+    setPopover({ left, top, placement, open: true });
   };
 
-  const hideMisleadingPopover = () => {
-    setMisleadingPopover((current) => current ? { ...current, open: false } : null);
+  const hidePopover = () => {
+    setPopover((current) => current ? { ...current, open: false } : null);
   };
 
   useEffect(() => {
-    if (!misleadingPopover?.open) return;
-    window.addEventListener('resize', positionMisleadingPopover);
-    window.addEventListener('scroll', positionMisleadingPopover, true);
+    if (!popover?.open) return;
+    window.addEventListener('resize', positionPopover);
+    window.addEventListener('scroll', positionPopover, true);
     return () => {
-      window.removeEventListener('resize', positionMisleadingPopover);
-      window.removeEventListener('scroll', positionMisleadingPopover, true);
+      window.removeEventListener('resize', positionPopover);
+      window.removeEventListener('scroll', positionPopover, true);
     };
-  }, [misleadingPopover]);
+  }, [popover, width, height]);
+
+  return (
+    <button
+      ref={buttonRef}
+      className={`spectrum-doppler-term h1-misleading-highlight${className ? ` ${className}` : ''}`}
+      type="button"
+      aria-label={ariaLabel}
+      aria-expanded={popover?.open ? 'true' : 'false'}
+      onMouseEnter={positionPopover}
+      onFocus={positionPopover}
+      onMouseLeave={hidePopover}
+      onBlur={hidePopover}
+      onClick={positionPopover}
+    >
+      {label}
+      <span
+        className={`h1-misleading-popover h1-misleading-popover-${popover?.placement ?? 'below'}${popover?.open ? ' h1-misleading-popover-open' : ''}${popoverClassName ? ` ${popoverClassName}` : ''}`}
+        role="tooltip"
+        style={popover ? { left: popover.left, top: popover.top } : undefined}
+      >
+        {children}
+      </span>
+    </button>
+  );
+}
+
+export function QueuePage({
+  status, joining, joinError, joinRateLimitedSec = null,
+  siteKey, turnstileEnabled, betaPasswordEnabled, onJoin, hasControl, onContinue, loading = false,
+}: Props) {
+  const rateLimited = joinRateLimitedSec != null && joinRateLimitedSec > 0;
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [betaPassword, setBetaPassword] = useState('');
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const widgetRef = useRef<HTMLDivElement | null>(null);
+  const widgetIdRef = useRef<string | null>(null);
+  const autoJoinedTokenRef = useRef<string | null>(null);
+  const inQueue = (status?.position ?? -1) >= 0;
+  const passwordRequired = betaPasswordEnabled && !betaPassword.trim();
+  const waitingForCaptcha = turnstileEnabled && !captchaToken;
+  const joinDisabled = joining || rateLimited || passwordRequired || waitingForCaptcha;
+
+  const submitHeaderJoin = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    if (joinDisabled) return;
+    void onJoin(captchaToken, betaPasswordEnabled ? betaPassword : null);
+  };
 
   useEffect(() => {
     const mobileQuery = window.matchMedia('(max-width: 720px)');
@@ -1342,7 +1375,7 @@ export function QueuePage({
             <div className="h1-hero-text">
               <span className="h1-eyebrow">What is it?</span>
               <h2 className="h1-hero-title">The Hydrogen Line</h2>
-              <p className="h1-hero-sub">Found at around 1420.4 MHz, the hydrogen line is a characteristic radio signal emitted by electrically neutral hydrogen atoms, a common form of the most abundant element in the universe. Its discovery and use in early days of radio astronomy unlocked an entirely new set of tools for exploring the universe, allowing us to see through thick clouds of dust, measure the velocity and structure of nearby hydrogen, and, for the first time, learn what our own Milky Way galaxy looked like.</p>
+              <p className="h1-hero-sub">Found around 1420.4 MHz, the hydrogen line is a characteristic radio signal emitted by electrically neutral hydrogen atoms, a common form of the most abundant element in the universe. Its discovery and use in early days of radio astronomy unlocked an entirely new set of tools for exploring the universe, allowing us to see through thick clouds of dust, measure the velocity and structure of nearby hydrogen, and, for the first time, learn what our own Milky Way galaxy looked like.</p>
             </div>
             <div className="h1-hero-visual">
               <HeroSpectrum paused={animationsPaused} />
@@ -1361,8 +1394,22 @@ export function QueuePage({
             <div className="h1-spinflip-text">
               <span className="h1-eyebrow">How was it discovered?</span>
               <h2 className="h1-section-heading">Science at its best</h2>
-              <p className="h1-section-body">In the years after radio waves were first detected from space in 1931, radio astronomy was mostly a way of measuring continuum emission, giving us a general "brightness" of a source, but not much else. While the power of spectral lines was well-known in visible-light astronomy, it's application to the radio end of the spectrum was not immediately investigated due to the unique skillset required, sitting awkwardly between RF engineering and astronomy- two very different worlds.</p>
-              <p className="h1-section-body">By the 1950s, thanks to the likes of </p>
+              <p className="h1-section-body">
+                In the decades following the first detection of radio waves from space in 1931, radio astronomy was mostly limited to measuring continuum emission, giving us a general "brightness" of a source, but not much else. While the power of{' '}
+                <InlineHoverPopover
+                  label="spectral lines"
+                  ariaLabel="Show what spectral lines are"
+                  height={SPECTRAL_LINES_POPOVER_HEIGHT}
+                  popoverClassName="h1-spectral-lines-popover"
+                >
+                  <strong>Spectral lines are fingerprints.</strong>
+                  <span>
+                    Atoms and molecules emit or absorb light at specific frequencies. If you know the original frequency, a shifted line can reveal motion, composition, and physical conditions.
+                  </span>
+                </InlineHoverPopover>{' '}
+                was well-known in visible-light astronomy, it's application was not immediately investigated due to the time it took to develop both the technical skills and the collaborative framework between fields of RF engineering and astronomy.
+              </p>
+              <p className="h1-section-body">By the 1950s, thanks in large part to the efforts of radio engineer Grote Reber, </p>
               <p className="h1-section-body">Doc Ewen, after noticing an unanticipated shift in the observed frequency relative to the rest frequency of hydrogen, called the Harvard Observatory asking for the radial velocity correction for an observation at that time of that location in the sky. When asked why he needed the information, Ewen explained that he was attempting to detect the hyperfine transition of hydrogen in space, and needed to calculate the doppler shift. After a moment of silence, there was a click as the Observatory disconnected the call.</p>
             </div>
             <figure className="h1-ewen-figure">
@@ -1386,8 +1433,8 @@ export function QueuePage({
             <div className="h1-doppler-text">
               <span className="h1-eyebrow">How do we use it?</span>
               <h2 className="h1-section-heading">The Doppler Effect</h2>
-              <p className="h1-section-body">You may be familiar with the Doppler effect as it relates to sound, but did you know the same thing happens to light? It's far too subtle to notice in everyday life, but it's one of the most foundational tools in all of astronomy.</p>
-              <p className="h1-section-body">In the same way that an approaching ambulance siren sounds higher in pitch as it gets closer and lower as it moves away, electromagnetic waves shift in frequency based on the relative motion between the source and the observer.</p>
+              <p className="h1-section-body">You may be familiar with the Doppler effect as it relates to sound, but did you know the same thing happens to light? In the same way that an approaching ambulance siren sounds higher in pitch as it gets closer and lower as it moves away, electromagnetic waves shift in frequency based on the relative motion between the source and the observer. It's far too subtle to notice in everyday life, but it's one of the most foundational tools in all of astronomy.</p>
+              <p className="h1-section-body"></p>
               <p className="h1-section-body">The obvious challenge with this method is that in order to tell how much a frequency has shifted, you first need to know what it was originally. How do you do that for a photon that came from the other side of the Milky Way? This is where the power of spectral lines becomes clear.</p>
               <p className="h1-section-body">Since we can measure the exact frequency of light emitted by hydrogen in a controlled lab, and because every hydrogen atom in the universe is identical, we can use that reference frequency to measure the relative velocity of hydrogen across the Milky Way.</p>
             </div>
@@ -1407,27 +1454,12 @@ export function QueuePage({
               <h2 className="h1-section-heading">The spin-flip transition</h2>
               <p className="h1-section-body">
                 Neutral hydrogen consists of one proton and one electron, each with a quantum property known as spin. The term "spin" here is a bit{' '}
-                <button
-                  ref={misleadingButtonRef}
-                  className="spectrum-doppler-term h1-misleading-highlight"
-                  type="button"
-                  aria-label="Show why the spin analogy is misleading"
-                  aria-expanded={misleadingPopover?.open ? 'true' : 'false'}
-                  onMouseEnter={positionMisleadingPopover}
-                  onFocus={positionMisleadingPopover}
-                  onMouseLeave={hideMisleadingPopover}
-                  onBlur={hideMisleadingPopover}
-                  onClick={positionMisleadingPopover}
+                <InlineHoverPopover
+                  label="misleading"
+                  ariaLabel="Show why the spin analogy is misleading"
                 >
-                  misleading
-                  <span
-                    className={`h1-misleading-popover h1-misleading-popover-${misleadingPopover?.placement ?? 'below'}${misleadingPopover?.open ? ' h1-misleading-popover-open' : ''}`}
-                    role="tooltip"
-                    style={misleadingPopover ? { left: misleadingPopover.left, top: misleadingPopover.top } : undefined}
-                  >
-                    <img src="/Screenshot%202026-05-18%20202822.png" alt="Electron spin explained: imagine a ball that's rotating, except it's not a ball and it's not rotating." />
-                  </span>
-                </button>{' '}
+                  <img src="/Screenshot%202026-05-18%20202822.png" alt="Electron spin explained: imagine a ball that's rotating, except it's not a ball and it's not rotating." />
+                </InlineHoverPopover>{' '}
                 to say the least, so for this analogy, we'll simply represent it's two possible states: "up" and "down". When the proton and electron spins are parallel, pointing in the same direction, the atom has a slightly higher energy level than when the spins are anti-parallel.
               </p>
               <p className="h1-section-body">

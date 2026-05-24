@@ -128,10 +128,11 @@ interface Baseline {
 }
 
 interface SpectrumPanelProps {
+  enabled?: boolean;
   onStartGuided?: () => void;
 }
 
-export function SpectrumPanel({ onStartGuided }: SpectrumPanelProps = {}) {
+export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelProps = {}) {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
   // The waterfall is rendered straight to a 2D canvas: each tick we scroll the
@@ -203,6 +204,7 @@ export function SpectrumPanel({ onStartGuided }: SpectrumPanelProps = {}) {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const refresh = async () => {
       try {
@@ -219,7 +221,7 @@ export function SpectrumPanel({ onStartGuided }: SpectrumPanelProps = {}) {
     void refresh();
     const id = window.setInterval(refresh, 3000);
     return () => { cancelled = true; window.clearInterval(id); };
-  }, []);
+  }, [enabled]);
 
   // Auto-recover the SDR when frames stop flowing. We avoid hammering the
   // reconnect endpoint unconditionally — tearing down and re-opening the
@@ -252,7 +254,7 @@ export function SpectrumPanel({ onStartGuided }: SpectrumPanelProps = {}) {
   // WebSocket subscription. Each frame is a fully-integrated spectrum from
   // the backend — we swap the series wholesale rather than appending.
   const { connected } = useJsonSocket<SpectrumFrame>('/ws/spectrum', {
-    enabled: status == null || status.enabled !== false,
+    enabled: enabled && (status == null || status.enabled !== false),
     onMessage: setFrame,
   });
 

@@ -72,6 +72,8 @@ class AppConfig(BaseModel):
     # in compose deployments; an IP/host in bare-metal LAN deployments.
     hardware_url: str = "http://hardware:8001"
 
+    gtag_id: str = ""
+
     feedback_log_path: str = "feedback.jsonl"
     feedback_log_max_bytes: int = Field(default=1_048_576, ge=1)
     events_log_path: str = "events.jsonl"
@@ -117,6 +119,8 @@ def load_config(path: Path | str = "config.toml") -> AppConfig:
     # deployment.
     if "HARDWARE_URL" in os.environ:
         raw["hardware_url"] = os.environ["HARDWARE_URL"]
+    if "GTAG_ID" in os.environ:
+        raw["gtag_id"] = os.environ["GTAG_ID"]
     return AppConfig.model_validate(raw)
 
 

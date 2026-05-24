@@ -32,9 +32,13 @@ declare global {
   }
 }
 
-const gtagId = window.RT_PUBLIC_CONFIG?.gtagId?.trim() ?? '';
+let loadedGtagId = '';
 
-if (gtagId) {
+function initGtag() {
+  const gtagId = window.RT_PUBLIC_CONFIG?.gtagId?.trim() ?? '';
+  if (!gtagId || gtagId === loadedGtagId) return;
+  loadedGtagId = gtagId;
+
   window.dataLayer = window.dataLayer ?? [];
   window.gtag = window.gtag ?? function gtag(...args: Parameters<Gtag>) {
     window.dataLayer?.push(args);
@@ -50,6 +54,9 @@ if (gtagId) {
     page_path: window.location.pathname,
   });
 }
+
+initGtag();
+window.addEventListener('rt-public-config-ready', initGtag, { once: true });
 
 function getOrCreateSessionId(): string {
   try {

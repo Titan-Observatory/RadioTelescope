@@ -1,9 +1,8 @@
 import { Maximize2, Minimize2 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { setAnalyticsContext, track } from './analytics';
 import { BRAND } from './branding';
-import { DopplerRenderHarness } from './components/DopplerRenderHarness';
 import { InfoSection } from './components/InfoSection';
 import { MobileHint } from './components/MobileHint';
 import { MotionControls } from './components/MotionControls';
@@ -27,68 +26,38 @@ document.title = BRAND.name;
 const favicon = document.getElementById('favicon') as HTMLLinkElement | null;
 if (favicon) favicon.href = BRAND.faviconUrl;
 
-function App() {
+interface ControlUIProps {
+  queue: ReturnType<typeof useQueueLease>;
+}
+
+function ControlUI({ queue }: ControlUIProps) {
   const { trackErrorOnce } = useErrorTracking();
-  const { telemetry, setTelemetry } = useTelemetry({ onError: trackErrorOnce });
-  const { lnaStatus, lnaChanging, toggleLna } = useLna();
-  const { commands, telescopeConfig } = useBackendCatalog({ onError: trackErrorOnce });
-  const queue = useQueueLease();
+  const liveControlsEnabled = useAfterInitialPaint();
+  const { telemetry, setTelemetry } = useTelemetry({ enabled: liveControlsEnabled, onError: trackErrorOnce });
+  const { lnaStatus, lnaChanging, toggleLna } = useLna(liveControlsEnabled);
+  const { commands, telescopeConfig } = useBackendCatalog({ enabled: liveControlsEnabled, onError: trackErrorOnce });
   const map = useMapTarget();
   const motion = useMotionCommands(commands, setTelemetry);
 
   const skymapPanelRef = useRef<HTMLElement>(null);
   const { isFullscreen: isSkymapFullscreen, toggle: toggleSkymapFullscreen } = useFullscreen(skymapPanelRef);
 
-  // Keep analytics context current so every tracked event is tagged with
-  // queue position and controller status without per-call boilerplate.
-  useEffect(() => {
-    setAnalyticsContext({
-      isActiveController: queue.isActiveController,
-      queuePosition: queue.queueStatus?.position ?? null,
-    });
-  }, [queue.isActiveController, queue.queueStatus?.position]);
-
-  // One session_start per tab — fires after the queue state is known so the
-  // controller/spectator split is captured on the first row.
+  // One session_start per tab, only once the user reaches the live controls.
   const sessionStartedRef = useRef(false);
   useEffect(() => {
     if (sessionStartedRef.current) return;
-    if (!queue.queueReady) return;
-    if (queue.queueEnabled && queue.queueStatus == null) return;
     sessionStartedRef.current = true;
     track('session_start', {
       queue_enabled: queue.queueEnabled,
       entered_as: queue.isActiveController ? 'controller' : 'spectator',
     });
-  }, [queue.queueReady, queue.queueEnabled, queue.queueStatus, queue.isActiveController]);
+  }, [queue.queueEnabled, queue.isActiveController]);
 
-  // Offer the first-visit guided tour once the user actually has the controls
-  // in front of them — no point prompting while they're still on the queue page.
+  // Offer the first-visit guided tour once the user actually has the controls.
   useEffect(() => {
-    if (!queue.isActiveController) return;
     const t = setTimeout(() => maybePromptFirstVisit(motion.startObservationGuide), 600);
     return () => clearTimeout(t);
-  }, [queue.isActiveController, motion.startObservationGuide]);
-
-  // Queue gating: when the queue is enabled and we are not the active
-  // controller, render the spectator/queue page instead of the control UI.
-  if (!queue.queueReady || (queue.queueEnabled && !queue.isActiveController)) {
-    return (
-      <QueuePage
-        status={queue.queueStatus}
-        joining={queue.joining}
-        joinError={queue.joinError}
-        joinRateLimitedSec={queue.joinRateLimitedSec}
-        siteKey={queue.queueConfig?.turnstile_site_key ?? null}
-        turnstileEnabled={queue.queueConfig?.turnstile_enabled ?? false}
-        betaPasswordEnabled={queue.queueConfig?.beta_password_enabled ?? false}
-        onJoin={queue.join}
-        hasControl={queue.hasControl}
-        onContinue={queue.acknowledgeContinue}
-        loading={!queue.queueReady}
-      />
-    );
-  }
+  }, [motion.startObservationGuide]);
 
   return (
     <div className="app-shell">
@@ -150,7 +119,7 @@ function App() {
         </section>
         <div className="dashboard-rightcol">
           <section className="panel spectrum-panel-host">
-            <SpectrumPanel onStartGuided={motion.startObservationGuide} />
+            <SpectrumPanel enabled={liveControlsEnabled} onStartGuided={motion.startObservationGuide} />
           </section>
           <section className="panel status-side-panel">
             <TelemetryDashboard
@@ -169,8 +138,61 @@ function App() {
   );
 }
 
-export default function LiveShell() {
-  const params = new URLSearchParams(window.location.search);
-  const renderTarget = params.get('render');
-  return renderTarget === 'doppler' ? <DopplerRenderHarness /> : <App />;
+function useAfterInitialPaint() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let firstFrame = 0;
+    let secondFrame = 0;
+
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        if (!cancelled) setReady(true);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+    };
+  }, []);
+
+  return ready;
+}
+
+export default function App() {
+  const queue = useQueueLease();
+
+  // Keep analytics context current so every tracked event is tagged with
+  // queue position and controller status without per-call boilerplate.
+  useEffect(() => {
+    setAnalyticsContext({
+      isActiveController: queue.isActiveController,
+      queuePosition: queue.queueStatus?.position ?? null,
+    });
+  }, [queue.isActiveController, queue.queueStatus?.position]);
+
+  // Queue gating: when the queue is enabled and we are not the active
+  // controller, render the spectator/queue page instead of the control UI.
+  if (!queue.queueReady || (queue.queueEnabled && !queue.isActiveController)) {
+    return (
+      <QueuePage
+        status={queue.queueStatus}
+        joining={queue.joining}
+        joinError={queue.joinError}
+        joinRateLimitedSec={queue.joinRateLimitedSec}
+        siteKey={queue.queueConfig?.turnstile_site_key ?? null}
+        turnstileEnabled={queue.queueConfig?.turnstile_enabled ?? false}
+        betaPasswordEnabled={queue.queueConfig?.beta_password_enabled ?? false}
+        onJoin={queue.join}
+        hasControl={queue.hasControl}
+        onContinue={queue.acknowledgeContinue}
+        loading={!queue.queueReady}
+      />
+    );
+  }
+
+  return <ControlUI queue={queue} />;
 }
