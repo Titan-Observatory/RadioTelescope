@@ -4,13 +4,13 @@
  * Animated depiction of a neutral hydrogen atom for the spin-flip explanation
  * panel. The sequence loops automatically:
  *
- *   1. Proton + electron start overlapping at centre (combined state).
- *   2. They separate to their natural side-by-side positions.
- *   3. Spin arrows and labels fade in.
+ *   1. Proton + electron start separated with simple particle labels.
+ *   2. Particle labels fade out as the parts combine at centre.
+ *   3. Spin arrows and labels fade in around the overlapped atom.
  *   4. The electron arrow vibrates and snaps to the opposite orientation
  *      (hyperfine spin-flip event).
  *   5. Labels and arrows fade out.
- *   6. Particles recombine.
+ *   6. Particles separate again for the next loop.
  *
  * ── Timing knobs ──────────────────────────────────────────────────────────
  * All durations are in seconds. Edit the TIMELINE object to change pacing.
@@ -33,14 +33,15 @@ import { gsap } from 'gsap';
 
 // ── Sequence timing (seconds) ─────────────────────────────────────────────
 const TIMELINE = {
-  holdCombined:   1.8,
-  separate:       2.0,
+  holdSeparated:  1.6,
+  combine:        2.0,
+  holdAtomLabel:  1.2,
   fadeInUI:       1.0,
   holdBeforeFlip: 1.4,
   flipDuration:   0.85,  // must be >= sum of FLIP step durations + settle
-  holdAfterFlip:  1.0,
+  holdAfterFlip:  3.0,
   fadeOutUI:      1.0,
-  recombine:      2.0,
+  separate:       2.0,
   holdEnd:        1.2,
 };
 
@@ -102,24 +103,25 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
   const electronCloudRef = useRef<HTMLSpanElement>(null);
   const protonLabelRef   = useRef<HTMLSpanElement>(null);
   const electronLabelRef = useRef<HTMLSpanElement>(null);
+  const protonPartLabelRef = useRef<HTMLSpanElement>(null);
+  const electronPartLabelRef = useRef<HTMLSpanElement>(null);
   const atomLabelRef     = useRef<HTMLSpanElement>(null);
   const wavefieldRef     = useRef<RadialGridWavefieldHandle>(null);
   const tlRef            = useRef<gsap.core.Timeline | null>(null);
   const offsetRef        = useRef(0);
   const arrowRotRef      = useRef(0); // tracks accumulated rotation so flips chain correctly
 
-  // Snap to combined before first paint — no flash of separated state.
+  // Snap to the opening separated state before first paint.
   useLayoutEffect(() => {
     const proton   = protonRef.current;
     const electron = electronRef.current;
     if (!proton || !electron) return;
     gsap.set([proton, electron], { xPercent: -50, yPercent: -50 });
-    gsap.set(electronCloudRef.current, { scale: 1, transformOrigin: '50% 50%' });
+    gsap.set(electronCloudRef.current, { scale: 0.45, transformOrigin: '50% 50%' });
     const pr = proton.getBoundingClientRect();
     const er = electron.getBoundingClientRect();
     offsetRef.current = ((er.left + er.width / 2) - (pr.left + pr.width / 2)) / 2;
-    gsap.set(proton,   { x:  offsetRef.current });
-    gsap.set(electron, { x: -offsetRef.current });
+    gsap.set([proton, electron], { x: 0, y: -34 });
   }, []);
 
   useEffect(() => {
@@ -136,6 +138,10 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
     ];
     const atomLabel = atomLabelRef.current;
     const electronCloud = electronCloudRef.current;
+    const particleLabels = [
+      protonPartLabelRef.current,
+      electronPartLabelRef.current,
+    ];
 
     // Flip animation built entirely in GSAP — no CSS keyframes, no React state,
     // no key= remounting. A stable ref means GSAP always has the right element.
@@ -181,27 +187,33 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
 
     const T = TIMELINE;
     tl
-      // Reset to always-parallel state at the top of each cycle (arrows invisible here).
       .call(() => {
+        gsap.set(proton, { x: 0, y: -34 });
+        gsap.set(electron, { x: 0, y: -34 });
         gsap.set(electronArrowRef.current, { rotation: 0 });
-        gsap.set(electronCloud, { scale: 1 });
-        gsap.set(atomLabel, { opacity: 1 });
+        gsap.set(electronCloud, { scale: 0.45 });
+        gsap.set(atomLabel, { opacity: 0 });
+        gsap.set(particleLabels, { opacity: 1 });
         arrowRotRef.current = 0;
       })
-      .to({}, { duration: T.holdCombined })
-      .to(atomLabel, { opacity: 0, duration: 0.35, ease: 'power2.out' })
-      .to([proton, electron], { x: 0, y: -34, duration: T.separate, ease: 'power3.inOut' })
-      .to(electronCloud, { scale: 0.45, duration: T.separate, ease: 'power3.inOut' }, '<')
+      .to({}, { duration: T.holdSeparated })
+      .to(particleLabels, { opacity: 0, duration: 0.35, ease: 'power2.out' })
+      .to(proton,   { x:  offset, y: 0, duration: T.combine, ease: 'power3.inOut' }, '<')
+      .to(electron, { x: -offset, y: 0, duration: T.combine, ease: 'power3.inOut' }, '<')
+      .to(electronCloud, { scale: 1, duration: T.combine, ease: 'power3.inOut' }, '<')
+      .to(atomLabel, { opacity: 1, duration: 0.45, ease: 'power2.out' }, '>-0.2')
+      .to({}, { duration: T.holdAtomLabel })
       .to(ui, { opacity: 1, duration: T.fadeInUI })
       .to({}, { duration: T.holdBeforeFlip })
       .call(triggerFlip)
       .to({}, { duration: T.flipDuration })
       .to({}, { duration: T.holdAfterFlip })
       .to(ui, { opacity: 0, duration: T.fadeOutUI })
-      .to(proton,   { x:  offset, y: 0, duration: T.recombine, ease: 'power3.inOut' })
-      .to(electron, { x: -offset, y: 0, duration: T.recombine, ease: 'power3.inOut' }, '<')
-      .to(electronCloud, { scale: 1, duration: T.recombine, ease: 'power3.inOut' }, '<')
-      .to(atomLabel, { opacity: 1, duration: 0.45, ease: 'power2.out' })
+      .to(atomLabel, { opacity: 0, duration: 0.35, ease: 'power2.out' }, '<')
+      .to(proton,   { x: 0, y: -34, duration: T.separate, ease: 'power3.inOut' })
+      .to(electron, { x: 0, y: -34, duration: T.separate, ease: 'power3.inOut' }, '<')
+      .to(electronCloud, { scale: 0.45, duration: T.separate, ease: 'power3.inOut' }, '<')
+      .to(particleLabels, { opacity: 1, duration: 0.45, ease: 'power2.out' })
       .to({}, { duration: T.holdEnd });
 
     if (paused) tl.pause();
@@ -226,6 +238,13 @@ export function HydrogenAtomDepiction({ paused }: { paused?: boolean }) {
       <div ref={electronRef} className="hydrogen-atom-particle">
         <ElectronCloud cloudRef={electronCloudRef} />
       </div>
+      <span ref={protonPartLabelRef} className="hydrogen-particle-label hydrogen-particle-label-proton">
+        <span className="hydrogen-particle-label-main">Proton</span>
+      </span>
+      <span ref={electronPartLabelRef} className="hydrogen-particle-label hydrogen-particle-label-electron">
+        <span className="hydrogen-particle-label-main">Electron</span>
+        <span className="hydrogen-particle-label-sub">probability cloud</span>
+      </span>
       <div className="hydrogen-spin-readout hydrogen-spin-readout-proton">
         <span ref={protonArrowRef} className="hydrogen-atom-arrow">↑</span>
         <span ref={protonLabelRef} className="hydrogen-atom-label">proton spin</span>
@@ -252,12 +271,17 @@ const WAVEFIELD = {
   coreColor: 'rgba(212, 250, 255, 0.62)',
   glowColor: 'rgba(34, 211, 238, 0.2)',
 };
+// Skip exp+cos for samples > 3σ outside the wavefront — covers ~80 % of grid points.
+const WAVEFIELD_BAND_CUTOFF = 3 * WAVEFIELD.bandPx;
+const WAVEFIELD_BAND_SQ     = 2 * WAVEFIELD.bandPx * WAVEFIELD.bandPx;
 
 const RadialGridWavefield = React.forwardRef<
   RadialGridWavefieldHandle,
   { sourceRef: React.RefObject<HTMLElement | null>; paused?: boolean }
 >(function RadialGridWavefield({ sourceRef, paused }, ref) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasRef  = useRef<HTMLCanvasElement | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const ctxRef     = useRef<CanvasRenderingContext2D | null>(null);
   const rafRef = useRef(0);
   const startRef = useRef<number | null>(null);
   const pausedRef = useRef(Boolean(paused));
@@ -273,7 +297,22 @@ const RadialGridWavefield = React.forwardRef<
     const canvas = document.createElement('canvas');
     canvas.className = 'hydrogen-radial-wavefield';
     canvasRef.current = canvas;
+    sectionRef.current = section;
+
+    // Pre-size the canvas at creation so the first draw() frame doesn't
+    // trigger a GPU texture resize, which can cause the electron cloud to
+    // glitch on mobile due to compositing layer promotion jank.
+    const rect = section.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(rect.width));
+    const h = Math.max(1, Math.round(rect.height));
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+
     section.prepend(canvas);
+    ctxRef.current = canvas.getContext('2d');
 
     return () => {
       cancelAnimationFrame(rafRef.current);
@@ -292,10 +331,11 @@ const RadialGridWavefield = React.forwardRef<
 
   function draw(now: number) {
     const canvas = canvasRef.current;
-    const section = document.getElementById('h1-spinflip-section');
+    const section = sectionRef.current;
+    const ctx = ctxRef.current;
     const source = sourceRef.current;
     const startedAt = startRef.current;
-    if (!canvas || !section || !source || startedAt === null) return;
+    if (!canvas || !section || !ctx || !source || startedAt === null) return;
 
     if (pausedRef.current) {
       rafRef.current = requestAnimationFrame(draw);
@@ -313,9 +353,6 @@ const RadialGridWavefield = React.forwardRef<
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
     }
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
@@ -381,8 +418,13 @@ const RadialGridWavefield = React.forwardRef<
       const dx = x - sx;
       const dy = y - sy;
       const dist = Math.max(0.001, Math.hypot(dx, dy));
-      const band = Math.exp(-((dist - radius) ** 2) / (2 * WAVEFIELD.bandPx * WAVEFIELD.bandPx));
-      const ripple = Math.cos(((dist - radius) / WAVEFIELD.bandPx) * Math.PI);
+      const off = dist - radius;
+      if (Math.abs(off) > WAVEFIELD_BAND_CUTOFF) {
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        continue;
+      }
+      const band = Math.exp(-(off * off) / WAVEFIELD_BAND_SQ);
+      const ripple = Math.cos((off / WAVEFIELD.bandPx) * Math.PI);
       const push = band * ripple * WAVEFIELD.pushPx * strength;
       const px = x + (dx / dist) * push;
       const py = y + (dy / dist) * push;
@@ -454,6 +496,14 @@ function ElectronCloud({ cloudRef }: { cloudRef?: React.Ref<HTMLSpanElement> }) 
     const maxR = sigma * maxSigma;
     const taperR = sigma * taperSigma;
 
+    const [dr, dg, db] = dotColor;
+    const [gi, gg, gb] = glow.inner;
+    const [mi, mg, mb] = glow.mid;
+    const [oi, og, ob] = glow.outer;
+
+    // ctx is stable for the lifetime of a canvas — cache it once.
+    const ctx = canvas.getContext('2d')!;
+
     function gaussSample(): [number, number] {
       let x: number, y: number;
       do {
@@ -466,7 +516,16 @@ function ElectronCloud({ cloudRef }: { cloudRef?: React.Ref<HTMLSpanElement> }) 
       return [x, y];
     }
 
-    type Dot = { x: number; y: number; r: number; on: boolean; ttl: number; onDur: number; offDur: number };
+    // Pre-compute the fill string for a dot at (x, y) — called on placement,
+    // not per frame, so the hypot/exp/pow/toFixed cost is amortised across frames.
+    function dotFillStyle(x: number, y: number): string {
+      const dist = Math.hypot(x - cx, y - cy);
+      const radialFade = Math.exp(-Math.pow(dist / taperR, dotTaperExp));
+      const edgeFade = Math.pow(Math.max(0, 1 - dist / maxR), edgeTaperExp);
+      return `rgba(${dr},${dg},${db},${(dotMaxAlpha * radialFade * edgeFade).toFixed(3)})`;
+    }
+
+    type Dot = { x: number; y: number; r: number; on: boolean; ttl: number; onDur: number; offDur: number; fillStyle: string };
 
     const dots: Dot[] = Array.from({ length: N }, () => {
       const [x, y] = gaussSample();
@@ -475,23 +534,17 @@ function ElectronCloud({ cloudRef }: { cloudRef?: React.Ref<HTMLSpanElement> }) 
       const startOn = Math.random() < 0.45;
       return { x, y, r: Math.random() < bigDotChance ? bigDotR : smallDotR,
                on: startOn, ttl: 1 + Math.floor(Math.random() * (startOn ? onDur : offDur)),
-               onDur, offDur };
+               onDur, offDur, fillStyle: dotFillStyle(x, y) };
     });
 
     const FRAME_MS = 1000 / fps;
     let raf = 0, lastTime = 0;
-    const [dr, dg, db] = dotColor;
-    const [gi, gg, gb] = glow.inner;
-    const [mi, mg, mb] = glow.mid;
-    const [oi, og, ob] = glow.outer;
 
     function draw(now: number) {
       raf = requestAnimationFrame(draw);
       if (now - lastTime < FRAME_MS) return;
       lastTime = now;
 
-      const ctx = canvas!.getContext('2d');
-      if (!ctx) return;
       ctx.clearRect(0, 0, SIZE, SIZE);
 
       let visCount = 0, sumX = 0, sumY = 0;
@@ -499,7 +552,10 @@ function ElectronCloud({ cloudRef }: { cloudRef?: React.Ref<HTMLSpanElement> }) 
         if (--d.ttl <= 0) {
           d.on = !d.on;
           d.ttl = d.on ? d.onDur : d.offDur;
-          if (d.on) [d.x, d.y] = gaussSample();
+          if (d.on) {
+            [d.x, d.y] = gaussSample();
+            d.fillStyle = dotFillStyle(d.x, d.y);
+          }
         }
         if (d.on) { visCount++; sumX += d.x; sumY += d.y; }
       }
@@ -518,13 +574,9 @@ function ElectronCloud({ cloudRef }: { cloudRef?: React.Ref<HTMLSpanElement> }) 
 
       for (const d of dots) {
         if (!d.on) continue;
-        const dist = Math.hypot(d.x - cx, d.y - cy);
-        const radialFade = Math.exp(-Math.pow(dist / taperR, dotTaperExp));
-        const edgeFade = Math.pow(Math.max(0, 1 - dist / maxR), edgeTaperExp);
-        const fade = radialFade * edgeFade;
         ctx.beginPath();
         ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${dr},${dg},${db},${(dotMaxAlpha * fade).toFixed(3)})`;
+        ctx.fillStyle = d.fillStyle;
         ctx.fill();
       }
     }

@@ -43,13 +43,18 @@ const HERO_CHART_TOP = -42;
 const HERO_BASE_Y = 156;          // y-coordinate of the 0-power baseline
 const HERO_CHART_BOTTOM = 190;
 const HERO_CHART_HEIGHT = HERO_BASE_Y - HERO_CHART_TOP;
-const HERO_PEAK_HEADROOM = 54;
+const HERO_PEAK_HEADROOM = 70;
 const HERO_PEAK_PX = HERO_CHART_HEIGHT - HERO_PEAK_HEADROOM;
 const HERO_AXIS_LABEL_Y = HERO_BASE_Y + 22;
 const HERO_REST_LABEL_Y = HERO_BASE_Y + 19;
 const HERO_REST_LABEL_BOX_Y = HERO_BASE_Y + 4;
 const HERO_PERSEUS_BAND_TOP = HERO_CHART_TOP + HERO_CHART_HEIGHT * 0.34;
 const HERO_PERSEUS_LABEL_Y = HERO_CHART_TOP + HERO_CHART_HEIGHT * 0.31;
+// Mobile: crop dead wings so the peaks fill the screen. x=[70,430] covers all
+// labelled content (Perseus box at x≈87, bracket at x≈392) and clips the
+// low-signal tails. The 1.67× effective zoom makes labels readable at ~12px.
+const HERO_MOBILE_VIEWBOX = `70 ${HERO_CHART_TOP} 360 ${HERO_CHART_BOTTOM - HERO_CHART_TOP}`;
+const HERO_DESKTOP_VIEWBOX = `0 ${HERO_CHART_TOP} ${HW} ${HERO_CHART_BOTTOM - HERO_CHART_TOP}`;
 
 // LAB hydrogen-line profile supplied for the queue-page example spectrum.
 // Columns in the source file are v_lsr [km/s], T_B [K], frequency [MHz],
@@ -272,6 +277,13 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
   const glowPathRef = useRef<SVGPathElement | null>(null);
   const headerHeight = useStickyHeaderHeight();
   const [svgRef, animationActive] = useVisibleAnimation<SVGSVGElement>(headerHeight);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 760px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 760px)');
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
   const initialPaths = buildHeroPaths(smoothedRef.current);
 
   useEffect(() => {
@@ -311,7 +323,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
     <figure className="h1-hero-figure">
       <svg
         ref={svgRef}
-        viewBox={`0 ${HERO_CHART_TOP} ${HW} ${HERO_CHART_BOTTOM - HERO_CHART_TOP}`}
+        viewBox={isMobile ? HERO_MOBILE_VIEWBOX : HERO_DESKTOP_VIEWBOX}
         className="h1-svg"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
@@ -384,15 +396,15 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
           <text
             x={SURVEY_DOPPLER_PEAK_X} y={HERO_PERSEUS_LABEL_Y + 16}
             textAnchor="middle"
-            fill="#c5ddfb" fontSize="10.5" fontWeight="700"
+            fill="#c5ddfb" fontSize="12" fontWeight="700"
             fontFamily="ui-monospace,monospace"
           >
             Perseus Arm
           </text>
           <text
-            x={SURVEY_DOPPLER_PEAK_X} y={HERO_PERSEUS_LABEL_Y + 29}
+            x={SURVEY_DOPPLER_PEAK_X} y={HERO_PERSEUS_LABEL_Y + 30}
             textAnchor="middle"
-            fill="#7ab8f7" fontSize="8.25"
+            fill="#7ab8f7" fontSize="9.5"
             fontFamily="ui-monospace,monospace"
           >
             Milky Way spiral arm
@@ -410,7 +422,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
         const barY = prongY - 12;
         const tickY = barY - 15;
         const labelY = tickY - 3;
-        const linkBoxY = labelY - 13;
+        const linkBoxY = labelY - 15;
         return (
           <a href="#h1-doppler-section" style={{ cursor: 'pointer' }}>
             <title>The received peak is offset from the 1420.4 MHz rest line — that gap is the Doppler shift. Click to learn more.</title>
@@ -424,10 +436,10 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
               opacity="0.72"
             />
             <rect
-              x={midX - 70}
+              x={midX - 78}
               y={linkBoxY}
-              width="140"
-              height="18"
+              width="156"
+              height="20"
               rx="4"
               fill="#0b1328"
               stroke="#7ab8f7"
@@ -437,14 +449,14 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
             <text
               x={midX - 6} y={labelY}
               textAnchor="middle"
-              fill="#d4e5ff" fontSize="11" fontWeight="bold" opacity="0.92"
+              fill="#d4e5ff" fontSize="13" fontWeight="bold" opacity="0.92"
               fontFamily="ui-monospace,monospace"
               style={{ textDecoration: 'underline' }}
             >
               Why the difference?
             </text>
             <path
-              d={`M ${midX + 57} ${labelY - 5} L ${midX + 62} ${labelY - 5} L ${midX + 62} ${labelY} M ${midX + 62} ${labelY - 5} L ${midX + 55} ${labelY + 2}`}
+              d={`M ${midX + 65} ${labelY - 5} L ${midX + 70} ${labelY - 5} L ${midX + 70} ${labelY} M ${midX + 70} ${labelY - 5} L ${midX + 63} ${labelY + 2}`}
               fill="none"
               stroke="#d4e5ff"
               strokeWidth="1.1"
@@ -887,7 +899,7 @@ export function DopplerAnimation({ renderTimeSeconds, paused = false }: { render
         y={DA_AXIS_Y + 10}
         textAnchor="middle"
         fill="#ffd273"
-        fontSize="20"
+        fontSize="26"
         fontWeight="800"
         fontFamily="ui-monospace,monospace"
         opacity="0.82"
@@ -911,10 +923,10 @@ export function DopplerAnimation({ renderTimeSeconds, paused = false }: { render
 
       <g transform={`translate(${sourceX}, ${arrowY + 22})`}>
         <rect
-          x="-66"
-          y="-16"
-          width="132"
-          height="35"
+          x="-80"
+          y="-18"
+          width="160"
+          height="40"
           rx="4"
           fill="#0c0f1c"
           stroke="#1d2138"
@@ -925,7 +937,7 @@ export function DopplerAnimation({ renderTimeSeconds, paused = false }: { render
           y="-4"
           textAnchor="middle"
           fill="#9699c8"
-          fontSize="8.5"
+          fontSize="11"
           fontWeight="700"
           letterSpacing="0.08em"
         >
@@ -933,10 +945,10 @@ export function DopplerAnimation({ renderTimeSeconds, paused = false }: { render
         </text>
         <text
           x="0"
-          y="13"
+          y="15"
           textAnchor="middle"
           fill="#e0e3ff"
-          fontSize="13"
+          fontSize="16"
           fontWeight="700"
           fontFamily="ui-monospace,monospace"
         >
@@ -972,8 +984,8 @@ export function DopplerAnimation({ renderTimeSeconds, paused = false }: { render
       />
       <text
         x={DA_MINI_LEFT_X + 12} y={DA_MINI_HEADER_Y}
-        fill="#6f719a" fontSize="10" fontWeight="600"
-        letterSpacing="0.08em"
+        fill="#6f719a" fontSize="13" fontWeight="600"
+        letterSpacing="0.06em"
       >
         Telescope Sees
       </text>
@@ -1021,20 +1033,20 @@ export function DopplerAnimation({ renderTimeSeconds, paused = false }: { render
         x={DA_MINI_CX} y={DA_MINI_BASE_Y + 13}
         textAnchor="middle"
         fill="#9b9ece"
-        fontSize="11"
+        fontSize="14"
         fontFamily="ui-monospace,monospace"
       >
         {DA_MINI_REST_LABEL_MHZ.toFixed(1)}
       </text>
       <text
         x={DA_MINI_LEFT_X + 12} y={DA_MINI_BASE_Y + 27}
-        fill="#ff7a4d" fontSize="10"
+        fill="#ff7a4d" fontSize="13"
       >
         lower frequency ←
       </text>
       <text
         x={DA_MINI_LEFT_X + DA_MINI_W - 12} y={DA_MINI_BASE_Y + 27}
-        textAnchor="end" fill="#5ba4f5" fontSize="10"
+        textAnchor="end" fill="#5ba4f5" fontSize="13"
       >
         → higher frequency
       </text>
@@ -1376,7 +1388,7 @@ export function QueuePage({
               <h2 className="h1-section-heading">The Doppler Effect</h2>
               <p className="h1-section-body">You may be familiar with the Doppler effect as it relates to sound, but did you know the same thing happens to light? It's far too subtle to notice in everyday life, but it's one of the most foundational tools in all of astronomy.</p>
               <p className="h1-section-body">In the same way that an approaching ambulance siren sounds higher in pitch as it gets closer and lower as it moves away, electromagnetic waves shift in frequency based on the relative motion between the source and the observer.</p>
-              <p className="h1-section-body">The obvious challenge with this method is that to tell how much a frequency has shifted, you first need to know the original frequency. How do you do that for something on the other side of the Milky Way? This is where the power of spectral lines becomes clear.</p>
+              <p className="h1-section-body">The obvious challenge with this method is that in order to tell how much a frequency has shifted, you first need to know what it was originally. How do you do that for a photon that came from the other side of the Milky Way? This is where the power of spectral lines becomes clear.</p>
               <p className="h1-section-body">Since we can measure the exact frequency of light emitted by hydrogen in a controlled lab, and because every hydrogen atom in the universe is identical, we can use that reference frequency to measure the relative velocity of hydrogen across the Milky Way.</p>
             </div>
             <div className="h1-doppler-visual">
@@ -1438,9 +1450,8 @@ export function QueuePage({
             <div className="h1-spinflip-text">
               <span className="h1-eyebrow">More lore</span>
               <h2 className="h1-section-heading">The beginning of radio astronomy</h2>
-              <p className="h1-section-body">In the 1930's, while working at Bell Labs in it's formative years, Karl G. Jansky was tasked with identifying sources of radio noise which could interefere with overseas radio communication (a bleeding edge technology at the time). Among more mundane sources like thunderstorms, Jansky observed a peculiar background "hiss" of unknown origin which seemed to cycle in intensity once per day, leading Jansky to assume this noise originated from the sun. However, after a few more months of observation, the point of maximum "static" had noticibly shifted from the position of the sun.</p>
-              <p className="h1-section-body">Recognizing that this puzzle had left his domain of RF engineering, Janksky met with his friend and astrophysicist Albert Melvin Skellett, who pointed out that the now refined 23 hours and 56 minute period of the signal was the exact length of a sidereal day.</p>
-              <p className="h1-section-body">The early days of radio astronomy were not quite as revolutionary as one might expect when opening a new window to the universe. In the 20 years after the discovery of radio waves from space, amatuer radio operators like Grote Reber , and by the end of the 40s we started discovering "radio stars," or discrete signals that were not . However, observations were still broadband, and radio astronomy was </p>
+              <p className="h1-section-body">In the 1930's, while working at Bell Labs in it's formative years, Karl Jansky was tasked with identifying sources of radio noise which could interefere with overseas radio communication (a bleeding edge technology at the time). Among more mundane sources like thunderstorms, Jansky observed a peculiar background "hiss" of unknown origin which seemed to cycle in intensity once per day, leading Jansky to assume this noise originated from the sun.</p>
+              <p className="h1-section-body">However, after a few more months of observation, the point of maximum "static" had noticibly shifted from the position of the sun. Recognizing that this puzzle was beyond the realm of RF engineering, Janksky met with his friend and astrophysicist Albert Melvin Skellett, who pointed out that the now refined 23 hours and 56 minute period of the signal was the exact length of a sidereal day.</p>
             </div>
             <figure className="h1-jansky-figure">
               <img
