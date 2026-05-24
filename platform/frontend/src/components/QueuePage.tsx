@@ -518,7 +518,7 @@ const HeroSpectrum = memo(function HeroSpectrum({ paused = false }: { paused?: b
 // source's instantaneous motion.
 
 const DA_W = 600;
-const DA_H = 380;                   // total SVG height (scene + mini spectrum)
+const DA_H = 392;                   // total SVG height (scene + mini spectrum)
 const DA_AXIS_Y = 96;               // y of horizontal axis through source
 const DA_TELESCOPE_X = 52;          // x of dish centre
 const DA_DISH_BACK_X = DA_TELESCOPE_X - 0.5;
@@ -604,6 +604,7 @@ const DA_MINI_TOP_Y = 214;             // panel top
 const DA_MINI_HEADER_Y = 229;          // "telescope receives" label baseline
 const DA_MINI_PLOT_TOP_Y = 241;        // top of plottable region
 const DA_MINI_BASE_Y = 338;            // baseline / x-axis y
+const DA_MINI_BOTTOM_PAD = 44;          // room for frequency labels below the axis
 const DA_MINI_PLOT_LEFT_X = DA_MINI_LEFT_X + 12;
 const DA_MINI_PLOT_RIGHT_X = DA_MINI_LEFT_X + DA_MINI_W - 12;
 const DA_MINI_PLOT_W = DA_MINI_PLOT_RIGHT_X - DA_MINI_PLOT_LEFT_X;
@@ -965,7 +966,7 @@ function DopplerAnimation({ renderTimeSeconds, paused = false }: { renderTimeSec
       </defs>
       <rect
         x={DA_MINI_LEFT_X} y={DA_MINI_TOP_Y}
-        width={DA_MINI_W} height={DA_MINI_BASE_Y - DA_MINI_TOP_Y + 32}
+        width={DA_MINI_W} height={DA_MINI_BASE_Y - DA_MINI_TOP_Y + DA_MINI_BOTTOM_PAD}
         fill="#0c0f1c" stroke="#1d2138" rx="4"
       />
       <text
@@ -1421,7 +1422,7 @@ export function QueuePage({
                 </InlineHoverPopover>{' '}
                 was already well known in visible-light astronomy, but its application to radio astronomy was not immediately explored. It took time to develop both the technical skills and the collaboration between RF engineering and astronomy needed to pursue it.
               </p>
-              <p className="h1-section-body">By the 1950s, thanks in large part to the efforts of radio engineer Grote Reber, radio astronomy had matured enough for more speculative ideas to form. One of those ideas came from a paper by Van de Hulst predicting the existence of the 21 cm line emitted by galactic hydrogen. But the discovery would not come from a research team with the latest technology. It would come from a graduate student who built his own telescope, sticking out of the fourth floor of Harvard's Lyman Lab (pictured).</p>
+              <p className="h1-section-body">By the 1950s, thanks in large part to the efforts of radio engineer Grote Reber, radio astronomy had matured enough for more speculative ideas to form. One of those ideas came from a paper by Van de Hulst predicting the existence of the 21 cm line emitted by galactic hydrogen. But the discovery would not come from a research team with the latest technology, it would come from a graduate student who built his own telescope on a $500 budget, sticking out of the fourth floor of Harvard's Lyman Lab (pictured).</p>
               <p className="h1-section-body">When Doc Ewen began the experiment under Purcell's guidance, there was little expectation of actually detecting anything. Even Van de Hulst had expressed doubt that the signal would be strong enough to observe. Still, in science, looking for something and not finding it still teaches us something. In this case, they hoped to at least set an upper limit on how strong the signal could be, if it did exist.</p>
               <p className="h1-section-body">While working 40 hours a week on Harvard's new cyclotron, Ewen turned on the modified receiver for the first time during Easter weekend in 1951. As Ewen put it: "By 3:00 AM on Sunday morning March 25, I was convinced that the line had been detected."</p>
             </div>
