@@ -328,6 +328,10 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
         Implements backoff-with-reset: a clean run drops the backoff index
         to 0; consecutive crashes step through `_backoff_schedule` so we
         don't hot-loop on a permanently-broken setup.
+
+        This is the *one* consumer task for the service. On crash we relaunch
+        the subprocess in place — never via `_spawn_subprocess_locked`, since
+        that would spawn another consumer task and double them every cycle.
         """
         backoff_index = 0
         while not self._shutting_down and self.subscriber_count > 0:
@@ -346,6 +350,10 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
                 self._fault_detail = f"Consumer crashed: {exc}"
                 logger.exception("%s ZMQ consumer crashed", self.name)
 
+            # Reap the dead proc and tear down its stderr pipe so the next
+            # iteration starts from a clean slate.
+            await self._reap_dead_proc(proc)
+
             if self._shutting_down or self.subscriber_count == 0:
                 return
 
@@ -357,15 +365,65 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             except asyncio.CancelledError:
                 raise
 
-            async with self._lifecycle_lock:
-                if self._shutting_down or self.subscriber_count == 0:
-                    return
-                # The old proc reference is dead; clear before spawning.
-                self._proc = None
-                await self._spawn_subprocess_locked()
-                proc = self._proc
-                if proc is None:
-                    return
+            new_proc = await self._relaunch_in_place()
+            if new_proc is None:
+                return
+            proc = new_proc
+
+    async def _reap_dead_proc(self, proc: subprocess.Popen[bytes]) -> None:
+        """Best-effort cleanup of a subprocess we just observed dying."""
+        # Cancel the stderr task for this defunct proc so it doesn't sit
+        # blocked on readline against a closed pipe.
+        stderr_task = self._stderr_task
+        self._stderr_task = None
+        if stderr_task is not None and not stderr_task.done():
+            stderr_task.cancel()
+            try:
+                await stderr_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+                await asyncio.to_thread(proc.wait, self.subprocess_kill_timeout_s)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self._proc = None
+
+    async def _relaunch_in_place(self) -> subprocess.Popen[bytes] | None:
+        """Spawn a fresh subprocess from inside the existing consumer task.
+
+        Mirrors `_spawn_subprocess_locked` but does NOT create a new
+        `_proc_task` — that's the bug that previously doubled consumers
+        on every restart cycle.
+        """
+        async with self._lifecycle_lock:
+            if self._shutting_down or self.subscriber_count == 0:
+                return None
+            cmd = [sys.executable, "-m", "rt_hardware.sdr_pipeline", "--config", self._config_path]
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                )
+            except FileNotFoundError as exc:
+                self._mode = "unavailable"
+                self._fault_detail = f"Could not exec {cmd[0]}: {exc}"
+                logger.error("%s subprocess respawn failed: %s", self.name, exc)
+                return None
+            self._proc = proc
+            self._mode = "starting"
+            self._fault_detail = None
+            self._stderr_task = asyncio.create_task(
+                self._pipe_stderr(proc), name=f"{self.name}-stderr",
+            )
+            logger.info("%s respawned pipeline subprocess pid=%d", self.name, proc.pid)
+            return proc
 
     async def _run_zmq_loop(self, proc: subprocess.Popen[bytes]) -> None:
         # Imported lazily so the hardware service still imports cleanly on
