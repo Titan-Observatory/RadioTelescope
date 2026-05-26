@@ -50,7 +50,7 @@ export function TelemetryDashboard({
   config: TelescopeConfig | null;
   lnaStatus: LnaStatus | null;
 }) {
-  const systemPower = minReading(telemetry?.main_battery_v, telemetry?.logic_battery_v);
+  const systemPower = telemetry?.main_battery_v ?? null;
   const roboclawTemp = maxReading(telemetry?.temperature_c, telemetry?.temperature_2_c);
   const motorOutput = maxAbsReading(telemetry?.motors.m1?.pwm, telemetry?.motors.m2?.pwm);
   const motorSpeed = maxAbsReading(telemetry?.motors.m1?.speed_qpps, telemetry?.motors.m2?.speed_qpps);
