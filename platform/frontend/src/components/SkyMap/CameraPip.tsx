@@ -1,4 +1,3 @@
-import { Maximize2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 
@@ -6,7 +5,7 @@ const POLL_INTERVAL_MS = 350;   // ~3 fps target
 const REQUEST_TIMEOUT_MS = 4000; // give up on a stalled fetch and try again
 const MAX_FAILURES = 8;          // before declaring offline
 
-export function CameraPip({ swapped, onToggleSwap }: { swapped: boolean; onToggleSwap: () => void }) {
+export function CameraPip() {
   const [enabled, setEnabled] = useState(false);
   const [label, setLabel] = useState('Cam A');
   const [error, setError] = useState(false);
@@ -92,7 +91,7 @@ export function CameraPip({ swapped, onToggleSwap }: { swapped: boolean; onToggl
   if (!enabled) return null;
 
   return (
-    <div className={`cam-pip${error ? ' cam-pip-error' : ''}${swapped ? ' cam-pip-swapped' : ''}`}>
+    <div className={`cam-pip${error ? ' cam-pip-error' : ''}`}>
       {frameUrl ? (
         <img className="cam-pip-feed" src={frameUrl} alt="Camera feed" />
       ) : (
@@ -103,16 +102,6 @@ export function CameraPip({ swapped, onToggleSwap }: { swapped: boolean; onToggl
       ) : (
         <div className="cam-pip-live"><span className="cam-pip-dot" />LIVE</div>
       )}
-      <button
-        type="button"
-        className="cam-pip-fullscreen"
-        onClick={onToggleSwap}
-        title={swapped ? 'Restore sky map' : 'Swap with sky map'}
-        aria-label={swapped ? 'Restore sky map' : 'Swap with sky map'}
-        aria-pressed={swapped}
-      >
-        <Maximize2 size={13} />
-      </button>
       <div className="cam-pip-label">{label}</div>
     </div>
   );

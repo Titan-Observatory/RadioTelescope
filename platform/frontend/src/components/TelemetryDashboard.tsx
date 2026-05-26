@@ -31,11 +31,11 @@ function DenseReadout({ title, icon, rows }: { title?: string; icon?: React.Reac
   );
 }
 
-function LnaPill({ status }: { status: LnaStatus | null | undefined }) {
+function LnaIndicator({ status }: { status: LnaStatus | null | undefined }) {
   const state = status?.state ?? 'unknown';
   const label = status?.label ?? 'Unknown';
   return (
-    <span className={`lna-status-pill lna-status-${state}`} title={status?.detail ?? ''}>
+    <span className={`lna-status-text lna-status-${state}`} title={status?.detail ?? ''}>
       {label}
     </span>
   );
@@ -69,7 +69,7 @@ export function TelemetryDashboard({
     <div className="telemetry-dense">
       <DenseReadout title="System" icon={<Activity size={11} />} rows={[
         ['Connection', telemetry?.connection?.connected === false ? 'Issue' : 'Stable', telemetry?.connection?.connected === false ? 'val-crit' : 'val-ok'],
-        ['LNA', <LnaPill status={lnaStatus} />],
+        ['LNA', <LnaIndicator status={lnaStatus} />],
         ['Power', volts(systemPower), voltClass(systemPower)],
         ['RoboClaw temp', celsius(roboclawTemp), tempClass(roboclawTemp)],
         ['Pi temp', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],

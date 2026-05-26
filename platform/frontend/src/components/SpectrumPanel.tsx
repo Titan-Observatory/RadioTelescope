@@ -155,16 +155,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
   const [baseline, setBaseline] = useState<Baseline | null>(null);
   const [dopplerOpen, setDopplerOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [waterfallDropdown, setWaterfallDropdown] = useState(false);
   const [waterfallOpen, setWaterfallOpen] = useState(false);
-
-  useEffect(() => {
-    const query = window.matchMedia('(max-width: 640px)');
-    const sync = () => setWaterfallDropdown(query.matches);
-    sync();
-    query.addEventListener('change', sync);
-    return () => query.removeEventListener('change', sync);
-  }, []);
 
   // Baseline subtraction is what makes the H I line pop above the bandpass.
   // Only apply when the cached baseline matches the current FFT layout —
@@ -529,46 +520,43 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
         </div>
       </div>
 
-      {integrationStats && (
-        <p className="spectrum-stats" aria-label="Integration statistics">
-          Integrating <strong>{integrationStats.windowSeconds.toFixed(1)} s</strong>
-          {' '}({integrationStats.effectiveFrames}/{integrationStats.targetFrames} frames)
-          {' · '}
-          <strong>{integrationStats.binHz.toFixed(0)} Hz</strong> bins
-          {' · '}
-          {integrationStats.frameHz.toFixed(1)} Hz FFT
-        </p>
-      )}
-
       <div className="spectrum-chart-wrap">
-        {baseline && baselineApplies && (
-          <div className="spectrum-chart-note">Baseline subtracted</div>
+        {integrationStats && (
+          <p className="spectrum-stats" aria-label="Integration statistics">
+            Integrating <strong>{integrationStats.windowSeconds.toFixed(1)} s</strong>
+            {' '}({integrationStats.effectiveFrames}/{integrationStats.targetFrames} frames)
+            {' · '}
+            <strong>{integrationStats.binHz.toFixed(0)} Hz</strong> bins
+            {' · '}
+            {integrationStats.frameHz.toFixed(1)} Hz FFT
+          </p>
         )}
-        {hydrogenGuide && (
-          <div
-            className="spectrum-hydrogen-guide"
-            style={{
-              '--h1-line-left': hydrogenGuide.lineLeft,
-              '--h1-band-left': hydrogenGuide.bandLeft,
-              '--h1-band-right': hydrogenGuide.bandRight,
-            } as React.CSSProperties}
-            aria-hidden
-          >
-            <span className="spectrum-hydrogen-band" />
-            <span className="spectrum-hydrogen-line">
-              <small>{H1_REST_MHZ.toFixed(4)} MHz</small>
-            </span>
-          </div>
-        )}
-        <div className="spectrum-chart" ref={chartRef} />
+        <div className="spectrum-chart-box">
+          {baseline && baselineApplies && (
+            <div className="spectrum-chart-note">Baseline subtracted</div>
+          )}
+          {hydrogenGuide && (
+            <div
+              className="spectrum-hydrogen-guide"
+              style={{
+                '--h1-line-left': hydrogenGuide.lineLeft,
+                '--h1-band-left': hydrogenGuide.bandLeft,
+                '--h1-band-right': hydrogenGuide.bandRight,
+              } as React.CSSProperties}
+              aria-hidden
+            >
+              <span className="spectrum-hydrogen-band" />
+              <span className="spectrum-hydrogen-line">
+                <small>{H1_REST_MHZ.toFixed(4)} MHz</small>
+              </span>
+            </div>
+          )}
+          <div className="spectrum-chart" ref={chartRef} />
+        </div>
         <details
           className="spectrum-waterfall-dropdown"
-          open={!waterfallDropdown || waterfallOpen}
-          onToggle={(event) => {
-            if (waterfallDropdown) {
-              setWaterfallOpen(event.currentTarget.open);
-            }
-          }}
+          open={waterfallOpen}
+          onToggle={(event) => setWaterfallOpen(event.currentTarget.open)}
         >
           <summary className="spectrum-waterfall-summary">
             <span>Waterfall</span>

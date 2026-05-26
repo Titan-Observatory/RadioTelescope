@@ -46,7 +46,6 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
   const [pending, setPending] = useState<RaDecTarget | null>(null);
   const [survey, setSurvey] = useState<SurveyId>(HYDROGEN_SURVEY_ID);
   const [viewSelectorOpen, setViewSelectorOpen] = useState(false);
-  const [cameraSwapped, setCameraSwapped] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<
     | { kind: 'sun' | 'beam' | 'pending'; x: number; y: number; fwhm?: number }
     | null
@@ -266,9 +265,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
 
   return (
     <div
-      className={`skymap-wrapper${cameraSwapped ? ' skymap-wrapper-swapped' : ''}${
-        survey !== HYDROGEN_SURVEY_ID ? ' skymap-wrapper-explore' : ''
-      }`}
+      className={`skymap-wrapper${survey !== HYDROGEN_SURVEY_ID ? ' skymap-wrapper-explore' : ''}`}
       onMouseMove={handleSolarHover}
       onMouseLeave={handleSkyMapLeave}
     >
@@ -375,7 +372,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
         </div>
       )}
 
-      <CameraPip swapped={cameraSwapped} onToggleSwap={() => setCameraSwapped((v) => !v)} />
+      <CameraPip />
     </div>
   );
 }

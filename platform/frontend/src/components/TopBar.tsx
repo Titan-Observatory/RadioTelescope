@@ -1,5 +1,5 @@
 import { Activity, HelpCircle, MessageSquare } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { track } from '../analytics';
 import { BRAND } from '../branding';
@@ -8,6 +8,10 @@ import { startTour } from '../tour';
 import type { QueueStatus } from '../queue';
 import type { RoboClawTelemetry } from '../types';
 import { FeedbackDialog } from './FeedbackDialog';
+import { FeedbackToast } from './FeedbackToast';
+
+const FEEDBACK_PROMPT_DELAY_MS = 2 * 60 * 1000;
+const FEEDBACK_PROMPT_STORAGE_KEY = 'rt-feedback-prompt-resolved';
 
 function LeaseChip({ status }: { status: QueueStatus }) {
   const [detailOpen, setDetailOpen] = useState(false);
@@ -48,6 +52,36 @@ export function TopBar({
   leaseStatus: QueueStatus | null;
 }) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackInitialRating, setFeedbackInitialRating] = useState(0);
+  const [toastOpen, setToastOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (window.localStorage.getItem(FEEDBACK_PROMPT_STORAGE_KEY) === '1') return;
+    } catch {
+      // localStorage may be unavailable; fall through and still schedule.
+    }
+    const timer = window.setTimeout(() => {
+      track('feedback_toast_shown');
+      setToastOpen(true);
+    }, FEEDBACK_PROMPT_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function markPromptResolved() {
+    try {
+      window.localStorage.setItem(FEEDBACK_PROMPT_STORAGE_KEY, '1');
+    } catch {
+      // ignore quota / privacy-mode failures
+    }
+  }
+
+  function openFeedback(initialRating: number) {
+    setFeedbackInitialRating(initialRating);
+    setFeedbackOpen(true);
+  }
+
   return (
     <>
       <header className="topbar">
@@ -59,7 +93,7 @@ export function TopBar({
           <button
             type="button"
             className="topbar-feedback"
-            onClick={() => { track('feedback_opened'); setFeedbackOpen(true); }}
+            onClick={() => { track('feedback_opened'); openFeedback(0); }}
             title="Share feedback about the telescope experience"
           >
             <MessageSquare size={14} /> Feedback
@@ -80,7 +114,29 @@ export function TopBar({
           </span>
         </div>
       </header>
-      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+      <FeedbackDialog
+        open={feedbackOpen}
+        onOpenChange={(next) => {
+          setFeedbackOpen(next);
+          if (!next) {
+            setFeedbackInitialRating(0);
+            markPromptResolved();
+          }
+        }}
+        initialRating={feedbackInitialRating}
+      />
+      <FeedbackToast
+        open={toastOpen && !feedbackOpen}
+        onDismiss={() => {
+          setToastOpen(false);
+          markPromptResolved();
+        }}
+        onPick={(rating) => {
+          setToastOpen(false);
+          markPromptResolved();
+          openFeedback(rating);
+        }}
+      />
     </>
   );
 }
