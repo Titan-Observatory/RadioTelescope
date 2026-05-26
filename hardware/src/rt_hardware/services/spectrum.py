@@ -119,8 +119,13 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
     def lna_status(self) -> LnaStatus:
         return self._lna.status
 
-    async def set_lna_bias_tee(self, enabled: bool) -> LnaStatus:
-        return await self._lna.set(enabled)
+    async def apply_configured_bias_tee(self) -> LnaStatus:
+        """Apply ``cfg.lna_bias_tee_enabled`` to the dongle.
+
+        Called once at service startup, before any subprocess is spawned,
+        so ``airspy_gpio`` has exclusive USB access to the Airspy.
+        """
+        return await self._lna.set(self._cfg.lna_bias_tee_enabled)
 
     # ── Frequency axis ───────────────────────────────────────────────────
 

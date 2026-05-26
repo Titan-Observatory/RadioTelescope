@@ -64,7 +64,16 @@ def test_spectrum_status_contains_lna(simulated_config_path):
     assert body["lna"]["state"] in {"on", "off", "unknown", "fault"}
 
 
-def test_spectrum_lna_toggle_runs_airspy_gpio(simulated_config_path, monkeypatch):
+def test_spectrum_lna_applied_at_boot(simulated_config_path, monkeypatch):
+    """The configured `lna_bias_tee_enabled` is pushed to airspy_gpio at startup,
+    not via a runtime toggle (which would conflict with the GR subprocess owning
+    the dongle).
+    """
+    simulated_config_path.write_text(
+        simulated_config_path.read_text(encoding="utf-8")
+        + "\n[sdr]\nenabled = true\nlna_bias_tee_enabled = true\n",
+        encoding="utf-8",
+    )
     calls: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -74,17 +83,12 @@ def test_spectrum_lna_toggle_runs_airspy_gpio(simulated_config_path, monkeypatch
     monkeypatch.setattr("rt_hardware.hardware.sdr.subprocess.run", fake_run)
 
     with TestClient(create_app(simulated_config_path)) as client:
-        response = client.post("/api/spectrum/lna", json={"enabled": True})
-        off = client.post("/api/spectrum/lna", json={"enabled": False})
+        status = client.get("/api/spectrum/status")
 
-    assert response.status_code == 200
-    assert response.json()["lna"]["state"] == "on"
-    assert off.status_code == 200
-    assert off.json()["lna"]["state"] == "off"
-    assert calls[-2:] == [
-        ["airspy_gpio", "-p", "1", "-n", "13", "-w", "1"],
-        ["airspy_gpio", "-p", "1", "-n", "13", "-w", "0"],
-    ]
+    assert status.status_code == 200
+    assert status.json()["lna"]["state"] == "on"
+    # Exactly one airspy_gpio invocation at boot, enabling the bias tee.
+    assert calls == [["airspy_gpio", "-p", "1", "-n", "13", "-w", "1"]]
 
 
 # ─── Goto / jog ───────────────────────────────────────────────────────────

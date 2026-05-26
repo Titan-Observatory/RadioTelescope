@@ -31,30 +31,13 @@ function DenseReadout({ title, icon, rows }: { title?: string; icon?: React.Reac
   );
 }
 
-function LnaPill({
-  status,
-  changing,
-  onToggle,
-}: {
-  status: LnaStatus | null | undefined;
-  changing: boolean;
-  onToggle: () => void;
-}) {
+function LnaPill({ status }: { status: LnaStatus | null | undefined }) {
   const state = status?.state ?? 'unknown';
-  const label = changing ? '...' : (status?.label ?? 'Unknown');
-  const next = state === 'on' ? 'off' : 'on';
+  const label = status?.label ?? 'Unknown';
   return (
-    <button
-      type="button"
-      className={`lna-status-pill lna-status-${state}`}
-      title={status?.detail ?? `Turn LNA ${next}`}
-      aria-label={`Turn LNA ${next}`}
-      aria-pressed={state === 'on'}
-      disabled={changing}
-      onClick={onToggle}
-    >
+    <span className={`lna-status-pill lna-status-${state}`} title={status?.detail ?? ''}>
       {label}
-    </button>
+    </span>
   );
 }
 
@@ -62,14 +45,10 @@ export function TelemetryDashboard({
   telemetry,
   config,
   lnaStatus,
-  lnaChanging,
-  onToggleLna,
 }: {
   telemetry: RoboClawTelemetry | null;
   config: TelescopeConfig | null;
   lnaStatus: LnaStatus | null;
-  lnaChanging: boolean;
-  onToggleLna: () => void;
 }) {
   const systemPower = minReading(telemetry?.main_battery_v, telemetry?.logic_battery_v);
   const roboclawTemp = maxReading(telemetry?.temperature_c, telemetry?.temperature_2_c);

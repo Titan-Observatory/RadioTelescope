@@ -40,6 +40,15 @@ async def lifespan(app: FastAPI):
 
     await service.start()
     if spectrum is not None:
+        # Apply LNA bias-tee BEFORE start(): start() is lazy and the GR
+        # subprocess isn't running yet, so airspy_gpio has exclusive USB
+        # access to the dongle. Once the subprocess opens Soapy it owns
+        # the device and airspy_gpio would fail.
+        try:
+            status = await spectrum.apply_configured_bias_tee()
+            logger.info("LNA bias tee applied at boot: %s", status.detail)
+        except Exception as exc:
+            logger.warning("LNA bias tee could not be applied at boot: %s", exc)
         await spectrum.start()
 
     logger.info("rt-hardware started (hardware=%s)", client.connection.mode)
