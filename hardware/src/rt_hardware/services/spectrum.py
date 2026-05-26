@@ -92,10 +92,18 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
     @property
     def mode(self) -> str:
+        """External mode string. Preserves the legacy `"airspy"` value when
+        the pipeline is up so the frontend's auto-reconnect heuristic keeps
+        recognising the SDR as healthy. Internal lifecycle states
+        (`"starting"`, `"running"`) are folded into `"airspy"` once a
+        subprocess exists; only true failure modes leak through.
+        """
         if self._shutting_down:
             return "idle"
         if self.subscriber_count == 0 and self._proc is None:
             return "idle"
+        if self._mode in ("starting", "running"):
+            return "airspy"
         return self._mode
 
     @property
@@ -527,7 +535,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             frames_seen=self._frames_seen,
             frame_duration_s=self._publish_period_s,
             integration_seconds=effective_seconds,
-            mode=self._mode,
+            mode=self.mode,
             freqs_mhz=self._freqs_mhz.tolist(),
             power_db=power_db.astype(np.float32).round(3).tolist(),
         )
