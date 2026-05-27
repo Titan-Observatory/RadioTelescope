@@ -20,7 +20,6 @@ import signal
 import subprocess
 import sys
 import time
-from collections import deque
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -69,8 +68,12 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
         self._latest: SpectrumFrame | None = None
         self._integrated: np.ndarray | None = None
-        baseline_window = max(1, int(cfg.integration_frames))
-        self._baseline_samples: deque[np.ndarray] = deque(maxlen=baseline_window)
+        self._baseline_power: np.ndarray | None = None
+        self._baseline_meta: dict[str, float | int] | None = None
+        self._baseline_capture_lock = asyncio.Lock()
+        self._baseline_capture_samples: list[np.ndarray] | None = None
+        self._baseline_capture_target: int = 0
+        self._baseline_capture_done: asyncio.Event | None = None
         self._frames_seen: int = 0
         self._publish_period_s: float = 1.0 / max(cfg.publish_rate_hz, 1e-3)
         self._freqs_mhz = self._build_freq_axis()
@@ -208,46 +211,111 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
     def reset_integration(self) -> None:
         self._integrated = None
-        self._baseline_samples.clear()
         self._frames_seen = 0
 
-    def capture_baseline(self) -> dict[str, Any] | None:
-        latest = self._latest
-        if latest is None or not self._baseline_samples:
-            return None
-        baseline_power = np.median(np.stack(tuple(self._baseline_samples)), axis=0)
-        baseline_power = np.maximum(baseline_power, POWER_FLOOR)
-        baseline_power_db = 10.0 * np.log10(baseline_power)
-        baseline = {
-            "captured_at": time.time(),
-            "center_freq_mhz": latest["center_freq_mhz"],
-            "sample_rate_mhz": latest["sample_rate_mhz"],
-            "integration_frames": latest["integration_frames"],
-            "freqs_mhz": list(latest["freqs_mhz"]),
-            "power_linear": baseline_power.astype(np.float32).tolist(),
-            "power_db": baseline_power_db.astype(np.float32).round(3).tolist(),
-            "capture_samples": len(self._baseline_samples),
-        }
-        try:
-            BASELINE_CACHE.write_text(json.dumps(baseline))
-        except Exception:
-            logger.exception("Failed to persist baseline to %s", BASELINE_CACHE)
-        return baseline
+    async def capture_baseline(self) -> dict[str, Any] | None:
+        async with self._baseline_capture_lock:
+            target = max(1, int(self._cfg.integration_frames))
+            done = asyncio.Event()
+            self._baseline_capture_samples = []
+            self._baseline_capture_target = target
+            self._baseline_capture_done = done
+
+            try:
+                timeout_s = self._cfg.integration_seconds + self._publish_period_s * 2.0
+                await asyncio.wait_for(done.wait(), timeout=timeout_s)
+                samples = self._baseline_capture_samples or []
+            except asyncio.TimeoutError:
+                samples = self._baseline_capture_samples or []
+            finally:
+                self._baseline_capture_samples = None
+                self._baseline_capture_target = 0
+                self._baseline_capture_done = None
+
+            latest = self._latest
+            if latest is None or not samples:
+                return None
+
+            baseline_power = np.median(np.stack(samples), axis=0)
+            baseline_power = np.maximum(baseline_power, POWER_FLOOR)
+            baseline_power_db = 10.0 * np.log10(baseline_power)
+            baseline = {
+                "captured_at": time.time(),
+                "center_freq_mhz": latest["center_freq_mhz"],
+                "sample_rate_mhz": latest["sample_rate_mhz"],
+                "integration_frames": latest["integration_frames"],
+                "freqs_mhz": list(latest["freqs_mhz"]),
+                "power_linear": baseline_power.astype(np.float32).tolist(),
+                "power_db": baseline_power_db.astype(np.float32).round(3).tolist(),
+                "capture_samples": len(samples),
+            }
+            self._set_baseline(baseline, baseline_power)
+            try:
+                BASELINE_CACHE.write_text(json.dumps(baseline))
+            except Exception:
+                logger.exception("Failed to persist baseline to %s", BASELINE_CACHE)
+            return baseline
 
     def load_baseline(self) -> dict[str, Any] | None:
         if not BASELINE_CACHE.exists():
             return None
         try:
-            return json.loads(BASELINE_CACHE.read_text())
+            baseline = json.loads(BASELINE_CACHE.read_text())
+            self._set_baseline(baseline)
+            return baseline
         except Exception:
             logger.exception("Failed to read baseline from %s", BASELINE_CACHE)
             return None
 
     def clear_baseline(self) -> None:
+        self._baseline_power = None
+        self._baseline_meta = None
         try:
             BASELINE_CACHE.unlink(missing_ok=True)
         except Exception:
             logger.exception("Failed to remove baseline cache %s", BASELINE_CACHE)
+
+    def _set_baseline(
+        self,
+        baseline: dict[str, Any],
+        baseline_power: np.ndarray | None = None,
+    ) -> None:
+        if baseline_power is None:
+            raw = baseline.get("power_linear")
+            if not isinstance(raw, list):
+                self._baseline_power = None
+                self._baseline_meta = None
+                return
+            baseline_power = np.asarray(raw, dtype=np.float32)
+        self._baseline_power = np.maximum(baseline_power, POWER_FLOOR)
+        self._baseline_meta = {
+            "center_freq_mhz": float(baseline["center_freq_mhz"]),
+            "sample_rate_mhz": float(baseline["sample_rate_mhz"]),
+            "bins": int(self._baseline_power.size),
+        }
+
+    def _active_baseline_power(self, current_power: np.ndarray) -> np.ndarray | None:
+        baseline_power = self._baseline_power
+        meta = self._baseline_meta
+        if baseline_power is None or meta is None:
+            return None
+        if int(meta["bins"]) != current_power.size:
+            return None
+        cfg = self._cfg
+        if abs(float(meta["center_freq_mhz"]) - cfg.center_freq_hz / 1e6) > 1e-6:
+            return None
+        if abs(float(meta["sample_rate_mhz"]) - cfg.sample_rate_hz / 1e6) > 1e-6:
+            return None
+        return baseline_power
+
+    def _capture_baseline_sample(self, current_power: np.ndarray) -> None:
+        samples = self._baseline_capture_samples
+        done = self._baseline_capture_done
+        if samples is None or done is None or done.is_set():
+            return
+        samples.append(current_power.astype(np.float32).copy())
+        if len(samples) >= self._baseline_capture_target:
+            done.set()
 
     # ── Subprocess management ────────────────────────────────────────────
 
@@ -556,9 +624,14 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
         # Avoid log(0); the FFT magnitudes never quite hit zero in practice
         # but a floor keeps the y-axis tidy when the gain is low.
         floored = np.maximum(integrated, POWER_FLOOR)
-        self._baseline_samples.append(floored.astype(np.float32).copy())
-        power_db = 10.0 * np.log10(floored)
-        power_db -= float(np.median(power_db))
+        self._capture_baseline_sample(floored)
+        baseline_power = self._active_baseline_power(floored)
+        baseline_corrected = baseline_power is not None
+        if baseline_corrected:
+            power_db = 10.0 * np.log10(floored / baseline_power)
+        else:
+            power_db = 10.0 * np.log10(floored)
+            power_db -= float(np.median(power_db))
 
         cfg = self._cfg
         # Effective integration time is the EMA window in wall-clock seconds,
@@ -578,8 +651,8 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             integration_seconds=effective_seconds,
             mode=self.mode,
             freqs_mhz=self._freqs_mhz.tolist(),
-            power_linear=floored.astype(np.float32).tolist(),
             power_db=power_db.astype(np.float32).round(3).tolist(),
+            baseline_corrected=baseline_corrected,
         )
         self._latest = frame
         self.publish(frame)

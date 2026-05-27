@@ -15,8 +15,8 @@ interface SpectrumFrame {
   integration_seconds: number;
   mode: string;
   freqs_mhz: number[];
-  power_linear: number[];
   power_db: number[];
+  baseline_corrected?: boolean;
 }
 
 export interface Baseline {

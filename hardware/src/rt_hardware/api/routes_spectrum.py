@@ -54,7 +54,7 @@ async def get_baseline(request: Request):
 @router.post("/api/spectrum/baseline")
 async def capture_baseline(request: Request):
     service = _service(request)
-    baseline = service.capture_baseline()
+    baseline = await service.capture_baseline()
     if baseline is None:
         raise HTTPException(409, "No spectrum frame is available yet to capture")
     return baseline

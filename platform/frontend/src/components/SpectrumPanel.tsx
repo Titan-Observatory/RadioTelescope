@@ -101,8 +101,8 @@ interface SpectrumFrame {
   integration_seconds: number;
   mode: string;
   freqs_mhz: number[];
-  power_linear: number[];
   power_db: number[];
+  baseline_corrected?: boolean;
 }
 
 interface SpectrumStatus {
@@ -165,25 +165,13 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
   // otherwise the arrays don't align and the division is nonsense.
   const baselineApplies = useMemo(() => {
     if (!baseline || !frame) return false;
-    return (
-      Array.isArray(baseline.power_linear) &&
-      baseline.power_linear.length === frame.power_linear.length &&
-      Math.abs(baseline.center_freq_mhz - frame.center_freq_mhz) < 1e-6 &&
-      Math.abs(baseline.sample_rate_mhz - frame.sample_rate_mhz) < 1e-6
-    );
+    return frame.baseline_corrected === true;
   }, [baseline, frame]);
 
   const displayed = useMemo(() => {
     if (!frame) return null;
-    if (baselineApplies && baseline?.power_linear) {
-      return frame.power_linear.map((currentPower, i) => {
-        const baselinePower = baseline.power_linear?.[i] ?? 0;
-        if (currentPower <= 0 || baselinePower <= 0) return -120;
-        return 10 * Math.log10(currentPower / baselinePower);
-      });
-    }
     return frame.power_db;
-  }, [frame, baseline, baselineApplies]);
+  }, [frame]);
 
   // Initialise the ECharts instance once. ResizeObserver keeps it sized
   // against the panel even as the dashboard grid reflows.

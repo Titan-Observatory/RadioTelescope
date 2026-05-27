@@ -83,7 +83,7 @@ async def test_ensure_running_skips_when_consumer_is_in_backoff(tmp_path):
     assert service._proc is None
 
 
-def test_publish_frame_keeps_linear_power_for_baseline_correction(tmp_path):
+def test_publish_frame_does_not_send_linear_power_by_default(tmp_path):
     service = SpectrumService(
         SDRConfig(fft_size=64, publish_rate_hz=1.0, integration_seconds=3.0),
         tmp_path / "config.toml",
@@ -96,11 +96,14 @@ def test_publish_frame_keeps_linear_power_for_baseline_correction(tmp_path):
 
     latest = service.latest
     assert latest is not None
-    assert latest["power_linear"] == pytest.approx(power.tolist())
+    assert "power_linear" not in latest
+    assert "corrected_db" not in latest
+    assert latest["baseline_corrected"] is False
     assert np.median(latest["power_db"]) == pytest.approx(0.0, abs=1e-3)
 
 
-def test_capture_baseline_uses_per_bin_median_linear_power(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_capture_baseline_uses_per_bin_median_linear_power(tmp_path, monkeypatch):
     from rt_hardware.services import spectrum as spectrum_module
 
     monkeypatch.setattr(spectrum_module, "BASELINE_CACHE", tmp_path / "baseline.json")
@@ -111,14 +114,55 @@ def test_capture_baseline_uses_per_bin_median_linear_power(tmp_path, monkeypatch
     base = np.arange(1, 65, dtype=np.float32)
     samples = [base, base * 10.0, base * 100.0]
 
-    for seen, sample in enumerate(samples, start=1):
-        service._integrated = sample.copy()
-        service._frames_seen = seen
-        service._publish_frame()
+    async def publish_samples():
+        await asyncio.sleep(0)
+        for seen, sample in enumerate(samples, start=1):
+            service._integrated = sample.copy()
+            service._frames_seen = seen
+            service._publish_frame()
+            await asyncio.sleep(0)
 
-    baseline = service.capture_baseline()
+    publisher = asyncio.create_task(publish_samples())
+    baseline = await service.capture_baseline()
+    await publisher
 
     assert baseline is not None
     assert baseline["capture_samples"] == 3
     assert baseline["power_linear"] == pytest.approx((base * 10.0).tolist())
     assert baseline["power_db"] == pytest.approx((10.0 * np.log10(base * 10.0)).round(3).tolist())
+
+
+@pytest.mark.asyncio
+async def test_publish_frame_sends_only_calibrated_spectrum_when_baseline_is_active(tmp_path, monkeypatch):
+    from rt_hardware.services import spectrum as spectrum_module
+
+    monkeypatch.setattr(spectrum_module, "BASELINE_CACHE", tmp_path / "baseline.json")
+    service = SpectrumService(
+        SDRConfig(fft_size=64, publish_rate_hz=1.0, integration_seconds=3.0),
+        tmp_path / "config.toml",
+    )
+    base = np.arange(1, 65, dtype=np.float32)
+    async def publish_baseline_samples():
+        await asyncio.sleep(0)
+        for seen, sample in enumerate([base, base * 10.0, base * 100.0], start=1):
+            service._integrated = sample.copy()
+            service._frames_seen = seen
+            service._publish_frame()
+            await asyncio.sleep(0)
+
+    publisher = asyncio.create_task(publish_baseline_samples())
+    assert await service.capture_baseline() is not None
+    await publisher
+
+    service._integrated = base * 20.0
+    service._frames_seen = 4
+    service._publish_frame()
+
+    latest = service.latest
+    assert latest is not None
+    assert "power_linear" not in latest
+    assert "corrected_db" not in latest
+    assert latest["baseline_corrected"] is True
+    assert latest["power_db"] == pytest.approx(
+        (10.0 * np.log10((base * 20.0) / (base * 10.0))).round(3).tolist()
+    )
