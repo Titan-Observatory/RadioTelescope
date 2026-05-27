@@ -74,6 +74,20 @@ async def reconnect_sdr(request: Request):
     return {"ok": mode not in ("unavailable", "fault"), "mode": mode}
 
 
+@router.post("/api/spectrum/display_mode")
+async def set_display_mode(request: Request):
+    service = _service(request)
+    body = await request.json()
+    mode = body.get("mode") if isinstance(body, dict) else None
+    if not isinstance(mode, str):
+        raise HTTPException(400, "Missing 'mode' field")
+    try:
+        service.set_display_mode(mode)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"mode": service.display_mode}
+
+
 @router.delete("/api/spectrum/baseline")
 async def clear_baseline(request: Request):
     _service(request).clear_baseline()

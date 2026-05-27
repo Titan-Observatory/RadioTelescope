@@ -78,6 +78,8 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
         self._publish_period_s: float = 1.0 / max(cfg.publish_rate_hz, 1e-3)
         self._freqs_mhz = self._build_freq_axis()
 
+        self._display_mode: str = "baseline"
+
         self._proc: subprocess.Popen[bytes] | None = None
         self._proc_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
@@ -121,6 +123,15 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
     def pipeline_pid(self) -> int | None:
         proc = self._proc
         return proc.pid if proc is not None and proc.poll() is None else None
+
+    @property
+    def display_mode(self) -> str:
+        return self._display_mode
+
+    def set_display_mode(self, mode: str) -> None:
+        if mode not in ("absolute", "median", "baseline"):
+            raise ValueError(f"Unknown display mode: {mode}")
+        self._display_mode = mode
 
     @property
     def lna_status(self) -> LnaStatus:
@@ -625,13 +636,19 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
         # but a floor keeps the y-axis tidy when the gain is low.
         floored = np.maximum(integrated, POWER_FLOOR)
         self._capture_baseline_sample(floored)
+        mode = self._display_mode
         baseline_power = self._active_baseline_power(floored)
-        baseline_corrected = baseline_power is not None
-        if baseline_corrected:
-            power_db = 10.0 * np.log10(floored / baseline_power)
-        else:
+        if mode == "absolute":
+            power_db = 10.0 * np.log10(floored)
+        elif mode == "median":
             power_db = 10.0 * np.log10(floored)
             power_db -= float(np.median(power_db))
+        else:  # "baseline"
+            if baseline_power is not None:
+                power_db = 10.0 * np.log10(floored / baseline_power)
+            else:
+                power_db = np.zeros_like(floored)
+        baseline_corrected = mode == "baseline" and baseline_power is not None
 
         cfg = self._cfg
         # Effective integration time is the EMA window in wall-clock seconds,
@@ -653,6 +670,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             freqs_mhz=self._freqs_mhz.tolist(),
             power_db=power_db.astype(np.float32).round(3).tolist(),
             baseline_corrected=baseline_corrected,
+            display_mode=mode,
         )
         self._latest = frame
         self.publish(frame)

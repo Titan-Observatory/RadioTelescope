@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { Camera, FolderOpen, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { track } from '../analytics';
@@ -37,20 +37,13 @@ interface Props {
   onBaselineReady: (baseline: Baseline) => void;
 }
 
-type Step = 'intro' | 'pick' | 'settle' | 'done' | 'load_failed';
+type Step = 'intro' | 'pick' | 'capture' | 'done' | 'load_failed';
 type Path = 'capture' | 'load';
-
-// Seconds the wizard suggests waiting once the user is back from picking.
-// The FFT integration needs a moment to settle on the empty-sky shape;
-// capture is always enabled, this is just guidance.
-const SETTLE_SECONDS = 15;
 
 export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: Props) {
   const [step, setStep] = useState<Step>('intro');
   const [path, setPath] = useState<Path | null>(null);
   const [busy, setBusy] = useState(false);
-  const [settleRemaining, setSettleRemaining] = useState(SETTLE_SECONDS);
-  const settleStartedAtRef = useRef<number | null>(null);
 
   // Reset to intro every time the wizard re-opens so we never resume mid-flow
   // from a stale prior session.
@@ -59,8 +52,6 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
       setStep('intro');
       setPath(null);
       setBusy(false);
-      setSettleRemaining(SETTLE_SECONDS);
-      settleStartedAtRef.current = null;
       track('baseline_wizard_opened');
     }
   }, [open]);
@@ -83,19 +74,6 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
     return () => document.body.classList.remove('rt-baseline-pick');
   }, [open, step]);
 
-  // Drive the settle countdown. Doesn't block capture — just an on-screen hint.
-  useEffect(() => {
-    if (step !== 'settle') return;
-    if (settleStartedAtRef.current == null) settleStartedAtRef.current = Date.now();
-    const tick = () => {
-      const elapsed = Math.floor((Date.now() - (settleStartedAtRef.current ?? Date.now())) / 1000);
-      setSettleRemaining(Math.max(0, SETTLE_SECONDS - elapsed));
-    };
-    tick();
-    const handle = window.setInterval(tick, 250);
-    return () => window.clearInterval(handle);
-  }, [step]);
-
   function close(reason: 'cancel' | 'done') {
     track('baseline_wizard_closed', { reason, step, path });
     onOpenChange(false);
@@ -106,6 +84,13 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
     setPath('capture');
     setStep('pick');
   }
+
+  // Server-side capture collects one full integration window of fresh samples
+  // before responding. Show a generous wait estimate so the user knows the
+  // request hasn't hung — round up and add a small buffer for round-tripping.
+  const expectedWaitSeconds = frame
+    ? Math.max(2, Math.ceil(frame.integration_seconds + 1))
+    : null;
 
   async function chooseLoad() {
     track('baseline_path_chosen', { path: 'load' });
@@ -137,6 +122,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
 
   async function capture() {
     if (!frame) return;
+    const startedAt = Date.now();
     setBusy(true);
     try {
       const r = await fetch('/api/spectrum/baseline', { method: 'POST' });
@@ -147,9 +133,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
       const baseline = await r.json() as Baseline;
       onBaselineReady(baseline);
       track('baseline_captured', {
-        seconds_waited: settleStartedAtRef.current
-          ? Math.floor((Date.now() - settleStartedAtRef.current) / 1000)
-          : 0,
+        capture_duration_s: Math.round((Date.now() - startedAt) / 1000),
         integration_seconds: frame.integration_seconds,
         capture_samples: baseline.capture_samples ?? null,
       });
@@ -172,7 +156,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
     {open && step === 'pick' && (
       <BaselinePickPopover
         onCancel={() => { track('baseline_pick_cancelled'); onOpenChange(false); }}
-        onConfirm={() => { track('baseline_pick_confirmed'); setStep('settle'); }}
+        onConfirm={() => { track('baseline_pick_confirmed'); setStep('capture'); }}
       />
     )}
     <Dialog.Root open={dialogOpen} onOpenChange={(o) => { if (!o) close('cancel'); else onOpenChange(o); }}>
@@ -219,21 +203,24 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
             </div>
           )}
 
-          {step === 'settle' && (
+          {step === 'capture' && (
             <div id="baseline-desc" className="baseline-body">
-              <p className="baseline-step-label">Step 2 of 2 — Wait, then capture</p>
+              <p className="baseline-step-label">Step 2 of 2 — Trigger the capture</p>
               <p>
-                Once the dish has finished slewing, give the rolling spectrum integration a few
-                seconds to settle on the empty-sky shape. Then freeze the current trace.
+                Once the dish has finished slewing onto your empty patch, trigger the
+                capture. The hardware service will then collect a full integration window of
+                fresh samples and return the baseline when it's done — no need to time it
+                yourself.
               </p>
-              <div className="baseline-countdown" role="status">
-                {settleRemaining > 0
-                  ? <>Settling… <strong>{settleRemaining}s</strong> recommended wait</>
-                  : <>Ready to capture.</>}
-              </div>
+              {busy && expectedWaitSeconds != null && (
+                <div className="baseline-countdown" role="status" aria-live="polite">
+                  Capturing… waiting for the hardware service to integrate
+                  {' '}<strong>~{expectedWaitSeconds}s</strong> of samples.
+                </div>
+              )}
               {frame && (
                 <p className="baseline-meta">
-                  Current integration: {frame.integration_seconds.toFixed(1)} s
+                  Integration window: {frame.integration_seconds.toFixed(1)} s
                   {' · '}
                   Center: {frame.center_freq_mhz.toFixed(2)} MHz
                 </p>
@@ -244,7 +231,12 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
                 </p>
               )}
               <div className="baseline-actions">
-                <button type="button" className="baseline-btn-ghost" onClick={() => setStep('pick')}>
+                <button
+                  type="button"
+                  className="baseline-btn-ghost"
+                  onClick={() => setStep('pick')}
+                  disabled={busy}
+                >
                   Back to map
                 </button>
                 <button
@@ -253,7 +245,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
                   onClick={() => void capture()}
                   disabled={!frame || busy}
                 >
-                  <Camera size={14} /> {busy ? 'Capturing...' : 'Capture now'}
+                  <Camera size={14} /> {busy ? 'Capturing…' : 'Trigger capture'}
                 </button>
               </div>
             </div>

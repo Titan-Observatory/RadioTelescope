@@ -108,6 +108,15 @@ async def reconnect_sdr(request: Request) -> JSONResponse:
     return await _proxy_json("POST", request, "/api/spectrum/reconnect")
 
 
+@router.post("/api/spectrum/display_mode", dependencies=[Depends(require_control)])
+async def set_display_mode(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    return await _proxy_json("POST", request, "/api/spectrum/display_mode", json_body=body)
+
+
 @router.websocket("/ws/spectrum")
 async def spectrum_ws(ws: WebSocket):
     """Re-publish frames from the host-side SpectrumBridge to a browser.
