@@ -91,6 +91,13 @@ const H1_SEARCH_HALF_WIDTH_MHZ = 0.5;
 // freshly-tuned RTL-SDR's typical noise floor without clipping.
 const DEFAULT_Y_RANGE: [number, number] = [-8, 8];
 
+const SPEED_OF_LIGHT_KMS = 299792.458;
+
+// Minimum prominence (dB above the spectrum median) before we report a peak
+// as a hydrogen detection. Below this the "peak" is just the tallest noise
+// bin, and quoting a velocity for it would be misleading.
+const DETECTION_MIN_DB = 1.5;
+
 interface SpectrumFrame {
   timestamp: number;
   center_freq_mhz: number;
@@ -160,7 +167,6 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
   const yRangeRef = useRef<[number, number]>(DEFAULT_Y_RANGE);
   const yRangeInitRef = useRef(false);
   const [baseline, setBaseline] = useState<Baseline | null>(null);
-  const [dopplerOpen, setDopplerOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [waterfallOpen, setWaterfallOpen] = useState(false);
 
@@ -425,23 +431,75 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
       bandRight: toPct(H1_REST_MHZ + H1_SEARCH_HALF_WIDTH_MHZ),
     };
   }, [frame]);
+
+  // Live interpretation of the spectrum: the strongest bin inside the H I
+  // search band, its height above the spectrum median, and the Doppler
+  // velocity that frequency offset corresponds to. This is the readout that
+  // turns "a bump on a chart" into "gas receding at 40 km/s".
+  const detection = useMemo(() => {
+    if (!frame || !displayed || frame.freqs_mhz.length < 16) return null;
+    const freqs = frame.freqs_mhz;
+    let peakIdx = -1;
+    let peakDb = -Infinity;
+    for (let i = 0; i < freqs.length; i++) {
+      const f = freqs[i];
+      if (f < H1_REST_MHZ - H1_SEARCH_HALF_WIDTH_MHZ || f > H1_REST_MHZ + H1_SEARCH_HALF_WIDTH_MHZ) continue;
+      if (displayed[i] > peakDb) {
+        peakDb = displayed[i];
+        peakIdx = i;
+      }
+    }
+    if (peakIdx < 0) return null;
+    const sorted = Float64Array.from(displayed).sort();
+    const medianDb = sorted[sorted.length >> 1];
+    const prominenceDb = peakDb - medianDb;
+    const freqMhz = freqs[peakIdx];
+    // Positive radial velocity = receding (peak redshifted below rest).
+    const velocityKms = SPEED_OF_LIGHT_KMS * (H1_REST_MHZ - freqMhz) / H1_REST_MHZ;
+    return { freqMhz, peakDb, prominenceDb, velocityKms, detected: prominenceDb >= DETECTION_MIN_DB };
+  }, [frame, displayed]);
   if (status && !status.enabled) {
     return (
       <section className="spectrum-section">
         <h2 className="panel-header head-amber">
-          Hydrogen line observation
+          Hydrogen line spectrum
         </h2>
         <div className="spectrum-empty">SDR disabled in config.toml.</div>
       </section>
     );
   }
 
+  const velocity = detection?.detected ? detection.velocityKms : null;
+
+  // Pin a small marker on the trace at the detected peak. Positions are
+  // percentages within the plot inset box (the same box the hydrogen guide
+  // occupies), so the marker tracks the peak as the axis refits.
+  let peakMarker: { left: string; top: string } | null = null;
+  if (frame && detection?.detected && hydrogenGuide) {
+    const min = frame.freqs_mhz[0];
+    const max = frame.freqs_mhz[frame.freqs_mhz.length - 1];
+    const span = max - min;
+    const [yMin, yMax] = yRangeRef.current;
+    if (span > 0 && yMax > yMin) {
+      const clamp = (v: number) => Math.max(0, Math.min(100, v));
+      peakMarker = {
+        left: `${clamp(((detection.freqMhz - min) / span) * 100)}%`,
+        top: `${clamp(((yMax - detection.peakDb) / (yMax - yMin)) * 100)}%`,
+      };
+    }
+  }
+
   return (
     <section className="spectrum-section">
       <header className="spectrum-head">
-        <h2 className="panel-header head-amber">
-          The Hydrogen Line
-        </h2>
+        <div className="spectrum-head-titles">
+          <h2 className="panel-header head-amber">
+            Hydrogen line spectrum
+          </h2>
+          <p className="spectrum-subtitle">
+            Neutral hydrogen across the Milky Way glows at 1420.406&nbsp;MHz — the marker below.
+          </p>
+        </div>
         <div className="spectrum-status">
           {baseline && !baselineApplies && <span className="spectrum-tag spectrum-tag-warn">baseline mismatched</span>}
           {!connected && <span className="spectrum-disconnected">offline</span>}
@@ -453,83 +511,11 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
               disabled={!connected || !frame}
               title={!connected || !frame ? 'Waiting for SDR…' : 'Walk through a hydrogen-line observation step by step'}
             >
-              <Sparkles size={12} /> Guided Observation
+              <Sparkles size={12} /> Guided observation
             </button>
           )}
         </div>
       </header>
-
-      <div className="spectrum-observation-panel" aria-label="Hydrogen line observation guide">
-        <div className="spectrum-observation-primary">
-          <p>
-            Neutral hydrogen in the Milky Way emits radio energy at <strong>1420.4 MHz</strong>. This panel shows a live spectrum from the SDR, with a vertical
-            marker at that reference frequency. Gas moving toward or away from the telescope shifts the signal slightly by the{' '}
-            <span className="spectrum-doppler-wrap">
-              <button
-                type="button"
-                className="spectrum-doppler-term"
-                onClick={() => setDopplerOpen((open) => !open)}
-                aria-expanded={dopplerOpen}
-                aria-controls="spectrum-doppler-popup"
-                aria-describedby={dopplerOpen ? undefined : 'spectrum-doppler-preview'}
-              >
-                Doppler effect
-              </button>
-              {!dopplerOpen && (
-                <span className="spectrum-doppler-preview" id="spectrum-doppler-preview" role="tooltip">
-                  The H I marker shows the expected rest frequency. If hydrogen gas is moving relative
-                  to the telescope, the received peak shifts left or right from that marker. Click for the lesson.
-                </span>
-              )}
-            </span>
-            . By observing several points along the galactic plane, you can see the motion and distribution of the hydrogen gas in our own Milky Way galaxy. 
-          </p>
-          {dopplerOpen && (
-            <div className="spectrum-doppler-popup" id="spectrum-doppler-popup" role="status">
-              <button
-                type="button"
-                className="spectrum-doppler-close"
-                onClick={() => setDopplerOpen(false)}
-                aria-label="Close Doppler effect explainer"
-              >
-                ×
-              </button>
-              <strong>Doppler effect lesson</strong>
-              <p>
-                This lesson will walk through why motion changes the received hydrogen-line frequency,
-                how to compare the observed peak against the H I rest marker, and how observations in
-                different sky directions reveal relative motion in neutral hydrogen gas.
-              </p>
-              <div className="spectrum-doppler-lesson-grid">
-                <span>1. Rest frequency</span>
-                <span>2. Shifted signal</span>
-                <span>3. Sky comparison</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="spectrum-toolbar spectrum-toolbar-above" aria-label="Spectrum processing controls">
-        <div className="spectrum-control-block">
-          <div className="spectrum-control-label">
-            <strong>Capture baseline</strong>
-            <span>
-              Save the current buffer to correct the receiver bandpass, helping signals stand out.
-            </span>
-          </div>
-          <div className="spectrum-tool-group" role="group" aria-label="Baseline controls">
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={() => setWizardOpen(true)}
-              title="Open the guided flow to point at empty sky and capture a baseline (or just load a saved one)"
-            >
-              <Sliders size={12} /> Set up baseline
-            </button>
-          </div>
-        </div>
-      </div>
 
       <div className="spectrum-chart-wrap">
         {integrationStats && (
@@ -542,6 +528,27 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
             {integrationStats.frameHz.toFixed(1)} Hz FFT
           </p>
         )}
+
+        <div className="spectrum-toolbar spectrum-baseline-row" aria-label="Baseline correction">
+          <span className={`spectrum-baseline-state${baselineApplies ? ' is-applied' : ''}`}>
+            <span className="spectrum-baseline-dot" aria-hidden />
+            {baselineApplies ? 'Baseline applied' : 'No baseline'}
+          </span>
+          <span className="spectrum-baseline-hint">
+            {baselineApplies
+              ? 'The receiver bandpass is being subtracted, so real signals stand out.'
+              : 'Capture a reference on empty sky so faint signals stand out from the receiver itself.'}
+          </span>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => setWizardOpen(true)}
+            title="Open the guided flow to point at empty sky and capture a baseline (or just load a saved one)"
+          >
+            <Sliders size={12} /> {baselineApplies ? 'Recapture' : 'Set up baseline'}
+          </button>
+        </div>
+
         <div className="spectrum-chart-box">
           {baseline && baselineApplies && (
             <div className="spectrum-chart-note">Baseline corrected</div>
@@ -560,10 +567,69 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
               <span className="spectrum-hydrogen-line">
                 <small>{H1_REST_MHZ.toFixed(4)} MHz</small>
               </span>
+              {peakMarker && (
+                <span className="spectrum-peak-marker" style={{ left: peakMarker.left, top: peakMarker.top }} />
+              )}
             </div>
           )}
           <div className="spectrum-chart" ref={chartRef} />
+          {chartEmptyMessage && (
+            <div className="spectrum-chart-empty">
+              <span className="spectrum-chart-empty-dot" aria-hidden />
+              {chartEmptyMessage}
+            </div>
+          )}
         </div>
+
+        {frame && (
+        <div className="spectrum-readouts" aria-label="Hydrogen line measurements">
+          <div className="spectrum-readout">
+            <span className="spectrum-readout-label">Peak</span>
+            <span className="spectrum-readout-value">
+              {detection?.detected ? `${detection.freqMhz.toFixed(3)} MHz` : '—'}
+            </span>
+          </div>
+          <div className="spectrum-readout">
+            <span className="spectrum-readout-label">Strength</span>
+            <span className="spectrum-readout-value">
+              {detection?.detected ? `+${detection.prominenceDb.toFixed(1)} dB` : '—'}
+            </span>
+          </div>
+          <div className="spectrum-readout">
+            <span className="spectrum-readout-label">Doppler velocity</span>
+            <span className="spectrum-readout-value">
+              {velocity == null ? '—' : `${velocity >= 0 ? '+' : '−'}${Math.abs(velocity).toFixed(0)} km/s`}
+            </span>
+            {velocity != null && Math.abs(velocity) >= 3 && (
+              <span className="spectrum-readout-sub">
+                {velocity >= 0 ? 'gas receding' : 'gas approaching'}
+              </span>
+            )}
+          </div>
+          {detection && !detection.detected && (
+            <div className="spectrum-readout spectrum-readout-wide">
+              <span className="spectrum-readout-hint">
+                No clear hydrogen peak yet — the signal is strongest along the galactic plane
+                (galactic latitude near 0°).
+              </span>
+            </div>
+          )}
+        </div>
+        )}
+
+        <details className="spectrum-learn">
+          <summary>How to read this chart</summary>
+          <p>
+            Hydrogen atoms emit at exactly 1420.406&nbsp;MHz at rest — the vertical marker. Gas moving
+            along the line of sight Doppler-shifts that emission: a peak <em>left</em> of the marker
+            means the gas is moving away from us, a peak to the <em>right</em> means it is approaching.
+            Each 0.1&nbsp;MHz of shift is about 21&nbsp;km/s. Because the dish looks through the whole
+            thickness of the galaxy, you will often see broad or multiple peaks — different spiral-arm
+            clouds moving at different speeds. Compare a few directions along the galactic plane and you
+            are mapping the rotation of the Milky Way.
+          </p>
+        </details>
+
         <details
           className="spectrum-waterfall-dropdown"
           open={waterfallOpen}
@@ -571,10 +637,10 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
         >
           <summary className="spectrum-waterfall-summary">
             <span>Waterfall</span>
+            <small className="spectrum-waterfall-caption">signal history over time</small>
           </summary>
           <canvas className="spectrum-waterfall" ref={waterfallCanvasRef} />
         </details>
-        {chartEmptyMessage && <div className="spectrum-chart-empty">{chartEmptyMessage}</div>}
       </div>
 
       <BaselineWizard

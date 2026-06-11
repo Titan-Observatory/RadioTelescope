@@ -250,6 +250,52 @@ def test_old_jog_stop_does_not_stop_new_active_jog(simulated_config_path):
     assert service.client._speeds["m1"] > 0
 
 
+def test_stale_jog_finishing_after_stop_does_not_leave_motors_running(simulated_config_path):
+    """A jog whose motion command lands *after* a newer stop was processed must
+    undo itself — otherwise the motors run with no watchdog armed and no
+    further heartbeats coming."""
+    import asyncio
+    import threading
+
+    with TestClient(create_app(simulated_config_path)) as client:
+        service = client.app.state.roboclaw_service
+        original_execute = service.execute
+        entered = threading.Event()
+        release = threading.Event()
+
+        async def delayed_execute(command_id, args=None):
+            # Hold the jog's motion command until the stop has been processed,
+            # reproducing the in-flight race deterministically.
+            if command_id == "forward_m1":
+                entered.set()
+                await asyncio.to_thread(release.wait, 2.0)
+            return await original_execute(command_id, args)
+
+        service.execute = delayed_execute
+
+        jog_response = {}
+
+        def send_jog():
+            jog_response["resp"] = client.post(
+                "/api/telescope/jog",
+                json={"token": "race-token-x", "seq": 1, "direction": "west", "speed": 40},
+            )
+
+        jog_thread = threading.Thread(target=send_jog)
+        jog_thread.start()
+        assert entered.wait(2.0), "jog never reached its motion command"
+        stopped = client.post("/api/telescope/jog/stop", json={"token": "race-token-x", "seq": 2})
+        release.set()
+        jog_thread.join(timeout=5.0)
+        service.execute = original_execute
+
+    assert stopped.status_code == 200
+    resp = jog_response["resp"]
+    assert resp.status_code == 200
+    assert resp.json()["accepted"] is False
+    assert service.client._speeds["m1"] == 0
+
+
 def test_jog_watchdog_stops_when_heartbeats_stop(simulated_config_path):
     import time
 

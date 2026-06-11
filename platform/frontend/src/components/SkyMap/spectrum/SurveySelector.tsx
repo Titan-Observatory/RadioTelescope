@@ -108,9 +108,11 @@ export function LightSpectrumSurveySelector({
   }, [hoverLogFreq, activeSurvey, animatedFocusLogFreq]);
 
   const hydrogenMarkerLeft = `calc(32px + ${logFreqToRatio(HYDROGEN_LOG_FREQ) * 100}% - ${logFreqToRatio(HYDROGEN_LOG_FREQ) * 44}px)`;
+  const activeDefinition = surveyDefinition(activeSurvey);
 
   return (
     <div id="skymap-spectrum-selector" className={`skymap-spectrum-selector${disabled ? ' disabled' : ''}`}>
+      <p className="skymap-spectrum-title">Sky Survey</p>
       <div className="skymap-survey-list" role="radiogroup" aria-label="Survey presets">
         {SURVEYS.map((survey) => (
           <button
@@ -133,6 +135,7 @@ export function LightSpectrumSurveySelector({
           <span>21cm</span>
         </div>
       </div>
+      <p className="skymap-spectrum-desc">{activeDefinition.description}</p>
     </div>
   );
 }

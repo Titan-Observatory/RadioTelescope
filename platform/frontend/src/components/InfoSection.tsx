@@ -27,7 +27,7 @@ export function InfoSection() {
         <div className="info-col info-col-features">
           <h2 className="info-col-heading">Roadmap</h2>
           <p>
-            It doesnt stop here. Through your generous contributions and partnerships, we hope to found a permenant home for the observatory, expand capacity with more dishes, and create a rich ecosystem of features and educational content that makes radio astronomy more accessible than ever before.
+            It doesn't stop here. Through your generous contributions and partnerships, we hope to found a permanent home for the observatory, expand capacity with more dishes, and create a rich ecosystem of features and educational content that makes radio astronomy more accessible than ever before.
           </p>
           <ul className="feature-list">
             {PLANNED_FEATURES.map((f) => (

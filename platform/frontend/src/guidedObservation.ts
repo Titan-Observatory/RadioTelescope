@@ -93,7 +93,7 @@ export function startGuidedObservation(slewToRaDec: SlewFn) {
         popover: {
           title: 'Live radio signal',
           description:
-            "This yellow line shows the radio energy the dish is hearing right now. The vertical orange marker is where pure hydrogen emits. We're looking for a small bump that lines up with — or shifts slightly off — that marker.",
+            "This yellow trace shows the radio energy the dish is hearing right now. The vertical green marker at 1420.4 MHz is where pure hydrogen emits. We're looking for a small bump that lines up with — or shifts slightly off — that marker.",
           side: 'left',
           align: 'start',
         },
@@ -116,7 +116,7 @@ export function startGuidedObservation(slewToRaDec: SlewFn) {
         popover: {
           title: "Save what 'empty' looks like",
           description:
-            "Click Capture below. This stores the current trace as a reference, so when we slew somewhere with real hydrogen the signal pops out clearly against this flat background. Then press Next.",
+            "Click \"Set up baseline\" below. This stores the current trace as a reference, so when we slew somewhere with real hydrogen the signal pops out clearly against this flat background. Then press Next.",
           side: 'top',
           align: 'start',
         },
@@ -126,7 +126,7 @@ export function startGuidedObservation(slewToRaDec: SlewFn) {
         popover: {
           title: 'Aim at the Milky Way',
           description:
-            "Now we'll swing to a thick part of our galaxy's disk, in Cygnus. There's a huge column of hydrogen gas between us and the far side of the galaxy, all emitting at 1420 MHz. Watch the yellow trace once the dish settles — a bump should grow near the orange marker.",
+            "Now we'll swing to a thick part of our galaxy's disk, in Cygnus. There's a huge column of hydrogen gas between us and the far side of the galaxy, all emitting at 1420 MHz. Watch the yellow trace once the dish settles — a bump should grow near the green marker.",
           side: 'left',
           align: 'start',
           onPopoverRender: (popover) => {
@@ -139,7 +139,7 @@ export function startGuidedObservation(slewToRaDec: SlewFn) {
         popover: {
           title: 'You did it',
           description:
-            'The bump you see is hydrogen gas tens of thousands of light-years away. If it sits slightly left or right of the orange marker, that gas is moving toward or away from us — the Doppler effect. Slew elsewhere any time to compare.',
+            'The bump you see is hydrogen gas tens of thousands of light-years away. If it sits slightly off the green marker, that gas is moving toward or away from us — the Doppler effect — and the velocity readout under the chart tells you how fast. Slew elsewhere any time to compare.',
           side: 'left',
           align: 'start',
         },

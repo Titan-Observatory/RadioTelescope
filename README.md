@@ -1,8 +1,8 @@
 # Radio Telescope
 
-A self-hosted control stack for a small alt-az radio telescope: a RoboClaw-driven mount, an Airspy SDR for spectrum capture, and an optional V4L2 finder camera. You get a browser-based dashboard for slewing, live telemetry, an integrated FFT view, and a video feed — all served from your own LAN.
+The control stack for a remotely operable alt-az radio telescope, and the foundation for a scalable observatory network: a central web **platform** that handles visitors, sessions, and (eventually) scheduling, and a per-telescope **hardware** service that drives the mount, SDR receiver, and finder camera on a machine at the dish.
 
-Designed for a single dish on a workbench or rooftop. Not designed to be exposed to the open internet — keep it on your home network.
+Visitors get a browser-based dashboard for slewing, live telemetry, an integrated FFT view of the spectrum, and a video feed — with a control queue so many people can watch while one person drives.
 
 ```
 ┌──────────────┐         ┌────────────────────────┐         ┌──────────────┐
@@ -10,8 +10,10 @@ Designed for a single dish on a workbench or rooftop. Not designed to be exposed
 │  (Vite SPA)  │   HTTP  │  React UI, queue, auth │   HTTP  │  (port 8001) │
 │              │   WS    │  proxies → hardware    │   WS    │  motors+SDR  │
 └──────────────┘         └────────────────────────┘         └──────────────┘
-       LAN browser              any LAN host                   Raspberry Pi
+    any browser            central platform host          one per telescope
 ```
+
+Today one telescope is connected (a single `hardware_url`); multi-telescope routing and observation scheduling are the planned next step. The two-service split — no shared code, HTTP/WebSocket only between them — is what makes adding telescopes a deployment problem rather than a rewrite.
 
 ## What's in the box
 
@@ -19,7 +21,8 @@ Designed for a single dish on a workbench or rooftop. Not designed to be exposed
 - **Spectrum** — Airspy + GNU Radio flowgraph → FFT → integrated power. Live WebSocket stream, EMA smoothing, baseline capture/subtraction.
 - **Finder camera** — MJPEG stream from any V4L2 device.
 - **Multi-user queue** — visitors watch the live view freely; one person at a time holds the control lease (configurable session length, idle timeout, per-IP caps).
-- **Motion audit log** — every accepted goto/jog/PID write is appended to `motion.jsonl` on the platform side.
+- **Admin panel** — LAN-admin-only page for setting the telescope status flag (operational / maintenance / closed), inspecting the queue, and kicking sessions. Invisible (404) to everyone else.
+- **Motion audit log** — every accepted goto/jog/PID/admin write is appended to `motion.jsonl` on the platform side. Optional fire-and-forget log shipping to Loki via `loki_url`.
 
 ## Quickstart — Docker (recommended)
 
@@ -87,7 +90,8 @@ Owns the physical hardware. Trusted-network only: **no auth, no queue, no rate l
 | `hardware/roboclaw.py` | RoboClaw Packet Serial driver (M1 = azimuth, M2 = elevation) |
 | `hardware/sdr.py` | LNA / bias-tee control via `airspy_gpio` |
 | `services/roboclaw.py` | Telemetry polling, goto/jog state machine, encoder → alt/az → RA/Dec |
-| `services/spectrum.py` | Spawns GNU Radio subprocess on demand, consumes spectra over ZeroMQ, EMA-integrates, broadcasts JSON frames |
+| `services/spectrum.py` | Spawns GNU Radio subprocess on demand, consumes spectra over ZeroMQ, EMA-integrates with spur rejection + baseline correction, broadcasts JSON frames |
+| `services/camera.py` | Shared V4L2 capture session so the MJPEG stream and snapshot endpoint coexist |
 | `sdr_pipeline.py` | GNU Radio top-block: Soapy → FFT → mag² → integrate → ZMQ pub. Run as a subprocess. |
 | `geometry.py` / `pointing.py` | Encoder ↔ altitude and katpoint J2000 conversions |
 | `models/state.py` | Canonical Pydantic response models — frontend types are generated from this |
@@ -99,17 +103,20 @@ Web-facing. Enforces the queue, writes the motion audit log, serves the React SP
 | Module | Role |
 |---|---|
 | `services/queue.py` | Multi-user control lease, session cookies, per-IP caps, idle timeouts |
+| `services/status.py` | Operator-set telescope status (operational / maintenance / closed); the queue gates joins on it |
 | `services/spectrum_bridge.py` | One upstream WS to hardware `/ws/spectrum`, fans frames out to browsers (lazy connect) |
 | `services/hardware_client.py` | httpx wrapper bound to `hardware_url` |
 | `api/routes_motor.py` | Proxies motor/telescope HTTP, bridges `/ws/roboclaw`, writes `motion.jsonl` |
 | `api/routes_spectrum.py` | Proxies spectrum HTTP, bridges `/ws/spectrum` |
-| `api/routes_camera.py` | Proxies camera MJPEG + status |
+| `api/routes_camera.py` | Proxies camera MJPEG / snapshot + status |
+| `api/routes_admin.py` | LAN-admin control panel: status flag, queue snapshot, kick a session |
 | `api/routes_queue.py`, `routes_feedback.py`, `routes_events.py` | Fully local — no hardware traffic |
 | `api/auth.py` | Optional password gate (off by default) |
+| `loki.py` | Optional fire-and-forget log push to Loki (`loki_url` / `LOKI_URL`) |
 
 ### Frontend (`platform/frontend/`)
 
-Vite + React + TypeScript. `LiveShell.tsx` is the root. WebSocket clients live in `ws/`; the alt-az math in `lib/altaz.ts` is a hand-synced port of `hardware/geometry.py`. Types in `types.gen.ts` are regenerated from the hardware Pydantic models — re-run the dump script when models change:
+Vite + React + TypeScript. `App.tsx` is the root and routes between the live view, the queue page, and the LAN-admin page. WebSocket and command logic lives in `lib/` hooks (`useJsonSocket`, `useTelemetry`, `useQueueLease`, `useMotionCommands`); the alt-az math in `lib/astro.ts` is a hand-synced low-precision port of `hardware/geometry.py`. Types in `types.gen.ts` are regenerated from the hardware Pydantic models — re-run the dump script when models change:
 
 ```bash
 cd hardware && python -m rt_hardware.scripts.dump_types
@@ -136,6 +143,7 @@ When the queue is disabled (`queue.enabled = false` — fine for single-user hom
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/queue/config` | Turnstile keys, session limits, auth flags |
+| GET | `/api/telescope/status` | Operator-set status flag (operational / maintenance / closed) + message |
 | GET | `/api/queue/status` | Your position and session state |
 | POST | `/api/queue/join` | Join the queue |
 | POST | `/api/queue/leave` | Leave and clear session cookie |
@@ -175,6 +183,8 @@ When the queue is disabled (`queue.enabled = false` — fine for single-user hom
 | DELETE | `/api/spectrum/baseline` | control | Clear the saved baseline |
 | POST | `/api/spectrum/reset` | control | Reset EMA integration accumulator |
 | POST | `/api/spectrum/reconnect` | control | Force SDR receiver to close and re-open |
+| GET | `/api/admin/spectrum/processing` | LAN admin | Read live DSP processing parameters |
+| POST | `/api/admin/spectrum/processing` | LAN admin | Tune DSP processing parameters at runtime |
 | WS | `/ws/spectrum` | session | Streamed FFT frames (Hann-windowed, EMA-integrated) |
 
 ### Camera
@@ -182,7 +192,19 @@ When the queue is disabled (`queue.enabled = false` — fine for single-user hom
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/api/camera/status` | public | Whether the camera device is open |
+| GET | `/api/camera/frame` | public | Single JPEG snapshot |
 | GET | `/api/camera/stream` | public | MJPEG multipart stream |
+
+### Admin panel
+
+All return 404 to non-LAN-admin clients, keeping the admin surface invisible.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/admin/status` | LAN admin | Current telescope status record |
+| POST | `/api/admin/status` | LAN admin | Set status flag + visitor-facing message |
+| GET | `/api/admin/queue` | LAN admin | Full queue snapshot |
+| POST | `/api/admin/queue/kick` | LAN admin | Remove a session from the queue |
 
 ### Local (platform-only)
 
@@ -254,13 +276,13 @@ cookie_secret = "generate-something-random"
 
 Other sections (`[server]`, `[auth]`, `[turnstile]`) only need touching if you're exposing the platform beyond your LAN — see the next section.
 
-## Internet exposure (advanced, not recommended)
+## Public exposure checklist
 
-This stack is designed for **LAN use**. If you really want to put the platform on the public internet, the bare minimum:
+The platform is the public-facing half; the hardware service must never be. Before putting the platform on the open internet:
 
 - Terminate TLS at nginx / Caddy in front of the platform and forward `X-Forwarded-For` + `X-Forwarded-Proto`.
 - Set a real `queue.cookie_secret`, real `cors_origins`, and either production Turnstile keys or enable `auth.enabled` with a real password.
-- Never expose port 8001 (the hardware service). Public internet → platform only → hardware over the LAN.
+- Never expose port 8001 (the hardware service). Public internet → platform only → hardware over the trusted network link.
 - `rt-platform` runs `public_exposure_errors(cfg)` at startup and refuses to boot with placeholder secrets.
 
 ## Hardware notes (Raspberry Pi)

@@ -657,10 +657,23 @@ input:focus-visible {
 .dashboard-rightcol > .panel { padding: 14px 16px; }
 .dashboard-rightcol .spectrum-panel-host { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .dashboard-rightcol .spectrum-panel-host .spectrum-section { margin-bottom: 0; padding-bottom: 0; border-bottom: none; display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap { flex: 1; min-height: 0; margin-bottom: 0; height: auto; }
+.dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap { flex: 1; min-height: 0; margin-bottom: 0; height: auto; overflow-y: auto; }
 /* In the right-column layout the wrap fills the available vertical space.
-   The line chart keeps its fixed height; the waterfall expands to consume
-   whatever's left. */
+   The line chart keeps its fixed height. The waterfall toggle hugs the bottom
+   of the wrap (margin-top: auto soaks up the slack), and when opened the
+   waterfall canvas expands to consume whatever's left. */
+.dashboard-rightcol .spectrum-panel-host .spectrum-waterfall-dropdown { margin-top: auto; }
+.dashboard-rightcol .spectrum-panel-host .spectrum-waterfall-dropdown[open] {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dashboard-rightcol .spectrum-panel-host .spectrum-waterfall-dropdown[open] .spectrum-waterfall {
+  flex: 1 1 auto;
+  min-height: 120px;
+  height: auto;
+}
 
 .panel {
   min-width: 0;
@@ -724,16 +737,98 @@ input:focus-visible {
   pointer-events: auto;
   flex: 0 0 min(280px, 42%);
 }
-.skymap-overlay-controls .motion-card { padding: 10px; gap: 8px; }
+.skymap-overlay-controls .motion-card { gap: 8px; }
 .skymap-overlay-controls .pad-btn { min-height: 48px; }
 
-.motion-controls-title {
-  margin: 0 0 8px;
-  color: var(--fg);
-  font-size: 12px;
+/* ── Motion handset ──────────────────────────────────────────────────────
+   Reads top to bottom: state header, live position readout, jog pad with
+   speed presets, inline go-to row. */
+.motion-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.motion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.motion-head-title {
+  color: var(--fg-muted);
+  font-size: 10px;
   font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.motion-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.motion-state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+.motion-state.is-moving {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.motion-state.is-moving .motion-state-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(255, 188, 66, 0.6);
+  animation: motion-state-pulse 1.2s ease-in-out infinite;
+}
+@keyframes motion-state-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-state.is-moving .motion-state-dot { animation: none; }
+}
+
+/* Digital readout of the current pointing — the feedback half of the
+   control loop, kept right above the buttons that drive it. */
+.motion-position {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 7px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+}
+.motion-pos-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.motion-pos-label {
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.motion-pos-item strong {
+  color: var(--sect-teal);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px rgba(119, 203, 185, 0.25);
 }
 
 .skymap-slew-target {
@@ -760,71 +855,37 @@ input:focus-visible {
   color: var(--on-accent);
 }
 
-/* Tab strip — two plain buttons with an underline indicator on the active
-   tab. Lives at the top of the floating pointing overlay. */
-.motion-mode {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 8px;
-  padding: 2px;
-  border-radius: var(--r-md);
-  background: var(--surface-1);
-}
-.motion-mode-step {
-  flex: 1;
-  min-height: 32px;
-  padding: 0 10px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  color: var(--fg-muted);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
-}
-.motion-mode-step[aria-checked="true"] {
-  background: var(--surface-3);
-  border-color: var(--hairline-strong);
-  color: var(--fg);
-}
-.motion-mode-step:hover { color: var(--fg); }
-.motion-mode-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
-/* GoTo form — 2-column grid (Az | Alt), Slew + Stop span full width below */
+/* Go-to row — one line: label, Az and El inputs, slew button. Lives below
+   the jog pad so typing coordinates never hides the manual controls. */
 .target-form-overlay {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 10px;
-  background: var(--surface-2);
-  border-radius: var(--r-md);
+  grid-template-columns: auto 1fr 1fr auto;
+  align-items: center;
+  gap: 6px;
 }
-.goto-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.goto-field > span {
+.motion-goto-label {
+  color: var(--fg-subtle);
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--fg-muted);
+  padding-right: 2px;
 }
 .goto-input-row {
   position: relative;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 .goto-input-row input {
   flex: 1;
-  height: 38px;
-  font-size: 18px;
+  min-width: 0;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 15px 0 32px;
+  font-size: 13px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  padding-right: 22px;
 }
 .goto-input-row input[type="number"]::-webkit-outer-spin-button,
 .goto-input-row input[type="number"]::-webkit-inner-spin-button {
@@ -834,35 +895,42 @@ input:focus-visible {
 .goto-input-row input[type="number"] {
   -moz-appearance: textfield;
 }
+.goto-input-row input::placeholder {
+  color: var(--fg-faint);
+  opacity: 1;
+}
+.goto-prefix {
+  position: absolute;
+  left: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  pointer-events: none;
+}
 .goto-unit {
   position: absolute;
-  right: 8px;
+  right: 7px;
   font-size: 12px;
   color: var(--fg-subtle);
   pointer-events: none;
 }
-.goto-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  gap: 6px;
-  margin-top: 2px;
-}
-.goto-slew-btn {
-  flex: 1;
-}
-.action-button.goto-stop-btn {
-  flex: 0 0 auto;
-  width: 42px;
+.motion-goto-btn {
+  width: 36px;
+  min-height: 32px;
   padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #d81159;
-  border-color: #d81159;
-  color: #0b0d16;
+  flex-shrink: 0;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
-.action-button.goto-stop-btn:hover { background: #e8305a; border-color: #e8305a; color: #0b0d16; }
-.action-button.goto-stop-btn:active { background: #b80e4b; border-color: #b80e4b; color: #0b0d16; }
+.motion-goto-btn:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--on-accent);
+}
+.motion-goto-btn:active { background: var(--accent-press); }
 
 /* Status panel — always-visible section below the waterfall in the right column */
 .status-side-panel {
@@ -910,10 +978,23 @@ input:focus-visible {
   display: grid;
   grid-template-columns: 1fr auto;
   column-gap: 14px;
-  align-items: center;
+  align-items: start;
   margin-bottom: 8px;
 }
-.spectrum-head .panel-header { grid-column: 1; margin: 0; }
+.spectrum-head .panel-header { margin: 0; }
+.spectrum-head-titles {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.spectrum-subtitle {
+  margin: 0;
+  color: var(--fg-subtle);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .spectrum-status {
   grid-column: 2;
   display: inline-flex;
@@ -1030,7 +1111,7 @@ input:focus-visible {
   border-top: 1px solid var(--hairline);
 }
 .spectrum-waterfall-summary {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
@@ -1059,6 +1140,12 @@ input:focus-visible {
 .spectrum-waterfall-summary span {
   font-size: 13px;
   font-weight: 700;
+}
+.spectrum-waterfall-caption {
+  margin-right: auto;
+  color: var(--fg-subtle);
+  font-size: 11px;
+  font-weight: 400;
 }
 .spectrum-waterfall {
   display: block;
@@ -1097,6 +1184,15 @@ input:focus-visible {
   border-left: 2px solid rgba(119, 203, 185, 0.9);
   box-shadow: 0 0 18px rgba(119, 203, 185, 0.34);
 }
+.spectrum-peak-marker {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 8px rgba(255, 188, 66, 0.45);
+}
 .spectrum-hydrogen-line > small {
   position: absolute;
   top: 10px;
@@ -1111,40 +1207,136 @@ input:focus-visible {
   line-height: 1;
   white-space: nowrap;
 }
+/* Center the waiting message in a soft pill so it reads as an intentional
+   status chip in the plot, not loose text drifting over the grid. */
 .spectrum-chart-empty {
   position: absolute;
-  inset: 0;
-  display: flex;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  color: var(--fg-faint);
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(16, 18, 30, 0.72);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--fg-subtle);
   font-size: 12px;
-  font-style: italic;
+  white-space: nowrap;
   pointer-events: none;
 }
+.spectrum-chart-empty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: spectrum-empty-pulse 1.6s ease-in-out infinite;
+}
+@keyframes spectrum-empty-pulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spectrum-chart-empty-dot { animation: none; }
+}
 
-.spectrum-observation-panel {
-  margin: 8px 0 0;
+/* Live measurement strip under the trace — peak, strength, Doppler velocity.
+   Mono numerals so the values read as instrument output, not body copy. */
+.spectrum-readouts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 26px;
+  margin: 4px 0 2px;
+  padding: 8px 2px 10px;
 }
-.spectrum-observation-primary {
-  position: relative;
-  padding: 4px 0 2px;
+.spectrum-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
-.spectrum-observation-primary p {
-  max-width: 1040px;
-  margin: 0;
-  color: var(--fg-muted);
-  font-size: 14px;
-  line-height: 1.55;
+.spectrum-readout-label {
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
-.spectrum-observation-primary p strong {
+.spectrum-readout-value {
   color: var(--fg);
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
-.spectrum-doppler-wrap {
-  position: relative;
+.spectrum-readout-sub {
+  color: var(--ok);
+  font-size: 11px;
+  line-height: 1.2;
+}
+.spectrum-readout-wide {
+  flex: 1 1 220px;
+  justify-content: center;
+  align-self: stretch;
+}
+.spectrum-readout-hint {
+  color: var(--fg-subtle);
+  font-size: 11px;
+  line-height: 1.45;
+  max-width: 420px;
+}
+
+/* "How to read this chart" disclosure — the lesson lives here, after the
+   data, so the chart stays the eye anchor. */
+.spectrum-learn {
+  margin-top: 10px;
+  margin-bottom: 12px;
+}
+.spectrum-learn > summary {
   display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
 }
+.spectrum-learn > summary::-webkit-details-marker { display: none; }
+.spectrum-learn > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--fg-subtle);
+  border-bottom: 1.5px solid var(--fg-subtle);
+  transform: rotate(-45deg);
+  transition: transform var(--t-fast);
+}
+.spectrum-learn[open] > summary::before {
+  transform: rotate(45deg);
+}
+.spectrum-learn > summary:hover { color: var(--fg); }
+.spectrum-learn > p {
+  max-width: 760px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent-edge);
+  background: var(--surface-1);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.spectrum-learn > p em {
+  color: var(--fg);
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* Inline glossary-term button (also used on the queue page). */
 .spectrum-doppler-term {
   display: inline;
   min-height: 0;
@@ -1165,99 +1357,6 @@ input:focus-visible {
   background: transparent;
   color: var(--accent-strong);
   text-decoration-color: var(--accent);
-}
-.spectrum-doppler-preview {
-  position: absolute;
-  z-index: 6;
-  left: 50%;
-  bottom: calc(100% + 9px);
-  transform: translate(-50%, 4px);
-  width: 330px;
-  padding: 9px 11px 11px;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-md);
-  background:
-    linear-gradient(180deg, rgba(16, 18, 30, 0.98) 72%, rgba(16, 18, 30, 0)),
-    rgba(16, 18, 30, 0.92);
-  color: var(--fg-muted);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
-  font-size: 11px;
-  line-height: 1.35;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity var(--t-fast), transform var(--t-fast), visibility var(--t-fast);
-}
-.spectrum-doppler-preview::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -5px;
-  width: 9px;
-  height: 9px;
-  transform: translateX(-50%) rotate(45deg);
-  border-right: 1px solid var(--accent-line);
-  border-bottom: 1px solid var(--accent-line);
-  background: rgba(16, 18, 30, 0.86);
-}
-.spectrum-doppler-wrap:hover .spectrum-doppler-preview,
-.spectrum-doppler-wrap:focus-within .spectrum-doppler-preview {
-  opacity: 1;
-  visibility: visible;
-  transform: translate(-50%, 0);
-}
-.spectrum-doppler-popup {
-  position: absolute;
-  z-index: 5;
-  left: 14px;
-  right: 14px;
-  top: calc(100% - 8px);
-  padding: 18px 44px 18px 18px;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-lg);
-  background:
-    linear-gradient(180deg, rgba(29, 32, 50, 0.98), rgba(16, 18, 30, 0.98));
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.56);
-  color: var(--fg-muted);
-}
-.spectrum-doppler-popup strong {
-  display: block;
-  color: var(--accent);
-  font-size: 15px;
-  margin-bottom: 8px;
-}
-.spectrum-doppler-popup p {
-  margin: 0;
-  max-width: 760px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.spectrum-doppler-lesson-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 14px;
-}
-.spectrum-doppler-lesson-grid span {
-  padding: 9px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-sm);
-  background: rgba(11, 13, 22, 0.62);
-  color: var(--fg-muted);
-  font-size: 12px;
-}
-.spectrum-doppler-close {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  min-width: 22px;
-  min-height: 22px;
-  padding: 0;
-  border: 1px solid var(--hairline);
-  background: var(--surface-2);
-  color: var(--fg-muted);
-  font-size: 16px;
-  line-height: 1;
 }
 
 /* ── Hydrogen-atom spin-flip depiction ────────────────────────────────── */
@@ -1424,56 +1523,64 @@ input:focus-visible {
   gap: 8px;
   flex-wrap: wrap;
 }
-.spectrum-toolbar-above {
-  display: block;
-  margin: 10px 0 0;
-}
-.spectrum-control-block {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-md);
-  background: rgba(16, 18, 30, 0.68);
-}
-.spectrum-control-label {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: relative;
-}
-.spectrum-control-label strong {
-  color: var(--fg);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-.spectrum-control-label span {
-  color: var(--fg-subtle);
-  font-size: 11px;
-  line-height: 1.3;
-}
-
-.spectrum-tool-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px;
-  border-radius: var(--r-md);
+/* Baseline correction — one quiet row: state dot, one-line hint, action.
+   The guided tour anchors on .spectrum-toolbar, so keep that class here. */
+/* Group state + hint + action into one contained card so it reads as the
+   "baseline setup" control rather than floating loose against the chart. A
+   left accent bar keys the whole card to the current state (faint = none,
+   teal = applied) so the eye can register status before reading any text. */
+.spectrum-baseline-row {
+  flex-wrap: nowrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+  padding: 9px 12px;
   background: var(--surface-2);
   border: 1px solid var(--hairline);
+  border-left: 2px solid var(--fg-faint);
+  border-radius: var(--r-sm);
 }
-.spectrum-tool-group .ghost-btn {
-  border: none;
-  background: transparent;
+.spectrum-baseline-row:has(.spectrum-baseline-state.is-applied) {
+  border-left-color: var(--ok);
 }
-.spectrum-tool-group .ghost-btn:hover:not(:disabled) {
+.spectrum-baseline-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.spectrum-baseline-state.is-applied { color: var(--ok); }
+.spectrum-baseline-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+.spectrum-baseline-state.is-applied .spectrum-baseline-dot {
+  background: var(--ok);
+  box-shadow: 0 0 6px rgba(119, 203, 185, 0.5);
+}
+.spectrum-baseline-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--fg-subtle);
+  font-size: 11px;
+  line-height: 1.4;
+}
+/* The card is surface-2, so the action needs a darker base (and a darker
+   hover) to stay legible as a button rather than melting into the card. */
+.spectrum-baseline-row .ghost-btn {
+  flex-shrink: 0;
+  background: var(--surface-1);
+  border-color: var(--hairline-strong);
+}
+.spectrum-baseline-row .ghost-btn:hover:not(:disabled) {
   background: var(--surface-3);
-  border-color: transparent;
 }
 .spectrum-counter-reset { margin-left: auto; }
 
@@ -1583,20 +1690,18 @@ h2.panel-header {
    which makes "stop what I'm doing" intuitive while you have your hand on
    the pad.
    ========================================================================= */
+/* No card chrome of its own — the pad floats directly on the overlay so the
+   handset doesn't read as boxes nested in boxes. (.motion-card is kept as a
+   tour anchor.) */
 .motion-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
-  border-radius: var(--r-md);
-  background: var(--surface-2);
 }
 
-/* Compact 3×3 grid with the stop button removed — the centre cell is just
-   empty space, which gives the cross more breathing room and makes the four
-   directions read as a single instrument rather than four separate buttons.
-   The empty centre is filled by a subtle hairline ring drawn on .pointing-pad
-   so the eye still registers a coherent shape. */
+/* Compact 3×3 grid: four direction buttons around a central STOP. Putting
+   the cutoff in the middle of the cross is classic instrument-panel layout —
+   it's always under the hand that's driving, with no reach. */
 .pointing-pad {
   position: relative;
   display: grid;
@@ -1605,18 +1710,38 @@ h2.panel-header {
   gap: 6px;
   min-width: 0;
 }
-.pointing-pad::before {
-  content: "";
-  position: absolute;
-  inset: calc(33.333% + 2px);
-  border-radius: 50%;
-  border: 1px dashed var(--hairline);
-  pointer-events: none;
-}
 .pad-up    { grid-column: 2; grid-row: 1; }
 .pad-west  { grid-column: 1; grid-row: 2; }
+.pad-stop  { grid-column: 2; grid-row: 2; }
 .pad-east  { grid-column: 3; grid-row: 2; }
 .pad-down  { grid-column: 2; grid-row: 3; }
+
+/* A true circle, sized by the row height and centered in the middle cell so
+   it never stretches into an ellipse. Filled like its neighbours, with a
+   crimson tint that goes solid on hover. */
+.pad-btn.pad-stop {
+  justify-self: center;
+  align-self: center;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+  padding: 0;
+  gap: 1px;
+  border-radius: 50%;
+  color: var(--crit);
+  background: rgba(216, 17, 89, 0.12);
+  border: 1px solid rgba(216, 17, 89, 0.5);
+  touch-action: manipulation;
+}
+.pad-btn.pad-stop .pad-btn-label { color: var(--crit); }
+.pad-btn.pad-stop > svg { color: var(--crit); }
+.pad-btn.pad-stop:hover {
+  color: #fff;
+  background: var(--crit);
+  border-color: var(--crit);
+}
+.pad-btn.pad-stop:hover > svg,
+.pad-btn.pad-stop:hover .pad-btn-label { color: #fff; }
 
 .pad-btn {
   display: flex;
@@ -2138,6 +2263,15 @@ h2.panel-header {
 }
 .skymap-spectrum-selector.disabled { opacity: 0.55; pointer-events: none; }
 
+.skymap-spectrum-title {
+  margin: 0 2px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--fg, #e6ebff);
+  letter-spacing: 0.01em;
+}
+
 .skymap-spectrum-capability {
   margin: 0 2px 8px;
   max-width: 860px;
@@ -2487,7 +2621,11 @@ h2.panel-header {
 .dense-readout dd {
   margin: 0;
   min-width: 0;
-  overflow-wrap: anywhere;
+  /* Numbers must never wrap mid-value ("182,33 / 4"); clip with an ellipsis
+     in the pathological case instead. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: right;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -2495,9 +2633,10 @@ h2.panel-header {
   color: var(--fg);
 }
 
-.val-ok   { color: var(--ok)   !important; }
-.val-warn { color: var(--warn) !important; }
-.val-crit { color: var(--crit) !important; }
+.val-ok    { color: var(--ok)   !important; }
+.val-warn  { color: var(--warn) !important; }
+.val-crit  { color: var(--crit) !important; }
+.val-muted { color: var(--fg-subtle) !important; }
 
 .lna-status-text {
   font-weight: 600;
@@ -3554,18 +3693,14 @@ h2.panel-header {
   .pad-btn { min-height: 52px; }
   .target-form { grid-template-columns: 1fr 1fr; }
   .target-form button[type="submit"] { grid-column: 1 / -1; }
-  .spectrum-control-block {
-    grid-template-columns: 1fr;
-    align-items: stretch;
+  .spectrum-baseline-row {
+    flex-wrap: wrap;
   }
-  .spectrum-tool-group {
-    justify-content: stretch;
+  .spectrum-baseline-hint {
+    flex-basis: 100%;
+    order: 3;
   }
-  .spectrum-tool-group .ghost-btn,
-  .spectrum-control-block > .ghost-btn {
-    flex: 1 1 auto;
-  }
-  .spectrum-doppler-lesson-grid { grid-template-columns: 1fr; }
+  .spectrum-readouts { gap: 6px 18px; }
   .dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap,
   .spectrum-chart-wrap {
     height: auto;

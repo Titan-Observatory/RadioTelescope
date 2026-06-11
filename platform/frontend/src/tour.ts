@@ -159,7 +159,7 @@ export function startTour(source: 'first_visit' | 'button' = 'button') {
           popover: {
             title: 'Manual jog',
             description:
-              'Press and hold a direction to nudge the dish. The center button is an emergency stop for all motion. The fader sets jog speed.',
+              'Press and hold a direction to nudge the dish. The center button is an emergency stop for all motion, and the speed presets set how fast it moves.',
             side: 'right' as const,
           },
         },
@@ -168,7 +168,7 @@ export function startTour(source: 'first_visit' | 'button' = 'button') {
           popover: {
             title: 'Go to a target',
             description:
-              'Type an azimuth and altitude in degrees, then hit Slew to drive the dish there automatically.',
+              'Type a target\'s RA (hours) and Dec (degrees) — the coordinates any star chart or catalogue lists — then hit the arrow to drive the dish there automatically.',
             side: 'right' as const,
           },
         },
@@ -179,7 +179,7 @@ export function startTour(source: 'first_visit' | 'button' = 'button') {
           title: 'Sky map',
           description: mobile
             ? "Live view of the sky from the telescope's location. Tap a target on the map, then hit Slew to point the dish there."
-            : "Live view of the sky from the telescope's location. Click a target on the map to load its alt/az into the Slew form.",
+            : "Live view of the sky from the telescope's location. Click a target on the map, then hit the Slew button that appears to point the dish there.",
           side: mobile ? 'top' : 'left',
         },
       },

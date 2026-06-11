@@ -189,6 +189,12 @@ async def jog(body: JogRequest, request: Request):
         raise HTTPException(status_code=400, detail=result.error or "Jog command failed")
 
     if not service.is_current_jog_sequence(body.token, body.seq):
+        # A newer packet for this token won the race while our motion command
+        # was in flight. If it was a stop, the motors are now running on this
+        # stale command with no watchdog armed — stop them. If a newer jog is
+        # active, its watchdog owns the motors; leave them to it.
+        if not service.has_active_jog:
+            await service.stop_all()
         return {"ok": True, "accepted": False, "stale": True}
 
     service.arm_jog_watchdog(body.token, body.seq, JOG_HEARTBEAT_TIMEOUT_S)

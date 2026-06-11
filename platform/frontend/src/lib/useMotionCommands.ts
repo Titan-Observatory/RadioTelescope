@@ -17,6 +17,7 @@ export interface UseMotionCommandsResult {
   jog: (direction: JogDirection, speed: number, token: string, seq: number) => Promise<void>;
   stopJog: (token: string, seq: number) => Promise<void>;
   gotoAltAz: (altDeg: number, azDeg: number) => Promise<void>;
+  gotoRaDec: (raDeg: number, decDeg: number) => Promise<void>;
   homeElevation: (speed: number) => Promise<void>;
   stopMotion: () => Promise<void>;
   startObservationGuide: () => void;
@@ -94,17 +95,19 @@ export function useMotionCommands(
     }
   }, []);
 
-  const startObservationGuide = useCallback(() => {
-    startGuidedObservation(async (raDeg, decDeg) => {
-      track('goto_radec_submitted', { ra_deg: raDeg, dec_deg: decDeg });
-      try {
-        await api.gotoRaDec({ ra_deg: raDeg, dec_deg: decDeg });
-      } catch (err) {
-        track('goto_radec_failed', { message: errorMessage(err).slice(0, 200) });
-        throw err;
-      }
-    });
+  const gotoRaDec = useCallback(async (raDeg: number, decDeg: number) => {
+    track('goto_radec_submitted', { ra_deg: raDeg, dec_deg: decDeg });
+    try {
+      await api.gotoRaDec({ ra_deg: raDeg, dec_deg: decDeg });
+    } catch (err) {
+      track('goto_radec_failed', { message: errorMessage(err).slice(0, 200) });
+      throw err;
+    }
   }, []);
 
-  return { runCommand, jog, stopJog, gotoAltAz, homeElevation, stopMotion, startObservationGuide };
+  const startObservationGuide = useCallback(() => {
+    startGuidedObservation(gotoRaDec);
+  }, [gotoRaDec]);
+
+  return { runCommand, jog, stopJog, gotoAltAz, gotoRaDec, homeElevation, stopMotion, startObservationGuide };
 }

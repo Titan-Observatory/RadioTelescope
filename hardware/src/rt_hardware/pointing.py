@@ -10,10 +10,11 @@ _C = 299_792_458.0
 
 
 def make_antenna(cfg: ObserverConfig) -> katpoint.Antenna:
+    # katpoint interprets float lat/lon as radians; strings are parsed as degrees.
     return katpoint.Antenna(
         cfg.name,
-        cfg.latitude_deg,
-        cfg.longitude_deg,
+        str(cfg.latitude_deg),
+        str(cfg.longitude_deg),
         cfg.altitude_m,
         cfg.dish_diameter_m,
     )
@@ -25,15 +26,15 @@ def altaz_to_radec(alt_deg: float, az_deg: float, antenna: katpoint.Antenna) -> 
     obs = antenna.observer
     obs.date = ts.to_ephem_date()
     ra_ephem, dec_ephem = obs.radec_of(math.radians(az_deg), math.radians(alt_deg))
-    # ephem returns RA in an hours-angle encoding where float() = hours × π/180;
-    # math.degrees() converts to hours, × 15 converts hours to degrees.
-    return math.degrees(float(ra_ephem)) * 15.0, math.degrees(float(dec_ephem))
+    # ephem angles are plain radians; RA only *prints* as hours:minutes:seconds.
+    return math.degrees(float(ra_ephem)), math.degrees(float(dec_ephem))
 
 
 def radec_to_altaz(ra_deg: float, dec_deg: float, antenna: katpoint.Antenna) -> tuple[float, float]:
     """Return (alt_deg, az_deg) for the given RA/Dec J2000 at the current moment."""
-    # katpoint uses RA in hours for its radec target string
-    target = katpoint.Target(f"target, radec, {ra_deg / 15.0:.6f}, {dec_deg:.6f}")
+    # katpoint parses colon-separated RA as hours but plain decimals as degrees,
+    # so pass the RA through unchanged.
+    target = katpoint.Target(f"target, radec, {ra_deg:.6f}, {dec_deg:.6f}")
     ts = katpoint.Timestamp()
     az_rad, el_rad = target.azel(ts, antenna)
     return math.degrees(el_rad), math.degrees(az_rad)

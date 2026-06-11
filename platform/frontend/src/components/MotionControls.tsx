@@ -3,6 +3,8 @@ import React, { FormEvent, useCallback, useEffect, useRef, useState } from 'reac
 
 import { track } from '../analytics';
 import type { JogDirection } from '../api';
+import { maxAbsReading, motorState } from '../lib/formatters';
+import type { RoboClawTelemetry } from '../types';
 
 const JOG_REPEAT_MS = 250;
 
@@ -105,10 +107,11 @@ function useJog(
   } as const;
 }
 
-function PointingPad({ jog, stopJog, speed }: {
+function PointingPad({ jog, stopJog, speed, onStop }: {
   jog: (direction: JogDirection, speed: number, token: string, seq: number) => Promise<void>;
   stopJog: (token: string, seq: number) => Promise<void>;
   speed: number;
+  onStop: () => Promise<void>;
 }) {
   // Track on press only (not every repeat tick) — useJog's start fires every
   // JOG_REPEAT_MS while held, which would flood the events log otherwise.
@@ -130,6 +133,16 @@ function PointingPad({ jog, stopJog, speed }: {
         <ChevronLeft size={24} strokeWidth={2.15} />
         <span className="pad-btn-label">West</span>
       </button>
+      <button
+        type="button"
+        className="pad-btn pad-stop"
+        onClick={() => { track('stop_pressed', { source: 'pad' }); void onStop(); }}
+        aria-label="Stop all motion"
+        title="Stop all motion"
+      >
+        <Square size={14} fill="currentColor" strokeWidth={0} />
+        <span className="pad-btn-label">Stop</span>
+      </button>
       <button type="button" className={`pad-btn pad-east${east.active ? ' jog-active' : ''}`} {...east} aria-label="East">
         <ChevronRight size={24} strokeWidth={2.15} />
         <span className="pad-btn-label">East</span>
@@ -145,7 +158,7 @@ function PointingPad({ jog, stopJog, speed }: {
 const SPEED_PRESETS: { id: 'fine' | 'coarse' | 'slew'; label: string; value: number }[] = [
   { id: 'fine',   label: 'Fine',   value: 10 },
   { id: 'coarse', label: 'Coarse', value: 40 },
-  { id: 'slew',   label: 'Slew',   value: 85 },
+  { id: 'slew',   label: 'Fast',   value: 85 },
 ];
 
 function SpeedFader({ slewSpeed, setSlewSpeed }: {
@@ -178,30 +191,29 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
   );
 }
 
-// Combined floating control surface. A sliding segmented toggle picks between
-// the press-and-hold jog pad and the numeric GoTo form so a single overlay
-// holds both interaction modes without doubling the on-screen real estate.
+function degrees(v: number | null | undefined): string {
+  return v == null ? '—' : `${v.toFixed(2)}°`;
+}
+
+// Floating control handset for the dish. Reads top to bottom the way an
+// operator thinks: where the dish is pointing (live readout + motion state),
+// how to nudge it (pad + speed), and where to send it (inline go-to row).
+// Both interaction modes stay visible at once — no tabs hiding the other half.
+// The typed go-to speaks RA/Dec — the coordinates star charts and catalogues
+// actually give you — while map clicks keep their own alt/az slew chip.
 export function MotionControls({
-  jog, stopJog, gotoAltAz, targetAz, targetAlt, setTargetAz, setTargetAlt, onStop,
+  jog, stopJog, gotoRaDec, onStop, telemetry,
 }: {
   jog: (direction: JogDirection, speed: number, token: string, seq: number) => Promise<void>;
   stopJog: (token: string, seq: number) => Promise<void>;
-  gotoAltAz: (alt: number, az: number) => Promise<void>;
-  targetAz: number;
-  targetAlt: number;
-  setTargetAz: (v: number) => void;
-  setTargetAlt: (v: number) => void;
+  gotoRaDec: (raDeg: number, decDeg: number) => Promise<void>;
   onStop: () => Promise<void>;
+  telemetry: RoboClawTelemetry | null;
 }) {
-  const [mode, setMode] = useState<'jog' | 'goto'>('jog');
   const [slewSpeed, setSlewSpeed] = useState(40);
+  const [raText, setRaText] = useState('');
+  const [decText, setDecText] = useState('');
   const speed = Math.round(slewSpeed * 127 / 100);
-
-  const switchMode = (next: 'jog' | 'goto') => {
-    if (next === mode) return;
-    track('motion_mode_switched', { from: mode, to: next });
-    setMode(next);
-  };
 
   const changeSpeed = (value: number) => {
     if (value === slewSpeed) return;
@@ -209,76 +221,84 @@ export function MotionControls({
     setSlewSpeed(value);
   };
 
+  const raHoursVal = parseFloat(raText);
+  const decDegVal = parseFloat(decText);
+  const targetValid = Number.isFinite(raHoursVal) && Number.isFinite(decDegVal);
+
   const submitTarget = async (e: FormEvent) => {
     e.preventDefault();
-    await gotoAltAz(targetAlt, targetAz);
+    if (!targetValid) return;
+    await gotoRaDec(raHoursVal * 15, decDegVal).catch(() => { /* tracked in the hook */ });
   };
 
+  const driveState = telemetry == null
+    ? null
+    : motorState(
+        maxAbsReading(telemetry.motors.m1?.speed_qpps, telemetry.motors.m2?.speed_qpps),
+        maxAbsReading(telemetry.motors.m1?.pwm, telemetry.motors.m2?.pwm),
+      );
+  const moving = driveState === 'Moving';
+
   return (
-    <>
-      <div className="motion-controls-title">
-        Motion
+    <div className="motion-panel">
+      <header className="motion-head">
+        <span className="motion-head-title">Pointing</span>
+        <span className={`motion-state${moving ? ' is-moving' : ''}`}>
+          <span className="motion-state-dot" aria-hidden />
+          {driveState ?? 'No link'}
+        </span>
+      </header>
+
+      <div className="motion-position" aria-label="Current pointing">
+        <span className="motion-pos-item">
+          <span className="motion-pos-label">Az</span>
+          <strong>{degrees(telemetry?.azimuth_deg)}</strong>
+        </span>
+        <span className="motion-pos-item">
+          <span className="motion-pos-label">El</span>
+          <strong>{degrees(telemetry?.altitude_deg)}</strong>
+        </span>
       </div>
-      <div className="motion-mode" role="radiogroup" aria-label="Control mode">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={mode === 'jog'}
-          className="motion-mode-step"
-          onClick={() => switchMode('jog')}
-        >
-          Jog
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={mode === 'goto'}
-          className="motion-mode-step"
-          onClick={() => switchMode('goto')}
-        >
-          GoTo
-        </button>
+
+      <div className="motion-card">
+        <PointingPad jog={jog} stopJog={stopJog} speed={speed} onStop={onStop} />
+        <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={changeSpeed} />
       </div>
-      {mode === 'jog' ? (
-        <div className="motion-card">
-          <PointingPad jog={jog} stopJog={stopJog} speed={speed} />
-          <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={changeSpeed} />
+
+      <form className="target-form-overlay" onSubmit={submitTarget} aria-label="Go to celestial coordinates">
+        <span className="motion-goto-label">Go to</span>
+        <div className="goto-input-row">
+          <span className="goto-prefix">RA</span>
+          <input
+            type="number" min={0} max={24} step={0.01}
+            value={raText}
+            placeholder="20.69"
+            onChange={(e) => setRaText(e.target.value)}
+            aria-label="Target right ascension in hours"
+          />
+          <span className="goto-unit">h</span>
         </div>
-      ) : (
-        <form className="target-form-overlay" onSubmit={submitTarget}>
-          <label className="goto-field">
-            <span>Azimuth</span>
-            <div className="goto-input-row">
-              <input
-                type="number" min={0} max={360} step={0.001}
-                value={targetAz}
-                onChange={(e) => setTargetAz(Number(e.target.value))}
-              />
-              <span className="goto-unit">°</span>
-            </div>
-          </label>
-          <label className="goto-field">
-            <span>Altitude</span>
-            <div className="goto-input-row">
-              <input
-                type="number" min={0} max={90} step={0.001}
-                value={targetAlt}
-                onChange={(e) => setTargetAlt(Number(e.target.value))}
-              />
-              <span className="goto-unit">°</span>
-            </div>
-          </label>
-          <div className="goto-actions">
-            <button type="button" className="action-button goto-stop-btn" onClick={onStop} aria-label="Stop">
-              <Square size={14} fill="currentColor" strokeWidth={0} />
-            </button>
-            <button type="submit" className="action-button goto-slew-btn">
-              <Navigation size={14} />
-              Slew
-            </button>
-          </div>
-        </form>
-      )}
-    </>
+        <div className="goto-input-row">
+          <span className="goto-prefix">Dec</span>
+          <input
+            type="number" min={-90} max={90} step={0.1}
+            value={decText}
+            placeholder="45.3"
+            onChange={(e) => setDecText(e.target.value)}
+            aria-label="Target declination in degrees"
+          />
+          <span className="goto-unit">°</span>
+        </div>
+        <button
+          type="submit"
+          className="motion-goto-btn"
+          disabled={!targetValid}
+          title={targetValid ? 'Slew to these coordinates' : 'Enter RA (hours) and Dec (degrees)'}
+          aria-label="Slew to these coordinates"
+        >
+          <Navigation size={14} />
+        </button>
+      </form>
+    </div>
   );
 }

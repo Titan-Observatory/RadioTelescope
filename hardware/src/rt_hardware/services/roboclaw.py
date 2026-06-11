@@ -117,6 +117,11 @@ class RoboClawService:
     def can_stop_active_jog(self, token: str, seq: int) -> bool:
         return self._active_jog is not None and self._active_jog[0] == token and self._active_jog[1] <= seq
 
+    @property
+    def has_active_jog(self) -> bool:
+        """True while a jog watchdog is armed for any token."""
+        return self._active_jog is not None
+
     async def _expire_jog_after(self, token: str, seq: int, timeout_s: float) -> None:
         try:
             await asyncio.sleep(timeout_s)
