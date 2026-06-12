@@ -99,8 +99,12 @@ def _load_baseline_reciprocal(baseline_path: str | None, fft_size: int) -> list[
     return (1.0 / baseline).astype(np.float32).tolist()
 
 
-def _build_source(soapy, sdr):
-    """Construct the Airspy Soapy source with gain/tuning applied."""
+def build_airspy_source(soapy, sample_rate_hz: float, center_freq_hz: float, gain_db: float | None):
+    """Construct the Airspy Soapy source with gain/tuning applied.
+
+    Shared with [rt_hardware.goes_pipeline] — both observation modes drive
+    the same dongle, just tuned to different carriers.
+    """
     source = soapy.source(
         "driver=airspy",
         "fc32",  # complex float32 sample format
@@ -110,18 +114,22 @@ def _build_source(soapy, sdr):
         [""],     # tune_args
         [""],     # other_settings
     )
-    source.set_sample_rate(0, float(sdr.sample_rate_hz))
-    source.set_frequency(0, float(sdr.center_freq_hz))
-    if sdr.gain_db is None:
+    source.set_sample_rate(0, float(sample_rate_hz))
+    source.set_frequency(0, float(center_freq_hz))
+    if gain_db is None:
         source.set_gain_mode(0, True)  # AGC on
     else:
         source.set_gain_mode(0, False)
         # Airspy's "overall" gain is a 0-21 linearity index; clamp.
-        source.set_gain(0, max(0.0, min(21.0, float(sdr.gain_db))))
+        source.set_gain(0, max(0.0, min(21.0, float(gain_db))))
     # Bias-tee state is owned by the FastAPI service via airspy_gpio (see
     # rt_hardware.hardware.sdr); we don't touch it here so the toggle remains
     # available while the pipeline is running.
     return source
+
+
+def _build_source(soapy, sdr):
+    return build_airspy_source(soapy, sdr.sample_rate_hz, sdr.center_freq_hz, sdr.gain_db)
 
 
 def build_flowgraph(cfg, baseline_path: str | None = None):

@@ -2,7 +2,7 @@
 
 The hardware service runs ``SpectrumService`` (FFT / EMA / baseline) and is
 the source of truth for everything spectrum-related. The platform forwards
-the HTTP calls and bridges ``/ws/spectrum`` through ``SpectrumBridge``.
+the HTTP calls and bridges ``/ws/spectrum`` through a ``JsonWsBridge``.
 
 Auth: ``require_control`` still gates mutations here, so an anonymous LAN
 client can't punch through the proxy to flip the LNA or clobber the
@@ -132,7 +132,7 @@ async def set_spectrum_processing(request: Request) -> JSONResponse:
 
 @router.websocket("/ws/spectrum")
 async def spectrum_ws(ws: WebSocket):
-    """Re-publish frames from the host-side SpectrumBridge to a browser.
+    """Re-publish frames from the host-side spectrum bridge to a browser.
 
     One upstream WS to the Pi feeds every browser tab — the bridge's pubsub
     fans out locally, so we don't open N parallel connections to the Pi.

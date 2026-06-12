@@ -53,26 +53,30 @@ Owns the physical hardware. Routes are unauthenticated — the service binds on 
 - `hardware/host_stats.py` — CPU/memory/temp readers folded into telemetry.
 - `services/roboclaw.py` — `RoboClawService`: polls telemetry, serialises I/O behind an `asyncio.Lock`, broadcasts `RoboClawTelemetry`. Tracks position targets, runs the jog watchdog. Computes RA/Dec via `pointing.altaz_to_radec`.
 - `services/spectrum.py` — `SpectrumService`: manages the GNU Radio subprocess lifecycle (lazy spawn on first subscriber, idle close 5 s after the last leaves) and consumes integrated power spectra over ZeroMQ. Applies a rolling EMA in numpy at the publish rate, spur rejection and baseline correction, then broadcasts JSON frames to WebSocket subscribers. Persists baseline to `spectrum_baseline.json`.
+- `services/goes.py` — `GoesService`: same lifecycle pattern for the GOES downlink (`[observation] mode = "goes"`; the two SDR modes are mutually exclusive — one Airspy). Consumes demod metrics + the Viterbi-decoded bitstream from the `goes_pipeline` subprocess over ZeroMQ, runs the pure-Python decode chain, and broadcasts status frames to `/ws/goes`. `goes.simulate = true` swaps the subprocess for a synthetic backend (real decode chain, no SDR).
+- `goes/` — pure-Python, hardware-free GOES stack: `pointing.py` (geostationary look angles), `ccsds.py` (ASM deframer, CCSDS derandomizer, dual-basis RS(255,223) interleave-4), `lrit.py` (VCDU → M_PDU → space packets → LRIT files), `products.py` (disk-backed `ProductStore`, raw imagery rendered to PNG), `encode.py` (inverse chain for tests/simulator), `simulator.py`.
+- `goes_pipeline.py` — GNU Radio BPSK demod flowgraph (AGC → RRC → M&M clock recovery → Costas → Viterbi via gr-fec) run as a subprocess; publishes the decoded bitstream plus JSON demod metrics (SNR, carrier offset, constellation, band PSD) over ZeroMQ.
 - `services/camera.py` — `CameraService`: single shared `cv2.VideoCapture` so the MJPEG stream and the snapshot endpoint can share the one-opener V4L2 device. Lazy-opens, idle-closes.
 - `services/geometry.py` — altitude-calibration polynomial fitting (linear/quadratic through `altitude_calibration.points`).
 - `services/_pubsub.py` — `Broadcaster[T]` drop-oldest fanout (a copy also lives in the platform package).
 - `sdr_pipeline.py` — GNU Radio top-block (Soapy → FFT → mag² → integrate_ff → zeromq.pub_sink) run as a subprocess via `python -m rt_hardware.sdr_pipeline -c config.toml`. This is where the per-sample DSP actually happens.
 - `geometry.py` / `pointing.py` — encoder ↔ altitude and katpoint J2000 conversions. The frontend keeps a deliberately low-precision TS port in `frontend/src/lib/astro.ts`, synced by hand.
 - `models/state.py` — canonical Pydantic response models. Frontend types are generated from this via `scripts/dump_types.py`.
-- `api/routes_roboclaw.py`, `api/routes_spectrum.py`, `api/routes_camera.py` — the three HTTP routers. Hardware has no queue/auth dependencies; mutations are unrestricted. Includes `/api/camera/frame` (single JPEG snapshot) and `/api/admin/spectrum/processing` (live DSP tuning) alongside the streams.
+- `api/routes_roboclaw.py`, `api/routes_spectrum.py`, `api/routes_camera.py`, `api/routes_goes.py` — the HTTP routers. Hardware has no queue/auth dependencies; mutations are unrestricted. Includes `/api/camera/frame` (single JPEG snapshot) and `/api/admin/spectrum/processing` (live DSP tuning) alongside the streams. `routes_goes` also serves `/api/observation` (boot mode + satellite look angles, available in both modes) and the decoded-product archive.
 
 ### Platform service (`platform/src/rt_platform/`)
 
 Web-facing. Enforces the queue and motion audit log; proxies all motor/spectrum/camera traffic to the hardware service.
 
 - `services/queue.py` — `QueueService`: multi-user control queue with session cookies, per-IP caps, idle timeouts, join cooldown.
-- `services/spectrum_bridge.py` — `SpectrumBridge`: holds one upstream WS to the hardware's `/ws/spectrum` and fans frames out to browser subscribers. Lazy: connects only while at least one browser is subscribed.
+- `services/ws_bridge.py` — `JsonWsBridge`: holds one upstream WS to a hardware stream (`/ws/spectrum`, `/ws/goes`) and fans frames out to browser subscribers. Lazy: connects only while at least one browser is subscribed. One instance per stream; only the stream matching the hardware's observation mode ever sees subscribers.
 - `services/hardware_client.py` — thin httpx wrapper bound to `config.hardware_url`.
 - `services/status.py` — `TelescopeStatusService`: operator-set telescope state (`operational` / `maintenance` / `closed`) with disk persistence and broadcast; the queue gates new joins on it.
 - `services/_pubsub.py` — `Broadcaster[T]` drop-oldest fanout, shared by queue, bridge, and status.
 - `loki.py` — fire-and-forget Loki log push (`loki_url` / `LOKI_URL`; no-op when unset).
 - `api/routes_motor.py` — proxies all motor/telescope HTTP endpoints to the hardware service; bridges `/ws/roboclaw`. Enforces `require_control` on mutations; writes motion audit log to `motion.jsonl`. Read-only endpoints require an active queue session; sync/homing/PID require `require_lan_admin`.
-- `api/routes_spectrum.py` — proxies spectrum HTTP, bridges `/ws/spectrum` via `SpectrumBridge`.
+- `api/routes_spectrum.py` — proxies spectrum HTTP, bridges `/ws/spectrum`.
+- `api/routes_goes.py` — proxies `/api/observation` (degrades to hydrogen-line when the gateway is down) and `/api/goes/*` (status, products, files), bridges `/ws/goes`. Viewers read; only the controller can reconnect the pipeline or clear products.
 - `api/routes_camera.py` — proxies camera MJPEG stream, snapshot frame, and status.
 - `api/routes_admin.py` — LAN-admin-only control panel: telescope status flag, queue snapshot, kick a session. Returns 404 to non-allowlisted clients so the admin surface is invisible. Audits to `motion.jsonl`.
 - `api/routes_queue.py`, `api/routes_feedback.py`, `api/routes_events.py` — fully local. `routes_queue` also serves the public `/api/telescope/status`.
@@ -81,13 +85,15 @@ Web-facing. Enforces the queue and motion audit log; proxies all motor/spectrum/
 
 ### Frontend (`platform/frontend/`)
 
-Vite + React + TypeScript. `App.tsx` is the root and routes between the live view, `QueuePage`, and the LAN-admin `AdminPage`. Subdirs: `components/` (incl. `SkyMap/` built on aladin-lite, `SpectrumPanel`, `MotionControls`, `TelemetryDashboard`, `BaselineWizard`), `lib/` (hooks — `useJsonSocket`, `useTelemetry`, `useQueueLease`, `useMotionCommands` — plus `astro.ts`, a hand-synced low-precision TS port of `hardware/geometry.py`/`pointing.py`), `types/` and `types.gen.ts` (auto-generated from `rt_hardware.models.state`). The platform serves `frontend/dist/` from `/` with a SPA fallback for unknown GETs.
+Vite + React + TypeScript. `App.tsx` is the root and routes between the live view, `QueuePage`, and the LAN-admin `AdminPage`. Subdirs: `components/` (incl. `SkyMap/` built on aladin-lite, `SpectrumPanel`, `MotionControls`, `TelemetryDashboard`, `BaselineWizard`, and `goes/` — `GoesConnectPanel` + `GoesDataExplorer`), `lib/` (hooks — `useJsonSocket`, `useTelemetry`, `useQueueLease`, `useMotionCommands`, `useObservationMode`, `useGoesStream` — plus `astro.ts`, a hand-synced low-precision TS port of `hardware/geometry.py`/`pointing.py`), `types/` and `types.gen.ts` (auto-generated from `rt_hardware.models.state`). The platform serves `frontend/dist/` from `/` with a SPA fallback for unknown GETs.
+
+The observation screen is mode-aware: `useObservationMode` fetches `/api/observation` once and `ControlUI` swaps the right-column hydrogen-line panels for `GoesConnectPanel` (satellite look angles + slew, SNR meter, acquisition stepper, band PSD, constellation) in GOES mode. Once frame lock is achieved (or archived products exist) `GoesDataExplorer` renders full-width below the Aladin/side-panel grid: link stats, virtual-channel activity, and a decoded-product gallery with lightbox.
 
 ### Config
 
 Each service has its own Pydantic v2 config loaded from TOML with `${ENV_VAR:-default}` expansion. `HARDWARE_URL` env var on the platform overrides `hardware_url` from the TOML (Docker Compose uses this).
 
-- Hardware: `general`, `server` (just host/port), `roboclaw`, `telemetry`, `mount`, `observer`, `camera`, `sdr`.
+- Hardware: `general`, `server` (just host/port), `roboclaw`, `telemetry`, `mount`, `observer`, `camera`, `sdr`, `observation` (mode switch), `goes`.
 - Platform: `general`, `server`, `rate_limit`, `queue`, `auth`, `turnstile`, plus `hardware_url`, `loki_url` (`LOKI_URL` env override), `telescope_status_path`, and feedback/events/motion log paths. `public_exposure_errors(cfg)` runs at startup and refuses to boot a public-facing bind that has placeholder secrets, wildcard CORS, no Turnstile, etc.
 
 ## Testing

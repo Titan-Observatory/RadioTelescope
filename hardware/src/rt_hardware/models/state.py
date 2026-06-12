@@ -8,6 +8,12 @@ from pydantic import BaseModel, Field
 ConnectionMode = Literal["serial", "disconnected", "error"]
 LnaState = Literal["on", "off", "unknown", "fault"]
 ArgType = Literal["u8", "u16", "s16", "u32", "s32", "bool"]
+ObservationMode = Literal["hydrogen_line", "goes"]
+# Acquisition ladder for the GOES downlink, in order: nothing → RF power seen
+# → demod locked on the carrier → frame sync on the CCSDS ASM → decoded
+# products flowing. "fault"/"unavailable" mirror SpectrumService semantics.
+GoesStage = Literal["idle", "searching", "signal", "frames", "data", "fault", "unavailable"]
+GoesProductKind = Literal["image", "text", "dcs", "binary"]
 
 
 class ConnectionStatus(BaseModel):
@@ -198,6 +204,53 @@ class PidBundle(BaseModel):
     vel_m2: VelocityPid
     pos_m1: PositionPid
     pos_m2: PositionPid
+
+
+class GoesSatelliteInfo(BaseModel):
+    """A geostationary satellite from the config catalog, with look angles
+    computed for the configured observer location."""
+    id: str
+    name: str
+    longitude_deg: float
+    azimuth_deg: float
+    elevation_deg: float
+    range_km: float
+    visible: bool
+    is_target: bool = False
+
+
+class ObservationInfo(BaseModel):
+    """Which observation mode the hardware service booted in.
+
+    The frontend fetches this once to decide which panel set to render. The
+    GOES fields are only populated in GOES mode.
+    """
+    mode: ObservationMode
+    downlink_freq_mhz: float | None = None
+    symbol_rate_baud: float | None = None
+    target_satellite_id: str | None = None
+    satellites: list[GoesSatelliteInfo] = Field(default_factory=list)
+
+
+class GoesProduct(BaseModel):
+    """One decoded LRIT/HRIT file persisted to the product store."""
+    id: str
+    kind: GoesProductKind
+    name: str
+    file_type: int | None = None
+    vcid: int | None = None
+    apid: int | None = None
+    size_bytes: int
+    created_at: float
+    media_type: str
+    # First few hundred characters for text products so the explorer can show
+    # them inline without a second request.
+    preview: str | None = None
+    # Image geometry from the LRIT image structure header, when present.
+    columns: int | None = None
+    lines: int | None = None
+    segment: int | None = None
+    segment_total: int | None = None
 
 
 class PidWriteRequest(BaseModel):

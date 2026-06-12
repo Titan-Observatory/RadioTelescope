@@ -220,3 +220,96 @@ export interface RaDecTarget {
   ra_deg: number;
   dec_deg: number;
 }
+
+// ─── GOES observation mode ─────────────────────────────────────────────────
+
+export type ObservationMode = 'hydrogen_line' | 'goes';
+export type GoesStage = 'idle' | 'searching' | 'signal' | 'frames' | 'data' | 'fault' | 'unavailable';
+export type GoesProductKind = 'image' | 'text' | 'dcs' | 'binary';
+
+export interface GoesSatelliteInfo {
+  id: string;
+  name: string;
+  longitude_deg: number;
+  azimuth_deg: number;
+  elevation_deg: number;
+  range_km: number;
+  visible: boolean;
+  is_target: boolean;
+}
+
+export interface ObservationInfo {
+  mode: ObservationMode;
+  downlink_freq_mhz: number | null;
+  symbol_rate_baud: number | null;
+  target_satellite_id: string | null;
+  satellites: GoesSatelliteInfo[];
+  /** Set by the platform proxy when the hardware gateway was unreachable. */
+  degraded?: boolean;
+}
+
+export interface GoesProduct {
+  id: string;
+  kind: GoesProductKind;
+  name: string;
+  file_type: number | null;
+  vcid: number | null;
+  apid: number | null;
+  size_bytes: number;
+  created_at: number;
+  media_type: string;
+  preview: string | null;
+  columns: number | null;
+  lines: number | null;
+  segment: number | null;
+  segment_total: number | null;
+}
+
+export interface GoesProductList {
+  total: number;
+  products: GoesProduct[];
+}
+
+/** One status frame from /ws/goes — demod metrics merged with decoder stats. */
+export interface GoesFrame {
+  timestamp: number;
+  stage: GoesStage;
+  mode: string;
+  snr_db: number | null;
+  snr_lock_db: number;
+  freq_offset_hz: number | null;
+  constellation: Array<[number, number]>;
+  psd_db: number[];
+  psd_center_mhz: number;
+  psd_span_mhz: number;
+  demod_locked: boolean;
+  frame_lock: boolean;
+  symbol_rate_baud: number;
+  frames_total: number;
+  frames_bad: number;
+  frames_flywheel: number;
+  sync_losses: number;
+  rs_corrected: number;
+  vcdu_total: number;
+  vcdu_fill: number;
+  vcdu_counts: Record<string, number>;
+  packets_total: number;
+  packets_crc_err: number;
+  files_completed: number;
+  files_aborted: number;
+  products_total: number;
+  last_product_at: number | null;
+  data_rate_kbps: number;
+}
+
+export interface GoesStatus {
+  enabled: boolean;
+  mode: string;
+  stage?: GoesStage;
+  simulate?: boolean;
+  downlink_freq_mhz?: number;
+  symbol_rate_baud?: number;
+  latest_timestamp?: number | null;
+  fault_detail?: string | null;
+  products_total?: number;
+}

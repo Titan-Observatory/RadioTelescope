@@ -1,16 +1,16 @@
-"""Platform-side relay of spectrum frames from the hardware service.
+"""Platform-side relay of JSON WebSocket frames from the hardware service.
 
-The hardware service runs the full ``SpectrumService`` (FFT, EMA, baseline
-persistence) and exposes ``/ws/spectrum``. This bridge opens a single
-upstream WebSocket to that endpoint, decodes JSON frames, and fans them out
-to browser subscribers using the same drop-oldest pubsub the in-process
-service uses. Browsers see an identical wire format.
+The hardware service owns the live data streams (``/ws/spectrum`` in
+hydrogen-line mode, ``/ws/goes`` in GOES mode). A bridge opens a single
+upstream WebSocket to one such endpoint, decodes JSON frames, and fans them
+out to browser subscribers using the same drop-oldest pubsub the in-process
+services use. Browsers see an identical wire format, and one upstream
+connection feeds every tab.
 
-The bridge intentionally does *not* mirror the full ``SpectrumService``
-surface (baseline capture, reconnect, status). Those endpoints
-are proxied via HTTP — see ``routes_spectrum``. Keeping bridge logic
-confined to the data path avoids two sources of truth for things like the
-saved baseline.
+Bridges intentionally do *not* mirror the rest of the upstream service
+surface (baseline capture, reconnect, status, products). Those endpoints are
+proxied via HTTP — see ``routes_spectrum`` / ``routes_goes``. Keeping bridge
+logic confined to the data path avoids two sources of truth.
 """
 from __future__ import annotations
 
@@ -33,8 +33,8 @@ _WS_MAX_SIZE = None
 _RECONNECT_DELAY_S = 2.0
 
 
-class SpectrumBridge(Broadcaster[dict]):
-    """Subscribes to the hardware service's ``/ws/spectrum`` and re-publishes.
+class JsonWsBridge(Broadcaster[dict]):
+    """Subscribes to one hardware-service WS endpoint and re-publishes.
 
     Lazy lifecycle: the upstream WebSocket is only held open while at least
     one local browser is subscribed. Otherwise the bridge would keep a
@@ -43,12 +43,13 @@ class SpectrumBridge(Broadcaster[dict]):
     upstream.
     """
 
-    name = "spectrum-bridge"
     idle_close_delay_s: float = 5.0
 
-    def __init__(self, ws_base_url: str) -> None:
-        """``ws_base_url`` is e.g. ``ws://hardware:8001`` — without the path."""
+    def __init__(self, ws_base_url: str, path: str, name: str) -> None:
+        """``ws_base_url`` is e.g. ``ws://hardware:8001``; ``path`` like ``/ws/spectrum``."""
         super().__init__()
+        self.name = name
+        self._path = path if path.startswith("/") else f"/{path}"
         self._ws_base = ws_base_url.rstrip("/")
         self._task: asyncio.Task[None] | None = None
         self._latest: dict | None = None
@@ -67,7 +68,7 @@ class SpectrumBridge(Broadcaster[dict]):
 
     @property
     def upstream_url(self) -> str:
-        return f"{self._ws_base}/ws/spectrum"
+        return f"{self._ws_base}{self._path}"
 
     def subscribe(self, maxsize: int | None = None) -> asyncio.Queue[dict]:
         # Replay the most recent frame so a brand-new subscriber doesn't have
@@ -163,10 +164,10 @@ class SpectrumBridge(Broadcaster[dict]):
                     ping_timeout=20,
                 ) as ws:
                     self._connected = True
-                    logger.info("Connected to gateway spectrum stream at %s", self.upstream_url)
+                    logger.info("%s connected to gateway stream at %s", self.name, self.upstream_url)
                     async for message in ws:
                         if isinstance(message, bytes):
-                            # Spectrum frames are JSON; ignore stray binary.
+                            # Frames are JSON text; ignore stray binary.
                             continue
                         try:
                             frame = json.loads(message)
@@ -187,4 +188,4 @@ class SpectrumBridge(Broadcaster[dict]):
             await asyncio.sleep(_RECONNECT_DELAY_S)
 
 
-__all__ = ("SpectrumBridge",)
+__all__ = ("JsonWsBridge",)

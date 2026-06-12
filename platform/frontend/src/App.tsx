@@ -7,6 +7,8 @@ import { InfoSection } from './components/InfoSection';
 import { MobileHint } from './components/MobileHint';
 import { MotionControls } from './components/MotionControls';
 import { AdminPage } from './components/AdminPage';
+import { GoesConnectPanel } from './components/goes/GoesConnectPanel';
+import { GoesDataExplorer } from './components/goes/GoesDataExplorer';
 import { QueuePage } from './components/QueuePage';
 import { SkyMap } from './components/SkyMap';
 import { SpectrumPanel } from './components/SpectrumPanel';
@@ -15,9 +17,11 @@ import { TopBar } from './components/TopBar';
 import { useBackendCatalog } from './lib/useBackendCatalog';
 import { useErrorTracking } from './lib/useErrorTracking';
 import { useFullscreen } from './lib/useFullscreen';
+import { useGoesStream } from './lib/useGoesStream';
 import { useLna } from './lib/useLna';
 import { useMapTarget } from './lib/useMapTarget';
 import { useMotionCommands } from './lib/useMotionCommands';
+import { useObservationMode } from './lib/useObservationMode';
 import { useQueueLease } from './lib/useQueueLease';
 import { useTelemetry } from './lib/useTelemetry';
 import { maybePromptFirstVisit } from './tour';
@@ -40,6 +44,12 @@ function ControlUI({ queue }: ControlUIProps) {
   const map = useMapTarget();
   const motion = useMotionCommands(commands, setTelemetry);
 
+  // Observation mode is a boot-time hardware choice (hydrogen line vs GOES);
+  // it decides which panel set fills the right column. The GOES stream hook
+  // only opens its socket when the hardware is actually in GOES mode.
+  const { info: observation, isGoes } = useObservationMode(liveControlsEnabled);
+  const goes = useGoesStream(liveControlsEnabled && isGoes);
+
   const skymapPanelRef = useRef<HTMLElement>(null);
   const { isFullscreen: isSkymapFullscreen, toggle: toggleSkymapFullscreen } = useFullscreen(skymapPanelRef);
 
@@ -55,10 +65,13 @@ function ControlUI({ queue }: ControlUIProps) {
   }, [queue.queueEnabled, queue.isActiveController]);
 
   // Offer the first-visit guided tour once the user actually has the controls.
+  // The walkthrough is a hydrogen-line observation, so hold it until the mode
+  // is known and skip it entirely in GOES mode.
   useEffect(() => {
+    if (observation == null || isGoes) return;
     const t = setTimeout(() => maybePromptFirstVisit(motion.startObservationGuide), 600);
     return () => clearTimeout(t);
-  }, [motion.startObservationGuide]);
+  }, [motion.startObservationGuide, observation, isGoes]);
 
   return (
     <div className="app-shell">
@@ -118,7 +131,21 @@ function ControlUI({ queue }: ControlUIProps) {
         </section>
         <div className="dashboard-rightcol">
           <section className="panel spectrum-panel-host">
-            <SpectrumPanel enabled={liveControlsEnabled} onStartGuided={motion.startObservationGuide} />
+            {isGoes && observation ? (
+              <GoesConnectPanel
+                observation={observation}
+                frame={goes.frame}
+                connected={goes.connected}
+                telemetry={telemetry}
+                config={telescopeConfig}
+                gotoAltAz={motion.gotoAltAz}
+              />
+            ) : (
+              <SpectrumPanel
+                enabled={liveControlsEnabled && observation != null && !isGoes}
+                onStartGuided={motion.startObservationGuide}
+              />
+            )}
           </section>
           <section className="panel status-side-panel">
             <TelemetryDashboard
@@ -129,6 +156,12 @@ function ControlUI({ queue }: ControlUIProps) {
           </section>
         </div>
       </main>
+
+      {isGoes && (
+        <div className="goes-explorer-host">
+          <GoesDataExplorer frame={goes.frame} isLocked={goes.isLocked} />
+        </div>
+      )}
 
       <InfoSection />
       <MobileHint />

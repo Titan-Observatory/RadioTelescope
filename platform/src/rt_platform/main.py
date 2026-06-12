@@ -18,6 +18,7 @@ from rt_platform.api import (
     routes_camera,
     routes_events,
     routes_feedback,
+    routes_goes,
     routes_motor,
     routes_queue,
     routes_spectrum,
@@ -31,7 +32,7 @@ from rt_platform.config import load_config, public_exposure_errors
 from rt_platform.loki import configure as configure_loki
 from rt_platform.services.hardware_client import HardwareClient
 from rt_platform.services.queue import QueueService
-from rt_platform.services.spectrum_bridge import SpectrumBridge
+from rt_platform.services.ws_bridge import JsonWsBridge
 from rt_platform.services.status import TelescopeStatusService
 
 logger = logging.getLogger("rt_platform")
@@ -62,18 +63,25 @@ async def lifespan(app: FastAPI):
     hardware = HardwareClient(cfg.hardware_url)
     app.state.hardware_client = hardware
 
+    # One lazy bridge per hardware stream. Only the stream matching the
+    # hardware's observation mode will ever see subscribers; the other stays
+    # dormant, so both can be created unconditionally.
     ws_base = _http_to_ws(cfg.hardware_url)
-    bridge = SpectrumBridge(ws_base)
+    bridge = JsonWsBridge(ws_base, "/ws/spectrum", name="spectrum-bridge")
     app.state.spectrum_bridge = bridge
+    goes_bridge = JsonWsBridge(ws_base, "/ws/goes", name="goes-bridge")
+    app.state.goes_bridge = goes_bridge
 
     await status_service.start()
     await hardware.start()
     await queue.start()
     await bridge.start()
+    await goes_bridge.start()
 
     logger.info("rt-platform started (hardware_url=%s)", cfg.hardware_url)
     yield
 
+    await goes_bridge.stop()
     await bridge.stop()
     await queue.stop()
     await hardware.stop()
@@ -143,6 +151,7 @@ def create_app(config_path: str | Path = "config.toml") -> FastAPI:
     app.include_router(routes_queue.router)
     app.include_router(routes_camera.router)
     app.include_router(routes_spectrum.router)
+    app.include_router(routes_goes.router)
     app.include_router(routes_feedback.router)
     app.include_router(routes_events.router)
 

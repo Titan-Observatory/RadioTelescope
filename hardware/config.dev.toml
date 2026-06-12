@@ -29,3 +29,11 @@ enabled = false
 
 [sdr]
 enabled = false
+
+# Switch to GOES mode on a laptop: set `mode = "goes"` below — the simulate
+# backend generates demod metrics and demo products, no SDR required.
+[observation]
+mode = "hydrogen_line"
+
+[goes]
+simulate = true

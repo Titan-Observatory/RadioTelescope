@@ -1,6 +1,9 @@
 import type {
   CommandInfo,
   CommandResult,
+  GoesProductList,
+  GoesStatus,
+  ObservationInfo,
   PidBundle,
   QueueSnapshot,
   RaDecTarget,
@@ -108,6 +111,11 @@ export const api = {
   joinQueue: (turnstileToken: string | null, betaPassword: string | null) =>
     request<QueueStatus>('POST', '/api/queue/join', { turnstile_token: turnstileToken, beta_password: betaPassword }),
   leaveQueue: () => request<void>('POST', '/api/queue/leave'),
+  // ─── Observation mode / GOES ──────────────────────────────────────────
+  observation: () => request<ObservationInfo>('GET', '/api/observation'),
+  goesStatus: () => request<GoesStatus>('GET', '/api/goes/status'),
+  goesReconnect: () => request<{ ok: boolean; mode: string }>('POST', '/api/goes/reconnect'),
+  goesProducts: (limit = 60) => request<GoesProductList>('GET', `/api/goes/products?limit=${limit}`),
   // ─── Admin (LAN-only on the server side) ──────────────────────────────
   adminGetStatus: () => request<TelescopeStatus>('GET', '/api/admin/status'),
   adminSetStatus: (state: TelescopeState, message: string | null) =>
@@ -125,6 +133,10 @@ export const api = {
   adminSetSpectrumProcessing: (update: SpectrumProcessingUpdate) =>
     request<SpectrumProcessing>('POST', '/api/admin/spectrum/processing', update),
 };
+
+export function goesProductFileUrl(productId: string): string {
+  return `/api/goes/products/${encodeURIComponent(productId)}/file`;
+}
 
 export async function submitFeedback(rating: number, message: string): Promise<void> {
   await request<{ ok: boolean }>('POST', '/api/feedback', { rating, message });

@@ -4,6 +4,9 @@
 export type ConnectionMode = 'serial' | 'disconnected' | 'error';
 export type LnaState = 'on' | 'off' | 'unknown' | 'fault';
 export type ArgType = 'u8' | 'u16' | 's16' | 'u32' | 's32' | 'bool';
+export type ObservationMode = 'hydrogen_line' | 'goes';
+export type GoesStage = 'idle' | 'searching' | 'signal' | 'frames' | 'data' | 'fault' | 'unavailable';
+export type GoesProductKind = 'image' | 'text' | 'dcs' | 'binary';
 
 export interface ConnectionStatus {
   mode: 'serial' | 'disconnected' | 'error';
@@ -148,6 +151,42 @@ export interface PidBundle {
   vel_m2: VelocityPid;
   pos_m1: PositionPid;
   pos_m2: PositionPid;
+}
+
+export interface GoesSatelliteInfo {
+  id: string;
+  name: string;
+  longitude_deg: number;
+  azimuth_deg: number;
+  elevation_deg: number;
+  range_km: number;
+  visible: boolean;
+  is_target: boolean;
+}
+
+export interface ObservationInfo {
+  mode: 'hydrogen_line' | 'goes';
+  downlink_freq_mhz: number | null;
+  symbol_rate_baud: number | null;
+  target_satellite_id: string | null;
+  satellites: GoesSatelliteInfo[];
+}
+
+export interface GoesProduct {
+  id: string;
+  kind: 'image' | 'text' | 'dcs' | 'binary';
+  name: string;
+  file_type: number | null;
+  vcid: number | null;
+  apid: number | null;
+  size_bytes: number;
+  created_at: number;
+  media_type: string;
+  preview: string | null;
+  columns: number | null;
+  lines: number | null;
+  segment: number | null;
+  segment_total: number | null;
 }
 
 export interface RaDecTarget {

@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # The pointing-limit triangle uses the same alt/az shape as `AltAzPoint` from
 # the response models. Re-export under the historical name to preserve config
@@ -140,6 +140,92 @@ class SDRConfig(BaseModel):
         return max(1, round(self.integration_seconds * self.publish_rate_hz))
 
 
+class ObservationConfig(BaseModel):
+    """Which observation mode this telescope is configured for.
+
+    The mode is a boot-time choice: switching between the hydrogen-line
+    receiver chain (Sawbird+ H1 → SpectrumService) and the GOES satellite
+    downlink chain (Sawbird+ GOES → GoesService) requires swapping the LNA
+    anyway, so the service is simply restarted with the other mode. Both
+    chains stay fully segregated — each has its own config section, pipeline
+    subprocess, service, routes, and frontend panels.
+    """
+    mode: Literal["hydrogen_line", "goes"] = "hydrogen_line"
+
+
+class GoesSatellite(BaseModel):
+    id: str
+    name: str
+    longitude_deg: float = Field(ge=-180, le=180)
+
+
+class GoesConfig(BaseModel):
+    """GOES HRIT/LRIT downlink receiver settings (used when observation.mode = "goes")."""
+
+    # GOES-R series HRIT downlink. LRIT (older satellites) sits on the same
+    # carrier; only the symbol rate / coding differ.
+    downlink_freq_hz: float = Field(default=1.6941e9, gt=0)
+    # Airspy Mini supports 3 or 6 Msps; 3 Msps comfortably covers the
+    # ~1.2 MHz HRIT signal bandwidth.
+    sample_rate_hz: float = Field(default=3.0e6, gt=0)
+    # HRIT: 927 kbaud BPSK, rate-1/2 convolutional coding. LRIT: 293.883 kbaud.
+    symbol_rate_baud: float = Field(default=927_000.0, gt=0)
+    rrc_rolloff: float = Field(default=0.5, gt=0, le=1)
+    # LRIT uses NRZ-M line coding (differential); HRIT is plain NRZ-L.
+    diff_decode: bool = False
+    # Airspy "linearity" gain index (0-21). None enables AGC; a fixed gain is
+    # usually better once the dish is peaked on the satellite.
+    gain_db: float | None = None
+    # Set true if the Sawbird+ GOES is powered through the Airspy bias tee.
+    lna_bias_tee_enabled: bool = False
+    # Run Reed-Solomon RS(255,223) correction on every frame. Pure-Python and
+    # CPU-hungry at the full HRIT rate — disable on a struggling Pi to count
+    # frames without correcting them.
+    rs_enabled: bool = True
+    # Demod/status frames published to WebSocket subscribers per second.
+    status_rate_hz: float = Field(default=2.0, gt=0, le=10)
+    # SNR (dB) above which the demodulator is considered to have a usable
+    # signal — drives the "signal acquired" stage in the UI.
+    snr_lock_db: float = Field(default=4.0)
+    # ZMQ sockets the GNU Radio subprocess publishes on: JSON demod metrics
+    # and the Viterbi-decoded bitstream.
+    metrics_ipc_path: str = "ipc:///tmp/rt-goes-metrics.sock"
+    data_ipc_path: str = "ipc:///tmp/rt-goes-data.sock"
+    # Decoded LRIT products (images, text bulletins) are written here,
+    # relative to RT_STATE_DIR when set.
+    products_dir: str = "goes_products"
+    max_products: int = Field(default=200, ge=1)
+    # Synthetic backend: no SDR required. Generates demod metrics and demo
+    # products so the full UI can be exercised on a dev machine. Lock follows
+    # the dish pointing when motor telemetry is available.
+    simulate: bool = False
+    target_satellite_id: str = "goes-east"
+    satellites: list[GoesSatellite] = Field(
+        default_factory=lambda: [
+            GoesSatellite(id="goes-east", name="GOES-East (GOES-19)", longitude_deg=-75.2),
+            GoesSatellite(id="goes-west", name="GOES-West (GOES-18)", longitude_deg=-137.0),
+        ],
+    )
+
+    @field_validator("satellites")
+    @classmethod
+    def _satellites_nonempty(cls, value: list[GoesSatellite]) -> list[GoesSatellite]:
+        if not value:
+            raise ValueError("goes.satellites must contain at least one satellite")
+        ids = [s.id for s in value]
+        if len(set(ids)) != len(ids):
+            raise ValueError("goes.satellites ids must be unique")
+        return value
+
+    @model_validator(mode="after")
+    def _target_exists(self) -> "GoesConfig":
+        if self.target_satellite_id not in {s.id for s in self.satellites}:
+            raise ValueError(
+                f"goes.target_satellite_id {self.target_satellite_id!r} is not in goes.satellites"
+            )
+        return self
+
+
 class GeneralConfig(BaseModel):
     log_level: str = "INFO"
 
@@ -153,6 +239,8 @@ class AppConfig(BaseModel):
     observer: ObserverConfig = Field(default_factory=ObserverConfig)
     camera: CameraConfig = Field(default_factory=CameraConfig)
     sdr: SDRConfig = Field(default_factory=SDRConfig)
+    observation: ObservationConfig = Field(default_factory=ObservationConfig)
+    goes: GoesConfig = Field(default_factory=GoesConfig)
 
 
 _ENV_VAR_RE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}")

@@ -51,6 +51,9 @@ EXPORTED_MODELS: tuple[type[BaseModel], ...] = (
     state.VelocityPid,
     state.PositionPid,
     state.PidBundle,
+    state.GoesSatelliteInfo,
+    state.ObservationInfo,
+    state.GoesProduct,
 )
 
 # Type aliases emitted as TypeScript union literals.
@@ -58,6 +61,9 @@ EXPORTED_LITERALS: tuple[tuple[str, tuple[Any, ...]], ...] = (
     ("ConnectionMode", get_args(state.ConnectionMode)),
     ("LnaState", get_args(state.LnaState)),
     ("ArgType", get_args(state.ArgType)),
+    ("ObservationMode", get_args(state.ObservationMode)),
+    ("GoesStage", get_args(state.GoesStage)),
+    ("GoesProductKind", get_args(state.GoesProductKind)),
 )
 
 # Hand-written types that don't have a Pydantic counterpart but live next to
