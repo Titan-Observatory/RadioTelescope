@@ -160,44 +160,56 @@ class GoesSatellite(BaseModel):
 
 
 class GoesConfig(BaseModel):
-    """GOES HRIT/LRIT downlink receiver settings (used when observation.mode = "goes")."""
+    """GOES downlink settings (used when observation.mode = "goes").
 
-    # GOES-R series HRIT downlink. LRIT (older satellites) sits on the same
-    # carrier; only the symbol rate / coding differ.
+    The receive chain is goestools: a `goesrecv` subprocess owns the SDR and
+    does demod + Viterbi + Reed-Solomon, a `goesproc` subprocess turns the
+    VCDU stream into product files. This service generates the goesrecv
+    config, supervises both, consumes their nanomsg publishers for the live
+    status stream, and indexes goesproc's output directory.
+    """
+
+    # goesrecv demodulator mode: "hrit" for GOES-16 and later (927 kbaud),
+    # "lrit" for the older birds (293.883 kbaud).
+    mode: Literal["hrit", "lrit"] = "hrit"
+    sdr: Literal["airspy", "rtlsdr"] = "airspy"
+    # GOES-R HRIT/LRIT downlink carrier.
     downlink_freq_hz: float = Field(default=1.6941e9, gt=0)
-    # Airspy Mini supports 3 or 6 Msps; 3 Msps comfortably covers the
-    # ~1.2 MHz HRIT signal bandwidth.
+    # Airspy Mini supports 3 or 6 Msps; 3 Msps comfortably covers the signal.
     sample_rate_hz: float = Field(default=3.0e6, gt=0)
-    # HRIT: 927 kbaud BPSK, rate-1/2 convolutional coding. LRIT: 293.883 kbaud.
-    symbol_rate_baud: float = Field(default=927_000.0, gt=0)
-    rrc_rolloff: float = Field(default=0.5, gt=0, le=1)
-    # LRIT uses NRZ-M line coding (differential); HRIT is plain NRZ-L.
-    diff_decode: bool = False
-    # Airspy "linearity" gain index (0-21). None enables AGC; a fixed gain is
-    # usually better once the dish is peaked on the satellite.
-    gain_db: float | None = None
-    # Set true if the Sawbird+ GOES is powered through the Airspy bias tee.
+    # SDR gain, passed straight through to goesrecv.
+    gain_db: int = Field(default=18, ge=0)
+    # Set true if the Sawbird+ GOES is powered through the SDR's bias tee —
+    # goesrecv owns the SDR, so it also owns the bias tee.
     lna_bias_tee_enabled: bool = False
-    # Run Reed-Solomon RS(255,223) correction on every frame. Pure-Python and
-    # CPU-hungry at the full HRIT rate — disable on a struggling Pi to count
-    # frames without correcting them.
-    rs_enabled: bool = True
-    # Demod/status frames published to WebSocket subscribers per second.
+
+    # goestools binaries (https://github.com/pietern/goestools). Absolute
+    # paths or $PATH lookups.
+    goesrecv_bin: str = "goesrecv"
+    goesproc_bin: str = "goesproc"
+    # goesproc handler config. Empty = auto-discover the goestools-installed
+    # config, falling back to the minimal one shipped with this package.
+    goesproc_config: str = ""
+
+    # Loopback endpoints for goesrecv's nanomsg publishers. The goesrecv
+    # config is generated from these, so they always match the consumers.
+    packet_port: int = Field(default=5004, ge=1, le=65535)
+    demod_stats_port: int = Field(default=6001, ge=1, le=65535)
+    decoder_stats_port: int = Field(default=6002, ge=1, le=65535)
+    symbol_port: int = Field(default=6003, ge=1, le=65535)
+
+    # Status frames published to WebSocket subscribers per second.
     status_rate_hz: float = Field(default=2.0, gt=0, le=10)
-    # SNR (dB) above which the demodulator is considered to have a usable
-    # signal — drives the "signal acquired" stage in the UI.
+    # Estimated SNR (dB) above which the UI reports "signal acquired".
     snr_lock_db: float = Field(default=4.0)
-    # ZMQ sockets the GNU Radio subprocess publishes on: JSON demod metrics
-    # and the Viterbi-decoded bitstream.
-    metrics_ipc_path: str = "ipc:///tmp/rt-goes-metrics.sock"
-    data_ipc_path: str = "ipc:///tmp/rt-goes-data.sock"
-    # Decoded LRIT products (images, text bulletins) are written here,
-    # relative to RT_STATE_DIR when set.
+    # goesproc's working directory; decoded products are indexed from here.
+    # Relative to RT_STATE_DIR when set.
     products_dir: str = "goes_products"
     max_products: int = Field(default=200, ge=1)
-    # Synthetic backend: no SDR required. Generates demod metrics and demo
-    # products so the full UI can be exercised on a dev machine. Lock follows
-    # the dish pointing when motor telemetry is available.
+    # Synthetic backend: no SDR or goestools required. Generates demod
+    # metrics and demo products so the full UI can be exercised on a dev
+    # machine. Lock follows the dish pointing when motor telemetry is
+    # available.
     simulate: bool = False
     target_satellite_id: str = "goes-east"
     satellites: list[GoesSatellite] = Field(
@@ -206,6 +218,10 @@ class GoesConfig(BaseModel):
             GoesSatellite(id="goes-west", name="GOES-West (GOES-18)", longitude_deg=-137.0),
         ],
     )
+
+    @property
+    def symbol_rate_baud(self) -> float:
+        return 927_000.0 if self.mode == "hrit" else 293_883.0
 
     @field_validator("satellites")
     @classmethod

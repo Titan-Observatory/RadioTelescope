@@ -81,28 +81,38 @@ publish_rate_hz = 5.0
 mode = "hydrogen_line"
 
 [goes]
-# GOES-R HRIT downlink: 1694.1 MHz, 927 kbaud BPSK, rate-1/2 convolutional
-# + RS(255,223) coding. For LRIT (older birds): symbol_rate_baud = 293883
-# and diff_decode = true (NRZ-M).
+# The GOES receive chain is goestools (https://github.com/pietern/goestools):
+# rt-hardware supervises a goesrecv subprocess (SDR → demod → Viterbi →
+# Reed-Solomon → VCDUs) and a goesproc subprocess (VCDUs → image/text files),
+# generating the goesrecv config from the settings below.
+#
+# "hrit" for GOES-16 and later (927 kbaud); "lrit" for older birds.
+mode = "hrit"
+# goesrecv source: "airspy" or "rtlsdr".
+sdr = "airspy"
 downlink_freq_hz = 1.6941e9
 sample_rate_hz = 3.0e6
-symbol_rate_baud = 927000
-rrc_rolloff = 0.5
-diff_decode = false
-# Airspy linearity gain index (0-21). Comment out for AGC.
-gain_db = 14
-# Set true if the Sawbird+ GOES is powered through the Airspy's bias tee.
+# SDR gain, passed straight through to goesrecv.
+gain_db = 18
+# Set true if the Sawbird+ GOES is powered through the SDR's bias tee
+# (goesrecv owns the SDR, so it also drives the bias tee).
 lna_bias_tee_enabled = false
-# Pure-Python RS(255,223) correction. Disable on a struggling Pi to count
-# frames without correcting them.
-rs_enabled = true
-# SNR (dB) at which the UI reports "signal acquired".
+# goestools binaries — absolute paths or $PATH lookups.
+goesrecv_bin = "goesrecv"
+goesproc_bin = "goesproc"
+# goesproc handler config (crops, false color, filename templates). Empty =
+# auto-discover the goestools-installed config, falling back to the minimal
+# handler set shipped with rt-hardware.
+goesproc_config = ""
+# Estimated SNR (dB) at which the UI reports "signal acquired".
 snr_lock_db = 4.0
-# Decoded products (imagery, bulletins) directory + retention cap.
+# goesproc's working directory — decoded products are indexed and served
+# from here. Relative to RT_STATE_DIR when set.
 products_dir = "goes_products"
 max_products = 200
-# Synthetic downlink for development/demos — no SDR needed. The decode chain
-# and UI run unchanged; lock follows the dish pointing.
+# Synthetic downlink for development/demos — no SDR or goestools needed.
+# Status frames, demo products and the whole UI run unchanged; lock follows
+# the dish pointing.
 simulate = false
 # Which catalog entry the connect panel targets by default.
 target_satellite_id = "goes-east"

@@ -166,11 +166,11 @@ export function GoesConnectPanel({
           </p>
         </div>
 
-        {/* ── Band PSD + constellation ─────────────────────────────── */}
+        {/* ── SNR history + constellation ──────────────────────────── */}
         <div className="goes-scopes">
           <div className="goes-scope">
-            <span className="spectrum-readout-label">Downlink band</span>
-            <PsdScope frame={frame} />
+            <span className="spectrum-readout-label">Signal history</span>
+            <SnrHistoryScope frame={frame} />
           </div>
           <div className="goes-scope goes-scope-square">
             <span className="spectrum-readout-label">Constellation</span>
@@ -217,40 +217,52 @@ function useScopeCanvas(draw: (ctx: CanvasRenderingContext2D, w: number, h: numb
   return ref;
 }
 
-function PsdScope({ frame }: { frame: GoesFrame | null }) {
+// Rolling SNR trace (last ~2 minutes) — the readout you watch while nudging
+// the dish to peak on the satellite, like a slow signal-strength meter.
+const SNR_HISTORY_POINTS = 240;
+const SNR_SCOPE_MAX_DB = 16;
+
+function SnrHistoryScope({ frame }: { frame: GoesFrame | null }) {
+  const historyRef = useRef<Array<number | null>>([]);
+  const lastTimestampRef = useRef<number | null>(null);
+
+  if (frame && frame.timestamp !== lastTimestampRef.current) {
+    lastTimestampRef.current = frame.timestamp;
+    historyRef.current.push(frame.snr_db);
+    if (historyRef.current.length > SNR_HISTORY_POINTS) {
+      historyRef.current.splice(0, historyRef.current.length - SNR_HISTORY_POINTS);
+    }
+  }
+
   const ref = useScopeCanvas((ctx, w, h) => {
-    const psd = frame?.psd_db;
-    if (!psd || psd.length < 2) return;
-    let min = Infinity;
-    let max = -Infinity;
-    for (const v of psd) {
-      if (v < min) min = v;
-      if (v > max) max = v;
+    const history = historyRef.current;
+    if (history.length < 2) return;
+    const toY = (snr: number) =>
+      h - (Math.max(0, Math.min(SNR_SCOPE_MAX_DB, snr)) / SNR_SCOPE_MAX_DB) * h;
+
+    // Lock-threshold guide line.
+    if (frame) {
+      ctx.strokeStyle = 'rgba(155, 158, 206, 0.35)';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, toY(frame.snr_lock_db));
+      ctx.lineTo(w, toY(frame.snr_lock_db));
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
-    const span = Math.max(3, max - min);
-    const pad = 0.1 * span;
+
     ctx.beginPath();
-    for (let i = 0; i < psd.length; i++) {
-      const x = (i / (psd.length - 1)) * w;
-      const y = h - ((psd[i] - min + pad) / (span + 2 * pad)) * h;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    let started = false;
+    for (let i = 0; i < history.length; i++) {
+      const snr = history[i];
+      if (snr == null) { started = false; continue; }
+      const x = (i / (SNR_HISTORY_POINTS - 1)) * w;
+      if (!started) { ctx.moveTo(x, toY(snr)); started = true; }
+      else ctx.lineTo(x, toY(snr));
     }
-    ctx.strokeStyle = '#ffbc42';
+    ctx.strokeStyle = frame?.demod_locked ? '#77cbb9' : '#ffbc42';
     ctx.lineWidth = Math.max(1, w / 320);
     ctx.stroke();
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255, 188, 66, 0.08)';
-    ctx.fill();
-    // Centre marker: the carrier should sit here once tuned.
-    ctx.strokeStyle = 'rgba(135, 206, 235, 0.35)';
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(w / 2, 0);
-    ctx.lineTo(w / 2, h);
-    ctx.stroke();
-    ctx.setLineDash([]);
   });
   return <canvas className="goes-scope-canvas" ref={ref} />;
 }

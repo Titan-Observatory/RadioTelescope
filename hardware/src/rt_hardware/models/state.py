@@ -13,7 +13,7 @@ ObservationMode = Literal["hydrogen_line", "goes"]
 # → demod locked on the carrier → frame sync on the CCSDS ASM → decoded
 # products flowing. "fault"/"unavailable" mirror SpectrumService semantics.
 GoesStage = Literal["idle", "searching", "signal", "frames", "data", "fault", "unavailable"]
-GoesProductKind = Literal["image", "text", "dcs", "binary"]
+GoesProductKind = Literal["image", "text", "binary"]
 
 
 class ConnectionStatus(BaseModel):
@@ -233,24 +233,20 @@ class ObservationInfo(BaseModel):
 
 
 class GoesProduct(BaseModel):
-    """One decoded LRIT/HRIT file persisted to the product store."""
+    """One decoded product file indexed from goesproc's output directory."""
     id: str
     kind: GoesProductKind
     name: str
-    file_type: int | None = None
-    vcid: int | None = None
-    apid: int | None = None
+    # Directory path relative to the product store root — goesproc groups
+    # output by handler (e.g. "images/goes19/2026-06-12"), which gives the
+    # UI a meaningful category label for free.
+    group: str | None = None
     size_bytes: int
     created_at: float
     media_type: str
     # First few hundred characters for text products so the explorer can show
     # them inline without a second request.
     preview: str | None = None
-    # Image geometry from the LRIT image structure header, when present.
-    columns: int | None = None
-    lines: int | None = None
-    segment: int | None = None
-    segment_total: int | None = None
 
 
 class PidWriteRequest(BaseModel):

@@ -102,10 +102,14 @@ export function GoesDataExplorer({ frame, isLocked }: GoesDataExplorerProps) {
       {frame && (
         <div className="goes-stats-strip" aria-label="Link statistics">
           <Stat label="Data rate" value={formatKbps(frame.data_rate_kbps)} />
-          <Stat label="Frames" value={frame.frames_total.toLocaleString()} sub={frameErrPct != null ? `${frameErrPct.toFixed(1)}% bad` : undefined} />
-          <Stat label="RS corrections" value={frame.rs_corrected.toLocaleString()} sub="symbols repaired" />
+          <Stat label="Frames" value={frame.frames_total.toLocaleString()} sub={frameErrPct != null ? `${frameErrPct.toFixed(1)}% dropped` : undefined} />
+          <Stat
+            label="Viterbi"
+            value={frame.viterbi_errors_avg != null ? frame.viterbi_errors_avg.toLocaleString() : '—'}
+            sub="corrected bits / frame"
+          />
+          <Stat label="Reed-Solomon" value={frame.rs_corrected.toLocaleString()} sub="bytes repaired" />
           <Stat label="VCDUs" value={frame.vcdu_total.toLocaleString()} sub={`${frame.vcdu_fill.toLocaleString()} fill`} />
-          <Stat label="Packets" value={frame.packets_total.toLocaleString()} sub={frame.packets_crc_err > 0 ? `${frame.packets_crc_err} CRC errors` : 'all CRCs clean'} />
           <Stat label="Products" value={String(totalProducts)} sub={frame.last_product_at != null ? formatAge(frame.last_product_at) : undefined} />
         </div>
       )}
@@ -138,14 +142,14 @@ export function GoesDataExplorer({ frame, isLocked }: GoesDataExplorerProps) {
           <div className="goes-products-head">
             <h3 className="goes-section-title">Decoded products</h3>
             <div className="goes-filter-chips" role="group" aria-label="Filter products">
-              {(['all', 'image', 'text', 'dcs'] as KindFilter[]).map((kind) => (
+              {(['all', 'image', 'text'] as KindFilter[]).map((kind) => (
                 <button
                   key={kind}
                   type="button"
                   className={`goes-chip${filter === kind ? ' is-active' : ''}`}
                   onClick={() => setFilter(kind)}
                 >
-                  {kind === 'all' ? 'All' : kind === 'dcs' ? 'DCS' : `${kind[0].toUpperCase()}${kind.slice(1)}s`}
+                  {kind === 'all' ? 'All' : `${kind[0].toUpperCase()}${kind.slice(1)}s`}
                 </button>
               ))}
             </div>
@@ -181,11 +185,7 @@ export function GoesDataExplorer({ frame, isLocked }: GoesDataExplorerProps) {
               <TextProductBody product={lightbox} />
             )}
             <footer className="goes-lightbox-meta">
-              {lightbox.vcid != null && <span>VC {lightbox.vcid}</span>}
-              {lightbox.apid != null && <span>APID {lightbox.apid}</span>}
-              {lightbox.columns != null && lightbox.lines != null && (
-                <span>{lightbox.columns}×{lightbox.lines}px</span>
-              )}
+              {lightbox.group && <span>{lightbox.group}</span>}
               <span>{formatBytes(lightbox.size_bytes)}</span>
               <span>{formatAge(lightbox.created_at)}</span>
               <a href={goesProductFileUrl(lightbox.id)} download={lightbox.name} className="goes-download-link">

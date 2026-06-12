@@ -6,7 +6,7 @@ export type LnaState = 'on' | 'off' | 'unknown' | 'fault';
 export type ArgType = 'u8' | 'u16' | 's16' | 'u32' | 's32' | 'bool';
 export type ObservationMode = 'hydrogen_line' | 'goes';
 export type GoesStage = 'idle' | 'searching' | 'signal' | 'frames' | 'data' | 'fault' | 'unavailable';
-export type GoesProductKind = 'image' | 'text' | 'dcs' | 'binary';
+export type GoesProductKind = 'image' | 'text' | 'binary';
 
 export interface ConnectionStatus {
   mode: 'serial' | 'disconnected' | 'error';
@@ -174,19 +174,13 @@ export interface ObservationInfo {
 
 export interface GoesProduct {
   id: string;
-  kind: 'image' | 'text' | 'dcs' | 'binary';
+  kind: 'image' | 'text' | 'binary';
   name: string;
-  file_type: number | null;
-  vcid: number | null;
-  apid: number | null;
+  group: string | null;
   size_bytes: number;
   created_at: number;
   media_type: string;
   preview: string | null;
-  columns: number | null;
-  lines: number | null;
-  segment: number | null;
-  segment_total: number | null;
 }
 
 export interface RaDecTarget {

@@ -37,21 +37,17 @@ async def lifespan(app: FastAPI):
     app.state.roboclaw_service = service
 
     # The two observation modes are mutually exclusive: each chain owns the
-    # one Airspy, so only the mode's service is instantiated. Switching modes
+    # one SDR, so only the mode's service is instantiated. Switching modes
     # means swapping the LNA and restarting with the other config.
     spectrum: SpectrumService | None = None
     goes: GoesService | None = None
     if cfg.observation.mode == "goes":
         goes = GoesService(
             cfg.goes,
-            app.state.config_path,
             beam_fwhm_deg=app.state.fwhm_deg,
             pointing_error_deg=_make_pointing_error_fn(cfg, service),
         )
         app.state.goes_service = goes
-    elif cfg.sdr.enabled:
-        spectrum = SpectrumService(cfg.sdr, app.state.config_path)
-        app.state.spectrum_service = spectrum
 
     camera: CameraService | None = None
     if cfg.camera.enabled:
@@ -59,24 +55,29 @@ async def lifespan(app: FastAPI):
         app.state.camera_service = camera
 
     await service.start()
-    for sdr_service, bias_tee_enabled in ((spectrum, cfg.sdr.lna_bias_tee_enabled), (goes, cfg.goes.lna_bias_tee_enabled)):
-        if sdr_service is None:
-            continue
+    if goes is not None:
+        # The goesrecv subprocess owns the SDR in GOES mode, including the
+        # bias tee that powers the Sawbird+ GOES (`[goes] lna_bias_tee_enabled`
+        # flows into the generated goesrecv config).
+        await goes.start()
+    elif cfg.sdr.enabled:
+        spectrum = SpectrumService(cfg.sdr, app.state.config_path)
+        app.state.spectrum_service = spectrum
         # Apply LNA bias-tee during lifespan startup, before the app accepts
         # requests. The GR subprocess is spawned lazily on the first
-        # WS subscriber, so at this point nothing holds the Airspy
+        # /ws/spectrum subscriber, so at this point nothing holds the Airspy
         # and airspy_gpio has exclusive USB access. Once a subscriber arrives
         # and the subprocess opens Soapy, it owns the device and airspy_gpio
         # would fail — so this must happen here, not later.
-        if bias_tee_enabled:
+        if cfg.sdr.lna_bias_tee_enabled:
             try:
-                status = await sdr_service.apply_configured_bias_tee()
+                status = await spectrum.apply_configured_bias_tee()
                 logger.info("LNA bias tee enabled at boot: %s", status.detail)
             except Exception as exc:
                 logger.warning("LNA bias tee could not be applied at boot: %s", exc)
         else:
             logger.info("LNA bias tee disabled (config); not touching hardware")
-        await sdr_service.start()
+        await spectrum.start()
 
     logger.info(
         "rt-hardware started (hardware=%s, observation=%s)",

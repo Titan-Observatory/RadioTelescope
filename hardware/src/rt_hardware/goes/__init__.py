@@ -1,6 +1,10 @@
-"""GOES satellite downlink: pointing, CCSDS/LRIT decode chain, product store.
+"""GOES satellite downlink integration.
 
-Everything in this package is pure Python and unit-testable without hardware.
-The DSP front end (demodulation + Viterbi) lives in the GNU Radio subprocess
-[rt_hardware.goes_pipeline]; this package picks up the decoded bitstream.
+The receive chain is goestools (https://github.com/pietern/goestools):
+`goesrecv` owns the SDR and decodes the downlink to VCDUs, `goesproc` turns
+them into product files. This package holds the glue — goestools config
+generation ([goestools]), a minimal nanomsg subscriber ([nanomsg]), the
+product-directory index ([products]), geostationary look angles
+([pointing]), and a synthetic backend for SDR-less development
+([simulator]).
 """

@@ -71,6 +71,9 @@ async def goes_reconnect(request: Request):
 @router.get("/api/goes/products")
 async def list_products(request: Request, limit: int = Query(default=60, ge=1, le=500)):
     service = _service(request)
+    # Re-index goesproc's output tree so the archive is fresh even when the
+    # pipeline is idle (e.g. products decoded before a restart).
+    await asyncio.to_thread(service.products.scan)
     return {
         "total": service.products.total,
         "products": [p.model_dump() for p in service.products.list(limit)],
