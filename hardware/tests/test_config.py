@@ -1,6 +1,30 @@
 import pytest
 
-from rt_hardware.config import load_config
+from rt_hardware.config import SDRConfig, load_config
+from rt_hardware.hardware.sdr import _bias_command
+
+
+def test_sdr_defaults_to_airspy_driver():
+    cfg = SDRConfig()
+    assert cfg.driver == "airspy"
+    assert cfg.device_string == "driver=airspy"
+    assert cfg.gain_max == 21.0
+
+
+def test_sdr_rtlsdr_driver_string_and_gain_bound():
+    cfg = SDRConfig(driver="rtlsdr", sample_rate_hz=2.4e6, device_args="serial=00000101")
+    assert cfg.device_string == "driver=rtlsdr,serial=00000101"
+    assert cfg.gain_max == 49.6
+
+
+def test_sdr_rtlsdr_rejects_out_of_range_sample_rate():
+    with pytest.raises(ValueError, match="rtlsdr"):
+        SDRConfig(driver="rtlsdr", sample_rate_hz=6.0e6)
+
+
+def test_bias_command_selects_tool_per_driver():
+    assert _bias_command("airspy", "1") == ("airspy_gpio", "-p", "1", "-n", "13", "-w", "1")
+    assert _bias_command("rtlsdr", "0") == ("rtl_biast", "-b", "0")
 
 
 def test_load_config_defaults_to_auto_when_requested(simulated_config_path):

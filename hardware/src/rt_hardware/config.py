@@ -103,6 +103,16 @@ class ServerConfig(BaseModel):
 
 class SDRConfig(BaseModel):
     enabled: bool = True
+    # SoapySDR driver feeding the spectrum chain. "airspy" is the Airspy
+    # Mini/R2; "rtlsdr" covers RTL2832U dongles such as the Nooelec NESDR
+    # series. The driver sets the gain scale (Airspy uses a 0-21 linearity
+    # index; RTL-SDR a 0-49.6 dB tuner gain) and which tool toggles the bias
+    # tee (airspy_gpio vs rtl_biast).
+    driver: Literal["airspy", "rtlsdr"] = "airspy"
+    # Extra SoapySDR device arguments appended to the driver string, e.g.
+    # "serial=00000101" to pin a specific dongle when several are attached.
+    # Comma-separated key=value pairs; leave empty to take the first device.
+    device_args: str = ""
     center_freq_hz: float = Field(default=1.4204e9, gt=0)
     sample_rate_hz: float = Field(default=3.0e6, gt=0)
     fft_size: int = Field(default=8192, ge=64)
@@ -138,6 +148,30 @@ class SDRConfig(BaseModel):
         `/api/spectrum/status` payload continue to carry the same key.
         """
         return max(1, round(self.integration_seconds * self.publish_rate_hz))
+
+    @property
+    def device_string(self) -> str:
+        """SoapySDR device string passed to the GNU Radio source block."""
+        base = f"driver={self.driver}"
+        return f"{base},{self.device_args}" if self.device_args else base
+
+    @property
+    def gain_max(self) -> float:
+        """Upper bound for ``set_gain``. Airspy's overall gain is a 0-21
+        linearity index; RTL-SDR's tuner gain runs 0-49.6 dB."""
+        return 49.6 if self.driver == "rtlsdr" else 21.0
+
+    @model_validator(mode="after")
+    def _rtlsdr_sample_rate(self) -> "SDRConfig":
+        # The RTL2832U only clocks 0.9–3.2 Msps (and drops samples above
+        # ~2.56 Msps). Reject configs the dongle physically can't run rather
+        # than letting Soapy fail opaquely at flowgraph start.
+        if self.driver == "rtlsdr" and not (0.9e6 <= self.sample_rate_hz <= 3.2e6):
+            raise ValueError(
+                "sdr.sample_rate_hz must be between 0.9 and 3.2 Msps for the "
+                "rtlsdr driver (2.4 Msps is the highest reliable rate)"
+            )
+        return self
 
 
 class ObservationConfig(BaseModel):

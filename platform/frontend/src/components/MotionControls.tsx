@@ -161,57 +161,108 @@ const SPEED_PRESETS: { id: 'fine' | 'coarse' | 'slew'; label: string; value: num
   { id: 'slew',   label: 'Slew',  value: 85 },
 ];
 
+// A real vertical slider over the discrete rate presets. The thumb rides a
+// rail and snaps to one of the detents; drag it, click anywhere on the rail,
+// or arrow-key it. The rate names are plain labels alongside each detent — the
+// fastest at the top so the dark fill grows like a throttle.
 function SpeedFader({ slewSpeed, setSlewSpeed }: {
   slewSpeed: number;
   setSlewSpeed: (n: number) => void;
 }) {
-  const active = SPEED_PRESETS.reduce((best, p) =>
-    Math.abs(p.value - slewSpeed) < Math.abs(best.value - slewSpeed) ? p : best,
-  SPEED_PRESETS[0]);
+  const steps = SPEED_PRESETS.length;
+  // SPEED_PRESETS is ordered slow→fast, so its index doubles as the detent
+  // number counted from the bottom of the rail.
+  const activeStep = SPEED_PRESETS.reduce(
+    (best, p, i) =>
+      Math.abs(p.value - slewSpeed) < Math.abs(SPEED_PRESETS[best].value - slewSpeed) ? i : best,
+    0);
 
-  // Render fastest at the top, slowest at the bottom: taller bar = faster, so
-  // the column itself reads like a throttle without needing to parse labels.
-  const ordered = [...SPEED_PRESETS].reverse();
-  // Single coordinate system shared by the track, fill, thumb and dots: each
-  // detent sits at the centre of its (flex:1) row, so the i-th step counted
-  // from the bottom lands at (i + 0.5) / steps. Feeding the same step index to
-  // the CSS keeps the glowing thumb locked onto its dot.
-  const steps = ordered.length;
-  const activeFromTop = ordered.findIndex((p) => p.id === active.id);
-  const activeStep = steps - 1 - activeFromTop;
+  const railRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  // Map a pointer Y onto the nearest detent using the rail's own box, so the
+  // hit-testing matches exactly where the thumb and labels are painted.
+  const pickFromClientY = useCallback((clientY: number) => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const rect = rail.getBoundingClientRect();
+    const frac = 1 - (clientY - rect.top) / rect.height; // 0 at bottom, 1 at top
+    const step = Math.round(frac * (steps - 1));
+    const clamped = Math.max(0, Math.min(steps - 1, step));
+    setSlewSpeed(SPEED_PRESETS[clamped].value);
+  }, [steps, setSlewSpeed]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    pickFromClientY(e.clientY);
+    // Capture so the drag keeps tracking even if the pointer leaves the rail.
+    // Guard it: some pointer types reject capture, which mustn't abort the drag.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (dragging.current) pickFromClientY(e.clientY);
+  };
+  const endDrag = () => { dragging.current = false; };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    let next = activeStep;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') next = activeStep + 1;
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') next = activeStep - 1;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = steps - 1;
+    else return;
+    e.preventDefault();
+    const clamped = Math.max(0, Math.min(steps - 1, next));
+    if (clamped !== activeStep) setSlewSpeed(SPEED_PRESETS[clamped].value);
+  };
+
+  // Travel fraction of a detent: 0 at the bottom, 1 at the top. Computed here
+  // rather than in CSS so positioning never depends on calc() division quirks.
+  const frac = (i: number) => i / (steps - 1);
 
   return (
-    <div
-      className="speed-toggle"
-      role="radiogroup"
-      aria-label="Slew speed"
-      style={{ '--speed-steps': steps, '--speed-active': activeStep } as React.CSSProperties}
-    >
-      <span className="speed-toggle-heading">Speed</span>
-      <div className="speed-toggle-body">
-        <span className="speed-toggle-track" aria-hidden="true">
-          <span className="speed-toggle-fill" />
-          <span className="speed-toggle-thumb" />
-        </span>
-        {ordered.map((p) => {
-          const selected = p.id === active.id;
-          // Light every detent at or below the chosen level so the slider
-          // fills from the bottom like a stepped throttle.
-          const lit = p.value <= active.value;
-          return (
-            <button
+    <div className="speed-slider">
+      <div
+        className="speed-slider-track"
+        role="slider"
+        tabIndex={0}
+        aria-label="Slew speed"
+        aria-valuemin={0}
+        aria-valuemax={steps - 1}
+        aria-valuenow={activeStep}
+        aria-valuetext={SPEED_PRESETS[activeStep].label}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onLostPointerCapture={endDrag}
+        onKeyDown={onKeyDown}
+      >
+        <span className="speed-slider-rail" ref={railRef} aria-hidden="true">
+          <span className="speed-slider-fill" style={{ '--pos': frac(activeStep) } as React.CSSProperties} />
+          {SPEED_PRESETS.map((p, i) => (
+            <span
               key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              className={`speed-toggle-btn speed-toggle-${p.id}${selected ? ' is-active' : ''}${lit ? ' is-lit' : ''}`}
-              onClick={() => setSlewSpeed(p.value)}
-            >
-              <span className="speed-toggle-dot" aria-hidden="true" />
-              <span className="speed-toggle-label">{p.label}</span>
-            </button>
-          );
-        })}
+              className="speed-slider-notch"
+              style={{ '--pos': frac(i) } as React.CSSProperties}
+            />
+          ))}
+          <span className="speed-slider-thumb" style={{ '--pos': frac(activeStep) } as React.CSSProperties} />
+        </span>
+      </div>
+      <div className="speed-slider-labels" aria-hidden="true">
+        {SPEED_PRESETS.map((p, i) => (
+          <button
+            key={p.id}
+            type="button"
+            tabIndex={-1}
+            className={`speed-slider-label${i === activeStep ? ' is-active' : ''}`}
+            style={{ '--pos': frac(i) } as React.CSSProperties}
+            onClick={() => setSlewSpeed(p.value)}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
     </div>
   );

@@ -1899,133 +1899,80 @@ h2.panel-header {
 .pad-btn.jog-active .pad-btn-label { color: var(--sect-teal); }
 
 /* =========================================================================
-   Speed fader — vertical range input styled as an instrument-panel slider.
-   Sits to the right of the d-pad and shares its height. The label sits at
-   the top, percentage at the bottom, fader fills the space between.
+   Speed slider — a vertical notched slider to the left of the d-pad. A rail
+   runs the panel height and fills amber from the bottom up to a round thumb;
+   the rate names sit alongside as labels, fastest at the top. Thumb, fill top,
+   notches and labels share one coordinate system: detent i (0 at the bottom)
+   lands at i / (steps - 1) of the rail's travel. Drag the thumb, click the
+   rail, or arrow-key it.
    ========================================================================= */
-.speed-fader {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  justify-items: center;
-  align-items: center;
-  gap: 8px;
-  width: 52px;
-  padding: 4px 0;
-}
-.speed-fader-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
-.speed-fader-value {
-  min-width: 38px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--fg);
-}
-.speed-fader input[type="range"] {
-  /* Modern Chrome/Firefox: writing-mode is the standards-track way to
-     vertical-orient a range input. Safari still wants the deprecated
-     `-webkit-appearance: slider-vertical`. We declare both. */
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 28px;
-  height: 100%;
-  min-height: 140px;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  cursor: pointer;
-}
-.speed-fader input[type="range"]::-webkit-slider-runnable-track {
-  width: 4px;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--hairline-strong);
-}
-.speed-fader input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 22px;
-  height: 10px;
-  margin-left: -9px;
-  border-radius: 2px;
-  background: var(--accent);
-  border: 1px solid var(--accent-edge);
-  cursor: pointer;
-}
-.speed-fader input[type="range"]::-moz-range-track {
-  width: 4px;
-  border-radius: 2px;
-  background: var(--hairline-strong);
-}
-.speed-fader input[type="range"]::-moz-range-thumb {
-  width: 22px;
-  height: 10px;
-  border-radius: 2px;
-  background: var(--accent);
-  border: 1px solid var(--accent-edge);
-  cursor: pointer;
-}
-
-/* =========================================================================
-   Speed throttle — a modern stepped slider to the left of the d-pad. The
-   whole control reads as one vertical track with three detents; each row is
-   still a full-size radio button for easy pointer and keyboard use.
-   ========================================================================= */
-/* Slew-rate selector — a vertical slider. A light rail runs the full height;
-   it fills dark from the bottom up to a round white thumb, with the rate names
-   stacked alongside. The thumb centre, fill height and active label all sit on
-   the same detent: the i-th step from the bottom lands at (i + 0.5) / steps. */
 .speed-slider {
   display: flex;
   flex: 0 0 auto;
-  gap: 12px;
+  align-items: stretch;
+  gap: 10px;
   min-height: 150px;
-  --thumb: 16px;
-  --rail-w: 4px;
-  --detent: calc((var(--active) + 0.5) / var(--steps) * 100%);
+  --thumb: 18px;
+  --rail-w: 6px;
 }
 
-.speed-slider-rail {
+/* The interactive column — pointer/keyboard events land here. Exactly one
+   thumb wide so the rail centres under the thumb. */
+.speed-slider-track {
   position: relative;
   flex: 0 0 var(--thumb);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
 }
-/* The light, unfilled track — fades out toward the top edge. */
-.speed-slider-rail::before {
-  content: "";
+.speed-slider-track:focus-visible {
+  outline: none;
+}
+.speed-slider-track:focus-visible .speed-slider-thumb {
+  box-shadow: 0 0 0 4px var(--accent-soft), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* The travel region: inset top and bottom by half a thumb so the thumb never
+   clips at the extremes. Everything inside is positioned against this box, so
+   0%–100% spans exactly one thumb-centre to the other. */
+.speed-slider-rail {
   position: absolute;
   left: 50%;
-  top: 0;
-  bottom: 0;
+  top: calc(var(--thumb) / 2);
+  bottom: calc(var(--thumb) / 2);
   width: var(--rail-w);
   transform: translateX(-50%);
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(220, 220, 220, 0) 0%, #d8d8d8 16%);
+  background: var(--hairline-strong);
 }
-/* The dark fill, from the bottom up to the thumb. */
 .speed-slider-fill {
   position: absolute;
-  left: 50%;
+  left: 0;
   bottom: 0;
-  width: var(--rail-w);
-  height: var(--detent);
-  transform: translateX(-50%);
+  width: 100%;
+  height: calc(var(--pos) * 100%);
   border-radius: 999px;
-  background: #141414;
+  background: var(--accent);
   transition: height var(--t-fast);
+}
+/* Detent marks cut across the rail at each step. */
+.speed-slider-notch {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--pos) * 100%);
+  width: 10px;
+  height: 2px;
+  transform: translate(-50%, 50%);
+  border-radius: 1px;
+  background: var(--bg);
+  opacity: 0.7;
 }
 .speed-slider-thumb {
   position: absolute;
   left: 50%;
-  bottom: var(--detent);
+  bottom: calc(var(--pos) * 100%);
   width: var(--thumb);
   height: var(--thumb);
   transform: translate(-50%, 50%);
@@ -2036,35 +1983,39 @@ h2.panel-header {
   transition: bottom var(--t-fast);
 }
 
-.speed-slider-scale {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
+/* Static rate labels, each pinned to its detent so it lines up with the notch
+   and thumb. Same top/bottom inset as the rail. */
+.speed-slider-labels {
+  position: relative;
+  /* Absolutely-positioned labels contribute no width, so reserve enough for
+     the longest rate name explicitly. */
+  flex: 0 0 auto;
+  width: 40px;
+  margin: calc(var(--thumb) / 2) 0;
 }
-.speed-slider-tick {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  justify-content: flex-start;
+.speed-slider-label {
+  position: absolute;
+  left: 0;
+  bottom: calc(var(--pos) * 100%);
+  transform: translateY(50%);
+  padding: 0;
   border: 0;
-  border-radius: 4px;
   background: transparent;
-  color: #8c8c8c;
-  font-size: 13px;
-  font-weight: 400;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
   cursor: pointer;
   transition: color var(--t-fast);
 }
-.speed-slider-tick:hover:not(:disabled) {
-  color: #c8c8c8;
+.speed-slider-label:hover {
+  color: var(--fg);
 }
-.speed-slider-tick.is-active {
-  color: #f2f2f2;
-  font-weight: 500;
-}
-.speed-slider-tick:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--accent-soft);
+.speed-slider-label.is-active {
+  color: var(--fg);
+  font-weight: 700;
 }
 /* =========================================================================
    Axis status — two-column readout sitting next to the d-pad. Same height

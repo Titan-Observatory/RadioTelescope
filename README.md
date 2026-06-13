@@ -88,7 +88,7 @@ Owns the physical hardware. Trusted-network only: **no auth, no queue, no rate l
 | Module | Role |
 |---|---|
 | `hardware/roboclaw.py` | RoboClaw Packet Serial driver (M1 = azimuth, M2 = elevation) |
-| `hardware/sdr.py` | LNA / bias-tee control via `airspy_gpio` |
+| `hardware/sdr.py` | LNA / bias-tee control via `airspy_gpio` (Airspy) or `rtl_biast` (RTL-SDR) |
 | `services/roboclaw.py` | Telemetry polling, goto/jog state machine, encoder → alt/az → RA/Dec |
 | `services/spectrum.py` | Spawns GNU Radio subprocess on demand, consumes spectra over ZeroMQ, EMA-integrates with spur rejection + baseline correction, broadcasts JSON frames |
 | `services/camera.py` | Shared V4L2 capture session so the MJPEG stream and snapshot endpoint coexist |
@@ -288,7 +288,7 @@ The platform is the public-facing half; the hardware service must never be. Befo
 ## Hardware notes (Raspberry Pi)
 
 - **Motors**: RoboClaw 2×N over USB serial (Packet Serial, address 0x80, 38400 baud). M1 = azimuth, M2 = elevation. Encoders are the only position source — calibrate `az_counts_per_degree`, `alt_counts_per_degree`, and zero offsets before trusting goto.
-- **SDR**: SoapySDR Airspy driver + GNU Radio. On the Pi: `sudo apt install soapysdr-module-airspy python3-soapysdr gnuradio gr-soapy python3-zmq` (none of these are on PyPI). Docker images already install them. Airspy Mini sample rate must be 3 Msps or 6 Msps.
+- **SDR**: SoapySDR + GNU Radio. Pick the dongle with `[sdr] driver`: `"airspy"` (Airspy Mini/R2) or `"rtlsdr"` (RTL2832U dongles, e.g. the Nooelec NESDR series). On the Pi: `sudo apt install soapysdr-module-airspy soapysdr-module-rtlsdr python3-soapysdr gnuradio gr-soapy python3-zmq` (none of these are on PyPI); add `rtl-sdr` for the `rtl_biast` bias-tee tool. Docker images already install them. Airspy Mini sample rate must be 3 Msps or 6 Msps; RTL-SDR tops out at ~2.4 Msps. Gain scale and bias-tee tool follow the driver (Airspy: 0–21 index / `airspy_gpio`; RTL-SDR: 0–49.6 dB / `rtl_biast`).
 - **Camera**: V4L2 device via OpenCV, configured under `[camera]`.
 
 ## Layout

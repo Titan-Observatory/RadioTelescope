@@ -47,22 +47,35 @@ label = "Cam A"
 
 [sdr]
 enabled = true
+# SoapySDR driver for the spectrum chain:
+#   "airspy" — Airspy Mini/R2 (gain is a 0-21 linearity index; bias tee via
+#              airspy_gpio).
+#   "rtlsdr" — RTL2832U dongles such as the Nooelec NESDR series (gain is
+#              0-49.6 dB tuner gain; bias tee via rtl_biast). Cap
+#              sample_rate_hz at ~2.4 Msps for reliable streaming.
+driver = "airspy"
+# Extra SoapySDR device args appended to the driver string, e.g.
+# "serial=00000101" to pick a specific dongle. Empty = first device found.
+device_args = ""
 center_freq_hz = 1.4204e9
 # Airspy Mini supports 3 Msps and 6 Msps only. 3 Msps (±1.5 MHz) covers
-# the full galactic H I velocity spread with headroom.
+# the full galactic H I velocity spread with headroom. RTL-SDR tops out at
+# ~2.4 Msps reliably (3.2 Msps absolute, lossy).
 sample_rate_hz = 3.0e6
 # Frequency resolution = sample_rate / fft_size. 8192 → 366 Hz bins, which
 # resolves H I cloud velocity components (~5–50 km/s ≈ 24–240 kHz wide)
 # across ~80+ bins instead of ~20. The FFT runs in a GNU Radio subprocess
 # (NEON-optimised FFTW) so the choice is no longer bounded by NumPy on the Pi.
 fft_size = 8192
-# Airspy "linearity" gain index (0-21, not dB). Leave unset to enable AGC,
-# but AGC chases signal and ruins spectroscopy — fix it for the H I line.
-# With a Sawbird H1+ (~40 dB pre-gain) feeding the Airspy Mini, 12-14 keeps
-# the ADC well below clipping while preserving SNR on the line.
+# Fixed gain (driver-dependent scale: Airspy 0-21 linearity index; RTL-SDR
+# 0-49.6 dB tuner gain). Leave unset to enable AGC, but AGC chases signal and
+# ruins spectroscopy — fix it for the H I line. With a Sawbird H1+ (~40 dB
+# pre-gain) feeding an Airspy Mini, 12-14 keeps the ADC below clipping while
+# preserving SNR; on an RTL-SDR start around 25-35 dB.
 gain_db = 14
-# Set true if the Sawbird is powered through the Airspy's bias tee rather
-# than a separate 5 V injector.
+# Set true if the Sawbird is powered through the SDR's bias tee (toggled via
+# airspy_gpio for the Airspy, rtl_biast for RTL-SDR) rather than a separate
+# 5 V injector. RTL-SDR bias-tee needs an NESDR SMArTee or similar.
 lna_bias_tee_enabled = false
 # Rolling integration window for the displayed trace, in wall-clock seconds.
 # Per-bin σ ≈ 1/√(integration_seconds × bin_bandwidth). 15-30 s is a good

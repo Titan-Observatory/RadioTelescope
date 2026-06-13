@@ -26,10 +26,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         airspy \
         librtlsdr0 \
+        rtl-sdr \
         libopencv-core406 libopencv-imgproc406 libopencv-imgcodecs406 \
         python3-soapysdr \
         soapysdr-tools \
         soapysdr-module-airspy \
+        soapysdr-module-rtlsdr \
         libsoapysdr0.8 \
         gnuradio \
         gr-soapy \

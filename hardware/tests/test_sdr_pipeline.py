@@ -50,3 +50,26 @@ def test_pipeline_builds_flowgraph_with_default_config():
 
     # Smoke: top_block has its connected blocks and a sane name.
     assert tb.name() == "rt-spectrum-pipeline"
+
+
+def test_pipeline_builds_flowgraph_with_rtlsdr_driver():
+    """The flowgraph wiring is driver-agnostic — building it for the rtlsdr
+    driver (Nooelec NESDR etc.) should parse just like the Airspy default.
+
+    Requires soapysdr-module-rtlsdr at run time, but construction only needs
+    gr-soapy; skipped when that's missing.
+    """
+    from rt_hardware import sdr_pipeline
+
+    class _Cfg:
+        sdr = SDRConfig(driver="rtlsdr", sample_rate_hz=2.4e6)
+        general = type("G", (), {"log_level": "INFO"})()
+
+    try:
+        tb = sdr_pipeline.build_flowgraph(_Cfg())
+    except RuntimeError as exc:
+        if "gr-soapy" in str(exc):
+            pytest.skip("gr-soapy not installed in this environment")
+        raise
+
+    assert tb.name() == "rt-spectrum-pipeline"
