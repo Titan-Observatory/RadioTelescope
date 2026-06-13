@@ -27,6 +27,8 @@ export interface UseQueueLeaseResult {
    *  null when the cooldown elapses. */
   joinRateLimitedSec: number | null;
   join: (turnstileToken: string | null, betaPassword: string | null) => Promise<void>;
+  /** Explicitly notify the queue that the controller is still active. */
+  renewActivity: () => void;
   /** Move past the welcome card once the user clicks "Continue". */
   acknowledgeContinue: () => void;
 }
@@ -41,6 +43,7 @@ export function useQueueLease(): UseQueueLeaseResult {
   const [continueAcked, setContinueAcked] = useState(false);
   const prevIsActiveRef = useRef<boolean | null>(null);
   const lastLeaseRemainingRef = useRef<number | null>(null);
+  const lastActivitySentRef = useRef(0);
 
   // Bootstrap.
   useEffect(() => {
@@ -64,28 +67,30 @@ export function useQueueLease(): UseQueueLeaseResult {
     },
   });
 
+  const sendActivity = useCallback((force = false) => {
+    if (!wsEnabled) return;
+    const now = Date.now();
+    if (!force && now - lastActivitySentRef.current < 5000) return;
+    lastActivitySentRef.current = now;
+    sendQueueActivity('a');
+  }, [wsEnabled, sendQueueActivity]);
+
   // Treat any UI activity (click, scroll, keypress, pointer) as a heartbeat
   // that resets the server-side idle countdown. Throttled so we send at most
   // once every few seconds while the user is interacting.
   useEffect(() => {
     if (!wsEnabled) return;
-    let lastSent = 0;
-    const sendActivity = () => {
-      const now = Date.now();
-      if (now - lastSent < 5000) return;
-      lastSent = now;
-      sendQueueActivity('a');
-    };
+    const sendThrottledActivity = () => sendActivity();
     const events: (keyof DocumentEventMap)[] = ['click', 'scroll', 'keydown', 'pointerdown', 'wheel', 'touchstart'];
     for (const e of events) {
-      document.addEventListener(e, sendActivity, { passive: true, capture: true });
+      document.addEventListener(e, sendThrottledActivity, { passive: true, capture: true });
     }
     return () => {
       for (const e of events) {
-        document.removeEventListener(e, sendActivity, { capture: true });
+        document.removeEventListener(e, sendThrottledActivity, { capture: true });
       }
     };
-  }, [wsEnabled, sendQueueActivity]);
+  }, [wsEnabled, sendActivity]);
 
   // Track the last known lease time so we can distinguish lease expiry from
   // idle timeout when the session drops.
@@ -158,6 +163,7 @@ export function useQueueLease(): UseQueueLeaseResult {
     joinError,
     joinRateLimitedSec,
     join,
+    renewActivity: () => sendActivity(true),
     acknowledgeContinue,
   };
 }

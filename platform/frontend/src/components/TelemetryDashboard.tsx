@@ -88,7 +88,7 @@ export function TelemetryDashboard({
         connectionRow,
         ['LNA', <LnaIndicator status={lnaStatus} />],
         ['Power', volts(systemPower), voltClass(systemPower)],
-        ['RoboClaw temp', celsius(roboclawTemp), tempClass(roboclawTemp)],
+        ['Controller temp', celsius(roboclawTemp), tempClass(roboclawTemp)],
         ['Pi temp', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
       ]} />
       <DenseReadout title="Pointing" icon={<Navigation size={11} />} rows={[

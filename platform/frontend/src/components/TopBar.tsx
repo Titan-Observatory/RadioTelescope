@@ -12,6 +12,7 @@ import { FeedbackToast } from './FeedbackToast';
 
 const FEEDBACK_PROMPT_DELAY_MS = 2 * 60 * 1000;
 const FEEDBACK_PROMPT_STORAGE_KEY = 'rt-feedback-prompt-resolved';
+const IDLE_WARNING_SECONDS = 10;
 
 function LeaseChip({ status }: { status: QueueStatus }) {
   const [detailOpen, setDetailOpen] = useState(false);
@@ -44,12 +45,48 @@ function LeaseChip({ status }: { status: QueueStatus }) {
   );
 }
 
+function IdleWarningOverlay({
+  idleSeconds,
+  onRenewActivity,
+}: {
+  idleSeconds: number;
+  onRenewActivity: () => void;
+}) {
+  return (
+    <div className="idle-warning-backdrop" role="presentation">
+      <section
+        className="idle-warning-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="idle-warning-title"
+        aria-describedby="idle-warning-description"
+      >
+        <div className="idle-warning-kicker">Session idle warning</div>
+        <h2 id="idle-warning-title">Are you still there?</h2>
+        <p id="idle-warning-description">
+          Your control session will time out in <strong>{idleSeconds}s</strong>.
+        </p>
+        <button
+          type="button"
+          className="idle-warning-action"
+          onClick={onRenewActivity}
+          autoFocus
+        >
+          I'm still here
+        </button>
+      </section>
+    </div>
+  );
+}
+
 export function TopBar({
   telemetry,
   leaseStatus,
+  onRenewActivity,
 }: {
   telemetry: RoboClawTelemetry | null;
   leaseStatus: QueueStatus | null;
+  onRenewActivity?: () => void;
 }) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackInitialRating, setFeedbackInitialRating] = useState(0);
@@ -81,6 +118,14 @@ export function TopBar({
     setFeedbackInitialRating(initialRating);
     setFeedbackOpen(true);
   }
+
+  const idleSeconds = leaseStatus?.idle_remaining_s == null
+    ? null
+    : Math.max(0, Math.round(leaseStatus.idle_remaining_s));
+  const showIdleWarning = idleSeconds != null
+    && idleSeconds <= IDLE_WARNING_SECONDS
+    && leaseStatus?.is_active === true
+    && onRenewActivity != null;
 
   return (
     <>
@@ -137,6 +182,15 @@ export function TopBar({
           openFeedback(rating);
         }}
       />
+      {showIdleWarning && (
+        <IdleWarningOverlay
+          idleSeconds={idleSeconds}
+          onRenewActivity={() => {
+            track('idle_warning_confirmed', { idle_remaining_s: idleSeconds });
+            onRenewActivity();
+          }}
+        />
+      )}
     </>
   );
 }

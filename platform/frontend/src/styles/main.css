@@ -279,6 +279,70 @@ input:focus-visible {
   flex-shrink: 0;
 }
 
+.idle-warning-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 7, 14, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.idle-warning-dialog {
+  width: min(440px, 100%);
+  padding: 28px;
+  border: 1px solid rgba(255, 188, 66, 0.34);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.idle-warning-kicker {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.idle-warning-dialog h2 {
+  margin: 0;
+  color: var(--fg);
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.idle-warning-dialog p {
+  margin: 12px 0 22px;
+  color: var(--fg-muted);
+  font-size: 15px;
+}
+
+.idle-warning-dialog strong {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-warning-action {
+  width: 100%;
+  min-height: 44px;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.idle-warning-action:hover {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
 .topbar-help {
   display: inline-flex;
   align-items: center;
@@ -1318,10 +1382,14 @@ input:focus-visible {
    link on the right that launches a guided tour walking through each part of
    the spectrum (see startSpectrumTour). */
 .spectrum-chart-head {
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 14px;
   margin: 8px 0 6px;
 }
 .spectrum-chart-caption {
+  grid-column: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1339,21 +1407,30 @@ input:focus-visible {
   margin: 0;
 }
 .spectrum-learn-link {
-  position: absolute;
-  left: 0;
-  top: 2px;
+  grid-column: 1;
+  justify-self: start;
+  align-self: end;
+  display: inline;
+  min-height: 0;
   padding: 0;
   border: none;
+  border-radius: 0;
   background: none;
   color: var(--fg-muted);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.4;
   cursor: pointer;
   text-decoration: underline;
   text-decoration-color: var(--accent-edge);
   text-underline-offset: 3px;
+  transition: color var(--t-fast);
 }
-.spectrum-learn-link:hover { color: var(--fg); }
+.spectrum-learn-link:hover {
+  background: none;
+  color: var(--fg);
+}
+.spectrum-learn-link:active { background: none; }
 
 /* Inline glossary-term button (also used on the queue page). */
 .spectrum-doppler-term {
@@ -1899,19 +1976,24 @@ h2.panel-header {
 }
 
 /* =========================================================================
-   Speed throttle — a slim vertical lever to the left of the d-pad, sharing
-   its height. Three telescope rates stacked fastest-on-top (Slew / Set /
-   Guide). A single groove runs the full height; amber fill rises from the
-   bottom to the chosen rate and a grip knob marks the current detent, so it
-   reads like a physical throttle: the higher the knob, the faster the slew.
+   Speed throttle — a modern stepped slider to the left of the d-pad. The
+   whole control reads as one vertical track with three detents; each row is
+   still a full-size radio button for easy pointer and keyboard use.
    ========================================================================= */
 .speed-toggle {
+  --speed-steps: 3;
+  --speed-active: 1;
+  --speed-track-x: 22px;
+  /* Centre of a detent counted from the bottom of the body. Shared by the
+     track ends, fill height and thumb so they all sit on their dots. */
+  --speed-step-h: calc(100% / var(--speed-steps));
+  --speed-active-y: calc((var(--speed-active) + 0.5) * var(--speed-step-h));
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  width: 60px;
-  gap: 4px;
-  padding: 7px 6px 6px;
+  width: 88px;
+  gap: 7px;
+  padding: 8px 7px 10px;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--r-md);
   background:
@@ -1920,7 +2002,7 @@ h2.panel-header {
 }
 
 .speed-toggle-heading {
-  padding: 0 2px 2px;
+  padding: 0 2px;
   color: var(--fg-subtle);
   font-size: 8px;
   font-weight: 700;
@@ -1930,6 +2012,57 @@ h2.panel-header {
   text-transform: uppercase;
 }
 
+.speed-toggle-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 104px;
+}
+
+.speed-toggle-track {
+  position: absolute;
+  left: var(--speed-track-x);
+  /* Span exactly between the top and bottom dot centres. */
+  top: calc(var(--speed-step-h) / 2);
+  bottom: calc(var(--speed-step-h) / 2);
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(83, 96, 150, 0.36);
+  pointer-events: none;
+}
+
+.speed-toggle-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Run from the lowest dot up to the active dot. */
+  bottom: calc(var(--speed-step-h) / 2);
+  height: calc(var(--speed-active) * var(--speed-step-h));
+  min-height: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent-strong), var(--accent-line));
+  box-shadow: 0 0 10px rgba(255, 198, 61, 0.26);
+  transition: height var(--t-fast);
+}
+
+.speed-toggle-thumb {
+  position: absolute;
+  left: var(--speed-track-x);
+  bottom: var(--speed-active-y);
+  width: 17px;
+  transition: bottom var(--t-fast);
+  height: 17px;
+  transform: translate(-50%, 50%);
+  border: 2px solid rgba(255, 221, 120, 0.45);
+  border-radius: 999px;
+  background: var(--accent-strong);
+  box-shadow:
+    0 0 0 3px rgba(255, 198, 61, 0.13),
+    0 0 14px rgba(255, 198, 61, 0.38);
+}
+
 .speed-toggle-btn {
   position: relative;
   display: flex;
@@ -1937,7 +2070,7 @@ h2.panel-header {
   justify-content: flex-start;
   flex: 1;
   min-height: 32px;
-  padding: 0 5px 0 22px;
+  padding: 0 6px 0 44px;
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
@@ -1954,50 +2087,48 @@ h2.panel-header {
     color var(--t-fast);
 }
 
-/* The groove + fill. Each segment carries its slice of the lever slot; lit
-   slices touch end-to-end (zero gap) so they form one continuous amber column
-   rising from the bottom. */
-.speed-toggle-rail {
+.speed-toggle-dot {
   position: absolute;
-  left: 8px;
-  top: 6px;
-  bottom: 6px;
-  width: 5px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  transition: background var(--t-fast);
-}
-.speed-toggle-btn.is-lit .speed-toggle-rail { background: var(--accent-line); }
-
-/* Grip knob: a small horizontal handle straddling the groove at the active
-   detent — the lever you've pushed the throttle to. */
-.speed-toggle-btn.is-active .speed-toggle-rail::after {
-  content: '';
-  position: absolute;
-  left: -4px;
+  left: var(--speed-track-x);
   top: 50%;
-  width: 13px;
-  height: 9px;
-  transform: translateY(-50%);
-  border-radius: 3px;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 3px solid var(--surface-1);
+  background: #6571b8;
+  box-shadow: 0 0 0 1px rgba(101, 113, 184, 0.42);
+  transition:
+    background var(--t-fast),
+    box-shadow var(--t-fast);
+}
+.speed-toggle-btn.is-lit .speed-toggle-dot {
   background: var(--accent-strong);
-  border: 1px solid var(--accent-edge);
-  box-shadow: 0 0 8px var(--accent-line);
+  box-shadow: 0 0 0 1px var(--accent-edge);
 }
 
 .speed-toggle-btn:hover:not(:disabled) {
   color: var(--fg);
-  background: var(--surface-2);
-  border-color: var(--hairline-strong);
+  background: rgba(255, 255, 255, 0.035);
+  border-color: transparent;
 }
 .speed-toggle-btn.is-active {
   color: var(--accent);
-  background: var(--accent-soft);
-  border-color: rgba(255, 198, 61, 0.34);
+  background: transparent;
+  border-color: transparent;
+}
+.speed-toggle-btn.is-active .speed-toggle-dot {
+  opacity: 0;
+}
+.speed-toggle-label {
+  display: block;
+  min-width: 36px;
+  text-align: left;
 }
 .speed-toggle-btn:focus-visible { outline: none; }
 .speed-toggle-btn:focus-visible {
   box-shadow: 0 0 0 2px var(--accent-soft);
+  background: rgba(255, 198, 61, 0.08);
 }
 /* =========================================================================
    Axis status — two-column readout sitting next to the d-pad. Same height

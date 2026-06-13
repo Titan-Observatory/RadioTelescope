@@ -86,6 +86,7 @@ function ControlUI({ queue }: ControlUIProps) {
       <TopBar
         telemetry={telemetry}
         leaseStatus={queue.queueEnabled && queue.queueStatus?.is_active ? queue.queueStatus : null}
+        onRenewActivity={queue.renewActivity}
       />
 
       <main className="dashboard">

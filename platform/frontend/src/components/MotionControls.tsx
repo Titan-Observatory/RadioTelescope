@@ -172,29 +172,47 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
   // Render fastest at the top, slowest at the bottom: taller bar = faster, so
   // the column itself reads like a throttle without needing to parse labels.
   const ordered = [...SPEED_PRESETS].reverse();
+  // Single coordinate system shared by the track, fill, thumb and dots: each
+  // detent sits at the centre of its (flex:1) row, so the i-th step counted
+  // from the bottom lands at (i + 0.5) / steps. Feeding the same step index to
+  // the CSS keeps the glowing thumb locked onto its dot.
+  const steps = ordered.length;
+  const activeFromTop = ordered.findIndex((p) => p.id === active.id);
+  const activeStep = steps - 1 - activeFromTop;
 
   return (
-    <div className="speed-toggle" role="radiogroup" aria-label="Slew speed">
+    <div
+      className="speed-toggle"
+      role="radiogroup"
+      aria-label="Slew speed"
+      style={{ '--speed-steps': steps, '--speed-active': activeStep } as React.CSSProperties}
+    >
       <span className="speed-toggle-heading">Speed</span>
-      {ordered.map((p) => {
-        const selected = p.id === active.id;
-        // Light every segment at or below the chosen level so the column
-        // fills from the bottom like a throttle lever (taller fill = faster).
-        const lit = p.value <= active.value;
-        return (
-          <button
-            key={p.id}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            className={`speed-toggle-btn speed-toggle-${p.id}${selected ? ' is-active' : ''}${lit ? ' is-lit' : ''}`}
-            onClick={() => setSlewSpeed(p.value)}
-          >
-            <span className="speed-toggle-rail" aria-hidden="true" />
-            <span className="speed-toggle-label">{p.label}</span>
-          </button>
-        );
-      })}
+      <div className="speed-toggle-body">
+        <span className="speed-toggle-track" aria-hidden="true">
+          <span className="speed-toggle-fill" />
+          <span className="speed-toggle-thumb" />
+        </span>
+        {ordered.map((p) => {
+          const selected = p.id === active.id;
+          // Light every detent at or below the chosen level so the slider
+          // fills from the bottom like a stepped throttle.
+          const lit = p.value <= active.value;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              className={`speed-toggle-btn speed-toggle-${p.id}${selected ? ' is-active' : ''}${lit ? ' is-lit' : ''}`}
+              onClick={() => setSlewSpeed(p.value)}
+            >
+              <span className="speed-toggle-dot" aria-hidden="true" />
+              <span className="speed-toggle-label">{p.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

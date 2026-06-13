@@ -681,7 +681,8 @@ function baseOption(yRange: [number, number]): EChartsOption {
   // panel hairline so they read as background structure, not foreground noise.
   const tickColor = '#6f719a';
   const lineColor = '#262a44';
-  const gridColor = '#181a2c';
+  const gridColor = '#1c1f33';
+  const traceColor = '#ffbc42';
 
   return {
     backgroundColor: 'transparent',
@@ -696,7 +697,7 @@ function baseOption(yRange: [number, number]): EChartsOption {
       nameLocation: 'middle',
       nameGap: 28,
       nameTextStyle: { color: tickColor, fontSize: 11 },
-      axisLine: { lineStyle: { color: lineColor } },
+      axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
         color: tickColor,
@@ -705,7 +706,7 @@ function baseOption(yRange: [number, number]): EChartsOption {
         hideOverlap: true,
         formatter: (v: number) => v.toFixed(1),
       },
-      splitLine: { lineStyle: { color: gridColor } },
+      splitLine: { lineStyle: { color: gridColor, type: 'dashed' } },
       splitNumber: 6,
       min: 'dataMin',
       max: 'dataMax',
@@ -717,10 +718,10 @@ function baseOption(yRange: [number, number]): EChartsOption {
       nameRotate: 90,
       nameGap: 34,
       nameTextStyle: { color: tickColor, fontSize: 11 },
-      axisLine: { lineStyle: { color: lineColor } },
+      axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: { color: tickColor, fontSize: 11, margin: 8 },
-      splitLine: { lineStyle: { color: gridColor } },
+      splitLine: { lineStyle: { color: gridColor, type: 'dashed' } },
       splitNumber: 5,
       min: yRange[0],
       max: yRange[1],
@@ -729,12 +730,17 @@ function baseOption(yRange: [number, number]): EChartsOption {
       trigger: 'axis',
       backgroundColor: 'rgba(16, 18, 30, 0.95)',
       borderColor: lineColor,
+      padding: [6, 10],
       textStyle: { color: '#eaebf5', fontSize: 12 },
+      axisPointer: {
+        type: 'line',
+        lineStyle: { color: 'rgba(255, 188, 66, 0.45)', width: 1, type: 'dashed' },
+      },
       formatter: (params: any) => {
         const p = Array.isArray(params) ? params[0] : params;
         if (!p?.value) return '';
         const [f, db] = p.value as [number, number];
-        return `${f.toFixed(4)} MHz<br/>${db.toFixed(2)} dB`;
+        return `<strong style="color:${traceColor}">${f.toFixed(4)} MHz</strong><br/>${db.toFixed(2)} dB`;
       },
     },
     series: [
@@ -742,8 +748,39 @@ function baseOption(yRange: [number, number]): EChartsOption {
         type: 'line',
         showSymbol: false,
         sampling: 'lttb',
-        lineStyle: { color: '#ffbc42', width: 1 },
-        areaStyle: { color: 'rgba(255, 188, 66, 0.08)' },
+        // No spline smoothing: each point is a real FFT bin, and smoothing
+        // makes the spline (and its area fill) overshoot above sharp peaks,
+        // so the gradient would poke above the trace. Straight segments keep
+        // the fill strictly below the line.
+        smooth: false,
+        // A faint outer glow lifts the trace off the dark panel without the
+        // 1 px line reading as thick.
+        lineStyle: {
+          color: traceColor,
+          width: 1.4,
+          shadowColor: 'rgba(255, 188, 66, 0.55)',
+          shadowBlur: 6,
+        },
+        // Vertical gradient: amber haze at the trace fading to nothing toward
+        // the noise floor, so the filled area suggests signal energy rather
+        // than a flat tint.
+        areaStyle: {
+          opacity: 1,
+          // The spectrum is dB and usually all-negative, so the default
+          // baseline (y=0) is off the top of the plot — the fill would anchor
+          // upward to zero. 'start' anchors it to the axis minimum so the
+          // gradient always falls below the trace.
+          origin: 'start',
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(255, 188, 66, 0.55)' },
+              { offset: 0.5, color: 'rgba(255, 188, 66, 0.18)' },
+              { offset: 1, color: 'rgba(255, 188, 66, 0.04)' },
+            ],
+          },
+        },
         data: [] as [number, number][],
       },
     ],
