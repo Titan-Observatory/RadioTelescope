@@ -14,6 +14,7 @@ import type { EChartsOption } from 'echarts';
 
 import { Sliders, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import { HYDROGEN_LINE_MHZ } from '../lib/astro';
 import { useJsonSocket } from '../lib/useJsonSocket';
@@ -100,6 +101,16 @@ const H1_DISPLAY_HALF_WIDTH_MHZ = 0.75;
 // freshly-tuned RTL-SDR's typical noise floor without clipping.
 const DEFAULT_Y_RANGE: [number, number] = [-8, 8];
 
+// Trace colours. Amber is the normal, baseline-corrected look; red signals
+// that no baseline has been captured yet, so the trace is just the raw
+// receiver bandpass and shouldn't be read as real signal.
+const NORMAL_TRACE_COLOR = '#ffbc42';
+const ALERT_TRACE_COLOR = '#ff5a5f';
+const TRACE_RGB: Record<string, string> = {
+  [NORMAL_TRACE_COLOR]: '255, 188, 66',
+  [ALERT_TRACE_COLOR]: '255, 90, 95',
+};
+
 const SPEED_OF_LIGHT_KMS = 299792.458;
 
 // Minimum prominence (dB above the spectrum median) before we report a peak
@@ -149,6 +160,39 @@ interface Baseline {
 interface SpectrumPanelProps {
   enabled?: boolean;
   onStartGuided?: () => void;
+}
+
+type InlineInfoPopoverProps = {
+  label: ReactNode;
+  ariaLabel: string;
+  children: ReactNode;
+};
+
+function InlineInfoPopover({ label, ariaLabel, children }: InlineInfoPopoverProps) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <span
+      className={`spectrum-inline-popover${open ? ' is-open' : ''}`}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        className="spectrum-doppler-term"
+        aria-label={ariaLabel}
+        aria-expanded={open ? 'true' : 'false'}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {label}
+      </button>
+      <span className="spectrum-inline-popover-panel" role="tooltip">
+        {children}
+      </span>
+    </span>
+  );
 }
 
 export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelProps = {}) {
@@ -282,12 +326,13 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     yRangeInitRef.current = true;
     yRangeRef.current = next;
     const win = displayWindow(frame);
+    const traceColor = baselineApplies ? NORMAL_TRACE_COLOR : ALERT_TRACE_COLOR;
     chart.setOption({
       xAxis: win ? { min: win.xMin, max: win.xMax } : {},
       yAxis: { min: round2(next[0]), max: round2(next[1]) },
-      series: [{ data }],
+      series: [{ data, ...traceStyle(traceColor) }],
     });
-  }, [frame, displayed]);
+  }, [frame, displayed, baselineApplies]);
 
   // Keep the waterfall canvas pixel-buffer in lockstep with its CSS box,
   // scaled for devicePixelRatio so the inferno colours stay crisp on HiDPI.
@@ -454,8 +499,6 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     const toPct = (mhz: number) => `${Math.max(0, Math.min(100, ((mhz - xMin) / span) * 100))}%`;
     return {
       lineLeft: toPct(H1_REST_MHZ),
-      bandLeft: toPct(H1_REST_MHZ - H1_SEARCH_HALF_WIDTH_MHZ),
-      bandRight: toPct(H1_REST_MHZ + H1_SEARCH_HALF_WIDTH_MHZ),
     };
   }, [frame]);
 
@@ -520,51 +563,42 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     <section className="spectrum-section">
       <header className="spectrum-head">
         <div className="spectrum-head-titles">
-          <h2 className="panel-header head-amber">
-            Hydrogen line spectrum
-          </h2>
+          <div className="spectrum-head-row">
+            <h2 className="panel-header head-amber spectrum-title-lg">
+              Hydrogen line spectrum
+            </h2>
+            {onStartGuided && (
+              <button
+                type="button"
+                className="spectrum-guided-cta"
+                onClick={onStartGuided}
+                disabled={!connected || !frame}
+                title={!connected || !frame ? 'Waiting for SDR…' : 'Walk through a hydrogen-line observation step by step'}
+              >
+                <Sparkles size={14} /> Guided observation
+              </button>
+            )}
+          </div>
           <p className="spectrum-subtitle">
-            Neutral hydrogen across the Milky Way glows at 1420.406&nbsp;MHz — the marker below.
+            Neutral hydrogen in the Milky Way emits radio energy at <strong>1420.4 MHz</strong>. This panel shows a live spectrum from the SDR, with a vertical marker at that reference frequency. Gas moving toward or away from the telescope shifts the signal slightly by the{' '}
+            <InlineInfoPopover
+              label="Doppler effect"
+              ariaLabel="Show what the Doppler effect means"
+            >
+              <strong>Motion shifts the observed frequency.</strong>
+              <span>
+                Gas moving toward the telescope is blueshifted slightly higher in frequency, while gas moving away is redshifted slightly lower.
+              </span>
+            </InlineInfoPopover>. By observing several points along the galactic plane, you can see the motion and distribution of the hydrogen gas in our own Milky Way galaxy.
           </p>
         </div>
         <div className="spectrum-status">
           {baseline && !baselineApplies && <span className="spectrum-tag spectrum-tag-warn">baseline mismatched</span>}
           {!connected && <span className="spectrum-disconnected">offline</span>}
-          {onStartGuided && (
-            <button
-              type="button"
-              className="spectrum-guided-cta"
-              onClick={onStartGuided}
-              disabled={!connected || !frame}
-              title={!connected || !frame ? 'Waiting for SDR…' : 'Walk through a hydrogen-line observation step by step'}
-            >
-              <Sparkles size={12} /> Guided observation
-            </button>
-          )}
         </div>
       </header>
 
       <div className="spectrum-chart-wrap">
-        <div className="spectrum-toolbar spectrum-baseline-row" aria-label="Baseline correction">
-          <span className={`spectrum-baseline-state${baselineApplies ? ' is-applied' : ''}`}>
-            <span className="spectrum-baseline-dot" aria-hidden />
-            {baselineApplies ? 'Baseline applied' : 'No baseline'}
-          </span>
-          <span className="spectrum-baseline-hint">
-            {baselineApplies
-              ? 'The receiver bandpass is being subtracted, so real signals stand out.'
-              : 'Capture a reference on empty sky so faint signals stand out from the receiver itself.'}
-          </span>
-          <button
-            type="button"
-            className="ghost-btn"
-            onClick={() => setWizardOpen(true)}
-            title="Open the guided flow to point at empty sky and capture a baseline (or just load a saved one)"
-          >
-            <Sliders size={12} /> {baselineApplies ? 'Recapture' : 'Set up baseline'}
-          </button>
-        </div>
-
         <div className="spectrum-chart-head">
           <button
             type="button"
@@ -597,12 +631,9 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
               className="spectrum-hydrogen-guide"
               style={{
                 '--h1-line-left': hydrogenGuide.lineLeft,
-                '--h1-band-left': hydrogenGuide.bandLeft,
-                '--h1-band-right': hydrogenGuide.bandRight,
               } as React.CSSProperties}
               aria-hidden
             >
-              <span className="spectrum-hydrogen-band" />
               <span className="spectrum-hydrogen-line">
                 <small>{H1_REST_MHZ.toFixed(4)} MHz</small>
               </span>
@@ -617,43 +648,74 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
               {chartEmptyMessage}
             </div>
           )}
-        </div>
-
-        {frame && (
-        <div className="spectrum-readouts" aria-label="Hydrogen line measurements">
-          <div className="spectrum-readout">
-            <span className="spectrum-readout-label">Peak</span>
-            <span className="spectrum-readout-value">
-              {detection?.detected ? `${detection.freqMhz.toFixed(3)} MHz` : '—'}
-            </span>
-          </div>
-          <div className="spectrum-readout">
-            <span className="spectrum-readout-label">Strength</span>
-            <span className="spectrum-readout-value">
-              {detection?.detected ? `+${detection.prominenceDb.toFixed(1)} dB` : '—'}
-            </span>
-          </div>
-          <div className="spectrum-readout">
-            <span className="spectrum-readout-label">Doppler velocity</span>
-            <span className="spectrum-readout-value">
-              {velocity == null ? '—' : `${velocity >= 0 ? '+' : '−'}${Math.abs(velocity).toFixed(0)} km/s`}
-            </span>
-            {velocity != null && Math.abs(velocity) >= 3 && (
-              <span className="spectrum-readout-sub">
-                {velocity >= 0 ? 'gas receding' : 'gas approaching'}
-              </span>
-            )}
-          </div>
-          {detection && !detection.detected && (
-            <div className="spectrum-readout spectrum-readout-wide">
-              <span className="spectrum-readout-hint">
-                No clear hydrogen peak yet — the signal is strongest along the galactic plane
-                (galactic latitude near 0°).
-              </span>
+          {!baselineApplies && frame && (
+            <div className="spectrum-baseline-overlay" aria-hidden>
+              Baseline capture needed
             </div>
           )}
         </div>
-        )}
+
+        {!baselineApplies ? (
+          <div className="spectrum-baseline-row spectrum-baseline-callout" aria-label="Baseline correction">
+            <span className="spectrum-baseline-state">
+              <span className="spectrum-baseline-dot" aria-hidden />
+              No baseline
+            </span>
+            <span className="spectrum-baseline-hint">
+              Capture a reference on empty sky so faint signals stand out from the receiver itself.
+            </span>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => setWizardOpen(true)}
+              title="Open the guided flow to point at empty sky and capture a baseline (or just load a saved one)"
+            >
+              <Sliders size={12} /> Set up baseline
+            </button>
+          </div>
+        ) : frame ? (
+          <div className="spectrum-readouts" aria-label="Hydrogen line measurements">
+            <div className="spectrum-readout">
+              <span className="spectrum-readout-label">Peak</span>
+              <span className="spectrum-readout-value">
+                {detection?.detected ? `${detection.freqMhz.toFixed(3)} MHz` : '—'}
+              </span>
+            </div>
+            <div className="spectrum-readout">
+              <span className="spectrum-readout-label">Strength</span>
+              <span className="spectrum-readout-value">
+                {detection?.detected ? `+${detection.prominenceDb.toFixed(1)} dB` : '—'}
+              </span>
+            </div>
+            <div className="spectrum-readout">
+              <span className="spectrum-readout-label">Doppler velocity</span>
+              <span className="spectrum-readout-value">
+                {velocity == null ? '—' : `${velocity >= 0 ? '+' : '−'}${Math.abs(velocity).toFixed(0)} km/s`}
+              </span>
+              {velocity != null && Math.abs(velocity) >= 3 && (
+                <span className="spectrum-readout-sub">
+                  {velocity >= 0 ? 'gas receding' : 'gas approaching'}
+                </span>
+              )}
+            </div>
+            {detection && !detection.detected && (
+              <div className="spectrum-readout spectrum-readout-wide">
+                <span className="spectrum-readout-hint">
+                  No clear hydrogen peak yet — the signal is strongest along the galactic plane
+                  (galactic latitude near 0°).
+                </span>
+              </div>
+            )}
+            <button
+              type="button"
+              className="ghost-btn spectrum-recapture-btn"
+              onClick={() => setWizardOpen(true)}
+              title="Capture a fresh baseline (or load a saved one)"
+            >
+              <Sliders size={12} /> Recapture
+            </button>
+          </div>
+        ) : null}
 
         <details
           className="spectrum-waterfall-dropdown"
@@ -687,7 +749,14 @@ function robustYRange(values: number[]): [number, number] {
   if (n === 0) return DEFAULT_Y_RANGE;
   const sorted = Float64Array.from(values).sort();
   const at = (p: number) => sorted[Math.min(n - 1, Math.max(0, Math.round(p * (n - 1))))];
-  let lo = at(0.005);
+  // Reject low outliers (p2), not just the single lowest bin. Since the
+  // spectrum is now cropped to the flat H I window, the band-edge roll-off that
+  // used to populate the bottom of the plot is gone, so a 0.5th-percentile
+  // floor just tracks sparse RFI notches / the DC dip and leaves dead space
+  // below the trace. p2 anchors on the real noise floor and is steadier
+  // frame-to-frame. The top stays at p99.5 — the broad hydrogen bump is far
+  // wider than 0.5% of the bins, so this never clips the signal peak.
+  let lo = at(0.02);
   let hi = at(0.995);
   const MIN_SPAN = 1.5;
   if (hi - lo < MIN_SPAN) {
@@ -802,36 +871,46 @@ function baseOption(yRange: [number, number]): EChartsOption {
         // so the gradient would poke above the trace. Straight segments keep
         // the fill strictly below the line.
         smooth: false,
-        // A faint outer glow lifts the trace off the dark panel without the
-        // 1 px line reading as thick.
-        lineStyle: {
-          color: traceColor,
-          width: 1.4,
-          shadowColor: 'rgba(255, 188, 66, 0.55)',
-          shadowBlur: 6,
-        },
-        // Vertical gradient: amber haze at the trace fading to nothing toward
-        // the noise floor, so the filled area suggests signal energy rather
-        // than a flat tint.
-        areaStyle: {
-          opacity: 1,
-          // The spectrum is dB and usually all-negative, so the default
-          // baseline (y=0) is off the top of the plot — the fill would anchor
-          // upward to zero. 'start' anchors it to the axis minimum so the
-          // gradient always falls below the trace.
-          origin: 'start',
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(255, 188, 66, 0.55)' },
-              { offset: 0.5, color: 'rgba(255, 188, 66, 0.18)' },
-              { offset: 1, color: 'rgba(255, 188, 66, 0.04)' },
-            ],
-          },
-        },
+        ...traceStyle(traceColor),
         data: [] as [number, number][],
       },
     ],
+  };
+}
+
+// Line + area styling for the spectrum trace, keyed off the trace colour so the
+// amber (baseline applied) and red (no baseline) looks stay in sync between the
+// initial baseOption and the per-frame setOption.
+function traceStyle(color: string) {
+  const rgb = TRACE_RGB[color] ?? TRACE_RGB[NORMAL_TRACE_COLOR];
+  return {
+    // A faint outer glow lifts the trace off the dark panel without the
+    // 1 px line reading as thick.
+    lineStyle: {
+      color,
+      width: 1.4,
+      shadowColor: `rgba(${rgb}, 0.55)`,
+      shadowBlur: 6,
+    },
+    // Vertical gradient: a haze at the trace fading to nothing toward the
+    // noise floor, so the filled area suggests signal energy rather than a
+    // flat tint.
+    areaStyle: {
+      opacity: 1,
+      // The spectrum is dB and usually all-negative, so the default baseline
+      // (y=0) is off the top of the plot — the fill would anchor upward to
+      // zero. 'start' anchors it to the axis minimum so the gradient always
+      // falls below the trace.
+      origin: 'start' as const,
+      color: {
+        type: 'linear' as const,
+        x: 0, y: 0, x2: 0, y2: 1,
+        colorStops: [
+          { offset: 0, color: `rgba(${rgb}, 0.55)` },
+          { offset: 0.5, color: `rgba(${rgb}, 0.18)` },
+          { offset: 1, color: `rgba(${rgb}, 0.04)` },
+        ],
+      },
+    },
   };
 }
