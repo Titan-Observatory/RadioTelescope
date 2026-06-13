@@ -337,12 +337,15 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             if (
                 proc_task is not None
                 and not proc_task.done()
-                and self._proc is None
                 and self.subscriber_count > 0
                 and not self._shutting_down
+                and (
+                    self._proc is None       # backoff wait between respawns
+                    or self._mode == "starting"  # subprocess is warming up
+                )
             ):
                 logger.info(
-                    "%s reconnect skipped; pipeline restart already pending (mode=%s)",
+                    "%s reconnect skipped; pipeline already starting/pending (mode=%s)",
                     self.name,
                     self._mode,
                 )
