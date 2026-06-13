@@ -345,8 +345,8 @@ function BaselinePickPopover({ onCancel, onConfirm }: {
       <strong className="baseline-pick-popover-title">Pick an empty patch of sky</strong>
       <p className="baseline-pick-popover-desc">
         Use the sky map to choose somewhere quiet — high in the sky, away from the Sun and
-        the bright band of the Milky Way. Click a point on the map to load it as your
-        target, then hit the Slew button to drive the dish there.
+        the shaded Milky Way band (clicks inside it are blocked). Click a point on the map to
+        load it as your target, then hit the Slew button to drive the dish there.
       </p>
       <div className="baseline-pick-popover-actions">
         <button type="button" className="rt-tour-btn rt-tour-btn-ghost" onClick={onCancel}>

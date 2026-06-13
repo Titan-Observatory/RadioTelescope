@@ -10,6 +10,7 @@ import {
   computeGroundIsInside,
   drawAltAzGrid,
   drawCardinals,
+  drawGalacticExclusion,
   drawGround,
   drawHorizonLine,
   drawSlewPath,
@@ -27,6 +28,8 @@ interface UseHorizonCanvasOptions {
   configRef: RefObject<TelescopeConfig | null>;
   telemetryRef: RefObject<RoboClawTelemetry | null>;
   pendingRef: RefObject<RaDecTarget | null>;
+  /** Shade the galactic-plane exclusion band (baseline wizard pick step). */
+  galacticExclusionRef: RefObject<boolean>;
 }
 
 
@@ -38,6 +41,7 @@ const LAYERS: Layer[] = [
   drawGround,
   drawAltAzGrid,
   drawHorizonLine,
+  drawGalacticExclusion,
   drawCardinals,
   drawSlewPath,
   drawSunAndMoon,
@@ -60,6 +64,7 @@ export function useHorizonCanvas(opts: UseHorizonCanvasOptions) {
     configRef,
     telemetryRef,
     pendingRef,
+    galacticExclusionRef,
   } = opts;
 
   const sunZoneRef = useRef<{ cx: number; cy: number; r: number } | null>(null);
@@ -137,6 +142,7 @@ export function useHorizonCanvas(opts: UseHorizonCanvasOptions) {
         groundIsInside,
         hoverZones,
         dashOffset,
+        galacticExclusion: galacticExclusionRef.current ?? false,
       };
 
       for (const layer of LAYERS) layer(state);

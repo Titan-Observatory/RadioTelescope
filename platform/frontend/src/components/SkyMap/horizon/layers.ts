@@ -2,10 +2,14 @@ import type A from 'aladin-lite';
 import type { MutableRefObject } from 'react';
 
 import {
+  DEG2RAD,
+  GALACTIC_PLANE_EXCLUSION_DEG,
   altAzToRaDec,
+  galacticToRaDec,
   moonIllumination,
   moonRaDec,
   raDecToAltAz,
+  raDecToGalactic,
   sunRaDec,
 } from '../../../lib/astro';
 import type { RaDecTarget, RoboClawTelemetry, TelescopeConfig } from '../../../types';
@@ -49,6 +53,8 @@ export interface FrameState {
   groundIsInside: boolean;
   hoverZones: HoverZoneRefs;
   dashOffset: { current: number };
+  /** When true, shade the galactic-plane band the baseline wizard excludes. */
+  galacticExclusion: boolean;
 }
 
 
@@ -256,6 +262,156 @@ export const drawHorizonLine: Layer = ({ ctx, horizonPx }) => {
   ctx.strokeStyle = 'rgba(255, 126, 89, 0.85)';
   ctx.lineWidth = 2;
   ctx.stroke();
+};
+
+
+// ─── Galactic-plane exclusion band ───────────────────────────────────────────
+// During the baseline wizard's "pick a quiet patch" step we shade the strip of
+// sky within ±GALACTIC_PLANE_EXCLUSION_DEG of the galactic plane, where diffuse
+// Milky Way H I would contaminate the bandpass reference. The band is filled as
+// quads between the two constant-latitude curves (b = ±limit). Sampling is
+// localised to the visible sky and the step scales with the field of view, so
+// the band stays correct (and the sample count bounded) at any zoom — a fixed
+// global step instead leaves it undersampled when zoomed in.
+const GAL_MAX_QUADS = 400;
+
+// A diagonal red hatch, built once into a small repeating tile. The main
+// diagonal plus the two corner stubs make the stripes wrap seamlessly across
+// tile boundaries, so the pattern reads as continuous when it fills the band.
+// Cached per CanvasRenderingContext2D since createPattern is context-bound.
+let stripePattern: CanvasPattern | null = null;
+let stripePatternCtx: CanvasRenderingContext2D | null = null;
+function galacticStripePattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+  if (stripePattern && stripePatternCtx === ctx) return stripePattern;
+  const size = 9;
+  const tile = document.createElement('canvas');
+  tile.width = size;
+  tile.height = size;
+  const tctx = tile.getContext('2d');
+  if (!tctx) return null;
+  tctx.strokeStyle = 'rgba(255, 72, 56, 0.55)';
+  tctx.lineWidth = 2.5;
+  tctx.lineCap = 'square';
+  tctx.beginPath();
+  tctx.moveTo(0, size);
+  tctx.lineTo(size, 0);
+  tctx.moveTo(-1, 1);
+  tctx.lineTo(1, -1);
+  tctx.moveTo(size - 1, size + 1);
+  tctx.lineTo(size + 1, size - 1);
+  tctx.stroke();
+  stripePattern = ctx.createPattern(tile, 'repeat');
+  stripePatternCtx = ctx;
+  return stripePattern;
+}
+
+export const drawGalacticExclusion: Layer = ({ ctx, aladin, w, h, galacticExclusion }) => {
+  if (!galacticExclusion) return;
+
+  const L = GALACTIC_PLANE_EXCLUSION_DEG;
+  const maxCoord = 50 * Math.max(w, h); // reject points the projection blew up
+  const project = (l: number, b: number): [number, number] | null => {
+    const { ra_deg, dec_deg } = galacticToRaDec(l, b);
+    const p = aladin.world2pix(ra_deg, dec_deg);
+    if (!p || !isFinite(p[0]) || !isFinite(p[1])) return null;
+    if (Math.abs(p[0]) > maxCoord || Math.abs(p[1]) > maxCoord) return null;
+    return [p[0], p[1]];
+  };
+
+  // Localise the galactic-longitude window to what the current view can show.
+  const fov = aladin.getFov();
+  const fovX = fov && isFinite(fov[0]) ? fov[0] : 80;
+  const fovY = fov && isFinite(fov[1]) ? fov[1] : fovX;
+  const screenRadiusDeg = 0.5 * Math.hypot(fovX, fovY);
+  let lStart = 0;
+  let lEnd = 360;
+  const center = aladin.pix2world(w / 2, h / 2);
+  if (center && isFinite(center[0]) && isFinite(center[1])) {
+    const g = raDecToGalactic(center[0], center[1]);
+    // If the band is entirely outside the field there's nothing to draw.
+    if (Math.abs(g.b_deg) - L > screenRadiusDeg + 8) return;
+    // Longitude is compressed by cos(b); widen the window to compensate, capped
+    // at a full hemisphere on either side (≥ that and we just sample globally).
+    const cosB = Math.max(Math.cos(g.b_deg * DEG2RAD), 0.08);
+    const halfSpanL = Math.min(180, (screenRadiusDeg + 8) / cosB);
+    lStart = g.l_deg - halfSpanL;
+    lEnd = g.l_deg + halfSpanL;
+  }
+
+  // Step scales with the FoV, clamped so we never blow past GAL_MAX_QUADS even
+  // when the window is a full hemisphere.
+  const span = lEnd - lStart;
+  const step = Math.max(fovX / 120, span / GAL_MAX_QUADS, 0.02);
+
+  // A quad is on-screen iff its bounding box overlaps the viewport. (The old
+  // "all four corners off-screen" test wrongly culled the screen-spanning quad
+  // you get when zoomed inside the band — its corners are all off-screen.)
+  const overlapsScreen = (a: number[], b: number[], c: number[], d: number[]) =>
+    Math.max(a[0], b[0], c[0], d[0]) >= 0 && Math.min(a[0], b[0], c[0], d[0]) <= w &&
+    Math.max(a[1], b[1], c[1], d[1]) >= 0 && Math.min(a[1], b[1], c[1], d[1]) <= h;
+
+  const baseTint = 'rgba(255, 86, 64, 0.12)';
+  const stripes = galacticStripePattern(ctx);
+  ctx.save();
+  let prevTop = project(lStart, L);
+  let prevBot = project(lStart, -L);
+  for (let l = lStart + step; l <= lEnd + step / 2; l += step) {
+    const top = project(l, L);
+    const bot = project(l, -L);
+    if (prevTop && prevBot && top && bot && overlapsScreen(prevTop, top, bot, prevBot)) {
+      ctx.beginPath();
+      ctx.moveTo(prevTop[0], prevTop[1]);
+      ctx.lineTo(top[0], top[1]);
+      ctx.lineTo(bot[0], bot[1]);
+      ctx.lineTo(prevBot[0], prevBot[1]);
+      ctx.closePath();
+      // Flat tint for legibility, then the diagonal hatch on top. The pattern
+      // is in screen space, so it stays continuous across adjacent quads.
+      ctx.fillStyle = baseTint;
+      ctx.fill();
+      if (stripes) {
+        ctx.fillStyle = stripes;
+        ctx.fill();
+      }
+    }
+    prevTop = top;
+    prevBot = bot;
+  }
+  ctx.restore();
+
+  // Dashed boundary at b = ±limit so the edge of the no-go strip is legible.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 132, 110, 0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  for (const b of [L, -L]) {
+    const samples: RaDecTarget[] = [];
+    for (let l = lStart; l <= lEnd + step / 2; l += step) samples.push(galacticToRaDec(l, b));
+    drawProjectedPolyline(ctx, aladin, samples, span >= 360, w, h);
+  }
+  ctx.restore();
+
+  // Label the band on the on-screen stretch of the plane closest to centre.
+  const onScreen = (p: [number, number]) => p[0] >= 0 && p[0] <= w && p[1] >= 0 && p[1] <= h;
+  let best: { p: [number, number]; d: number } | null = null;
+  for (let l = lStart; l <= lEnd + step / 2; l += step) {
+    const p = project(l, 0);
+    if (!p || !onScreen(p)) continue;
+    const d = Math.hypot(p[0] - w / 2, p[1] - h / 2);
+    if (!best || d < best.d) best = { p, d };
+  }
+  if (best) {
+    ctx.save();
+    ctx.font = '12px "IBM Plex Sans", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.strokeText('Milky Way — too noisy', best.p[0], best.p[1]);
+    ctx.fillStyle = 'rgba(255, 168, 150, 0.95)';
+    ctx.fillText('Milky Way — too noisy', best.p[0], best.p[1]);
+    ctx.restore();
+  }
 };
 
 

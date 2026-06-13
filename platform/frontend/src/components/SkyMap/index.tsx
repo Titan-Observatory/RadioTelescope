@@ -45,6 +45,21 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, p
   // once in the init effect) can check it without being rebuilt.
   const surveyRef = useRef<SurveyId>(HYDROGEN_SURVEY_ID);
   const [ready, setReady] = useState(false);
+  // True while the baseline wizard's "pick a quiet patch" step is active. The
+  // wizard signals it by toggling the `rt-baseline-pick` class on <body> (the
+  // same hook it uses for its CSS spotlight), which lets us react without
+  // threading the wizard's internal step state up from SpectrumPanel. When set
+  // we shade the galactic-plane band and reject clicks that land inside it.
+  const [galacticRestrict, setGalacticRestrict] = useState(false);
+  const galacticExclusionRef = useRef(false);
+  useEffect(() => { galacticExclusionRef.current = galacticRestrict; }, [galacticRestrict]);
+  useEffect(() => {
+    const sync = () => setGalacticRestrict(document.body.classList.contains('rt-baseline-pick'));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
   // The selected target is owned by the parent (map clicks and the typed GoTo
   // both flow through onTarget/onClearTarget), so the pin is fully controlled.
   const pending = pendingTarget;
@@ -83,6 +98,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, p
     onTargetRef,
     onClearTargetRef,
     onNoticeRef,
+    galacticExclusionRef,
     setReady,
     setHoverTooltip,
   });
@@ -120,6 +136,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, p
     configRef,
     telemetryRef,
     pendingRef,
+    galacticExclusionRef,
   });
 
   // Project the fixed Alt/Az pointing-limit triangle onto the current sky.
@@ -332,6 +349,12 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, p
               Explore only
             </span>
           )}
+        </div>
+      )}
+
+      {galacticRestrict && (
+        <div className="skymap-galactic-hint" role="status">
+          Pick a patch <strong>outside the shaded Milky Way band</strong> — those points are off-limits for a clean baseline.
         </div>
       )}
 

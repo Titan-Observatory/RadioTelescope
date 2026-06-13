@@ -5,7 +5,13 @@
 import type { AladinCatalog, AladinInstance, AladinStatic, GraphicOverlay } from 'aladin-lite';
 import { type Dispatch, type RefObject, type SetStateAction, useEffect, useRef } from 'react';
 
-import { altAzToRaDec, isInsidePolygon, raDecToAltAz } from '../../../lib/astro';
+import {
+  GALACTIC_PLANE_EXCLUSION_DEG,
+  altAzToRaDec,
+  isInsidePolygon,
+  raDecToAltAz,
+  raDecToGalactic,
+} from '../../../lib/astro';
 import type { RoboClawTelemetry, TelescopeConfig } from '../../../types';
 import { HYDROGEN_SURVEY_ID, type SurveyId } from '../spectrum/surveys';
 import { DEFAULT_HORIZON_VIEW, initialHorizonRotationDeg } from './orientation';
@@ -28,6 +34,8 @@ interface UseAladinInitOptions {
   onTargetRef: RefObject<((az: number, alt: number, raDeg: number, decDeg: number) => void) | null>;
   onClearTargetRef: RefObject<(() => void) | null>;
   onNoticeRef: RefObject<((msg: string | null) => void) | null>;
+  /** Reject clicks inside the galactic-plane band (baseline wizard pick step). */
+  galacticExclusionRef: RefObject<boolean>;
   setReady: Dispatch<SetStateAction<boolean>>;
   setHoverTooltip: Dispatch<SetStateAction<HoverTooltip>>;
 }
@@ -50,6 +58,7 @@ export function useAladinInit(opts: UseAladinInitOptions) {
     onTargetRef,
     onClearTargetRef,
     onNoticeRef,
+    galacticExclusionRef,
     setReady,
     setHoverTooltip,
   } = opts;
@@ -219,6 +228,16 @@ export function useAladinInit(opts: UseAladinInitOptions) {
         if (e.button === 2) handleRightClick(e);
       };
 
+      // Aladin's built-in double-click handler re-centres on the click and
+      // then calls setRotation(0), which throws away the horizon-aligned
+      // rotation we maintain — the view visibly snaps round. Swallow the
+      // event in the capture phase before it reaches Aladin's canvas.
+      const handleDoubleClick = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      };
+
       const handlePointerMove = (e: PointerEvent) => {
         if (!activePointer || e.pointerId !== activePointer.id) return;
         const dx = e.clientX - activePointer.x;
@@ -263,6 +282,20 @@ export function useAladinInit(opts: UseAladinInitOptions) {
         const currentConfig = configRef.current;
         if (!currentConfig) return;
 
+        // Baseline pick step: steer the user off the galactic plane, where
+        // diffuse Milky Way H I would contaminate the bandpass reference. The
+        // shaded band drawn on the canvas marks the same region.
+        if (galacticExclusionRef.current) {
+          const { b_deg } = raDecToGalactic(ra_deg, dec_deg);
+          if (Math.abs(b_deg) < GALACTIC_PLANE_EXCLUSION_DEG) {
+            clearPendingTarget();
+            onNoticeRef.current?.(
+              `That spot is inside the Milky Way band. Pick a patch at least ${GALACTIC_PLANE_EXCLUSION_DEG}° off the galactic plane for a clean baseline.`,
+            );
+            return;
+          }
+        }
+
         const altAz = raDecToAltAz(ra_deg, dec_deg, currentConfig, new Date());
 
         // No physical hardware to protect when disconnected — skip limit checks
@@ -287,6 +320,7 @@ export function useAladinInit(opts: UseAladinInitOptions) {
       };
       container.addEventListener('pointerdown', handlePointerDown, true);
       container.addEventListener('mousedown', handleMouseDown, true);
+      container.addEventListener('dblclick', handleDoubleClick, true);
       container.addEventListener('contextmenu', handleRightClick, true);
       container.addEventListener('pointermove', handlePointerMove, true);
       container.addEventListener('pointerup', handlePointerUp, true);
@@ -295,6 +329,7 @@ export function useAladinInit(opts: UseAladinInitOptions) {
       removeClickHandler = () => {
         container.removeEventListener('pointerdown', handlePointerDown, true);
         container.removeEventListener('mousedown', handleMouseDown, true);
+        container.removeEventListener('dblclick', handleDoubleClick, true);
         container.removeEventListener('contextmenu', handleRightClick, true);
         container.removeEventListener('pointermove', handlePointerMove, true);
         container.removeEventListener('pointerup', handlePointerUp, true);

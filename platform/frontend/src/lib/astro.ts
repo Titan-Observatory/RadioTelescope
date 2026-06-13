@@ -173,6 +173,35 @@ export function raDecToGalactic(ra_deg: number, dec_deg: number): { l_deg: numbe
   return { l_deg, b_deg };
 }
 
+/**
+ * Inverse of {@link raDecToGalactic}: galactic (l, b) → J2000 equatorial.
+ * The forward rotation is a reflection (its own inverse), so this applies the
+ * same matrix with the roles of the celestial and galactic poles swapped.
+ * Used to trace constant-latitude curves of the galactic plane onto the sky.
+ */
+export function galacticToRaDec(l_deg: number, b_deg: number): RaDecTarget {
+  const b   = b_deg * DEG2RAD;
+  const phi = (L_NCP - l_deg) * DEG2RAD;
+
+  const sinDec = Math.sin(NGP_DEC) * Math.sin(b) + Math.cos(NGP_DEC) * Math.cos(b) * Math.cos(phi);
+  const dec_deg = Math.asin(Math.max(-1, Math.min(1, sinDec))) * RAD2DEG;
+
+  const y = Math.cos(b) * Math.sin(phi);
+  const x = Math.cos(NGP_DEC) * Math.sin(b) - Math.sin(NGP_DEC) * Math.cos(b) * Math.cos(phi);
+  const ra_deg = normalizeDeg(NGP_RA * RAD2DEG + Math.atan2(y, x) * RAD2DEG);
+
+  return { ra_deg, dec_deg };
+}
+
+/**
+ * Half-width (in galactic latitude) of the band around the galactic plane that
+ * the baseline wizard steers users away from. Diffuse 21 cm emission from the
+ * Milky Way is strongest near b = 0°, so a clean bandpass baseline needs a
+ * patch at least this far off the plane. Shared by the SkyMap exclusion overlay
+ * and the click-to-select guard so the shaded strip and the block agree.
+ */
+export const GALACTIC_PLANE_EXCLUSION_DEG = 20;
+
 export function moonIllumination(
   sun: RaDecTarget,
   moon: RaDecTarget,

@@ -1,4 +1,4 @@
-import { Activity, Navigation, Zap } from 'lucide-react';
+import { Activity, ChevronDown, ChevronUp, Navigation, Zap } from 'lucide-react';
 import React from 'react';
 
 import { altAzToRaDec, raDecToGalactic } from '../lib/astro';
@@ -39,7 +39,7 @@ function raHours(raDeg: number): string {
 }
 
 function decDegrees(decDeg: number): string {
-  return `${decDeg >= 0 ? '+' : '−'}${Math.abs(decDeg).toFixed(1)}°`;
+  return `${decDeg >= 0 ? '+' : '-'}${Math.abs(decDeg).toFixed(1)}°`;
 }
 
 function LnaIndicator({ status }: { status: LnaStatus | null | undefined }) {
@@ -65,6 +65,8 @@ export function TelemetryDashboard({
   const roboclawTemp = maxReading(telemetry?.temperature_c, telemetry?.temperature_2_c);
   const motorOutput = maxAbsReading(telemetry?.motors.m1?.pwm, telemetry?.motors.m2?.pwm);
   const motorSpeed = maxAbsReading(telemetry?.motors.m1?.speed_qpps, telemetry?.motors.m2?.speed_qpps);
+  const [collapsed, setCollapsed] = React.useState(false);
+  const panelId = React.useId();
 
   const sky = React.useMemo(() => {
     if (telemetry?.azimuth_deg == null || telemetry?.altitude_deg == null || config == null) return null;
@@ -77,35 +79,61 @@ export function TelemetryDashboard({
   }, [telemetry?.azimuth_deg, telemetry?.altitude_deg, config]);
 
   const connectionRow: ReadoutRow = telemetry == null
-    ? ['Link', 'Waiting…', 'val-muted']
+    ? ['Link', 'Waiting...', 'val-muted']
     : telemetry.connection?.connected === false
       ? ['Link', 'Issue', 'val-crit']
       : ['Link', 'Stable', 'val-ok'];
 
   return (
-    <div className="telemetry-dense">
-      <DenseReadout title="System" icon={<Activity size={11} />} rows={[
-        connectionRow,
-        ['LNA', <LnaIndicator status={lnaStatus} />],
-        ['Power', volts(systemPower), voltClass(systemPower)],
-        ['Controller temp', celsius(roboclawTemp), tempClass(roboclawTemp)],
-        ['Pi temp', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
-      ]} />
-      <DenseReadout title="Pointing" icon={<Navigation size={11} />} rows={[
-        ['Azimuth', telemetry?.azimuth_deg == null ? '—' : `${telemetry.azimuth_deg.toFixed(2)}°`],
-        ['Elevation', telemetry?.altitude_deg == null ? '—' : `${telemetry.altitude_deg.toFixed(2)}°`],
-        ['RA', sky == null ? '—' : raHours(sky.radec.ra_deg)],
-        ['Dec', sky == null ? '—' : decDegrees(sky.radec.dec_deg)],
-        ['Galactic ℓ', sky == null ? '—' : `${sky.galactic.l_deg.toFixed(1)}°`],
-        ['Galactic b', sky == null ? '—' : `${sky.galactic.b_deg.toFixed(1)}°`],
-      ]} />
-      <DenseReadout title="Drive" icon={<Zap size={11} />} rows={[
-        ['State', motorState(motorSpeed, motorOutput)],
-        ['Az current', amps(telemetry?.motors.m1?.current_a)],
-        ['El current', amps(telemetry?.motors.m2?.current_a)],
-        ['Az encoder', encoder(telemetry?.motors.m1?.encoder)],
-        ['El encoder', encoder(telemetry?.motors.m2?.encoder)],
-      ]} />
+    <div className={`telemetry-dashboard${collapsed ? ' is-collapsed' : ''}`}>
+      <button
+        type="button"
+        className="telemetry-collapse-toggle"
+        aria-expanded={!collapsed}
+        aria-controls={panelId}
+        aria-label={collapsed ? 'Expand telemetry panel' : 'Collapse telemetry panel'}
+        onClick={() => setCollapsed((value) => !value)}
+      >
+        {collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+      </button>
+      <div id={panelId} className="telemetry-collapse-body">
+        <div className="telemetry-dense">
+          <DenseReadout
+            title="System"
+            icon={<Activity size={11} />}
+            rows={[
+              connectionRow,
+              ['LNA', <LnaIndicator status={lnaStatus} />],
+              ['Power', volts(systemPower), voltClass(systemPower)],
+              ['Controller temp', celsius(roboclawTemp), tempClass(roboclawTemp)],
+              ['Pi temp', celsius(telemetry?.host.cpu_temp_c), tempClass(telemetry?.host.cpu_temp_c)],
+            ]}
+          />
+          <DenseReadout
+            title="Pointing"
+            icon={<Navigation size={11} />}
+            rows={[
+              ['Azimuth', telemetry?.azimuth_deg == null ? '-' : `${telemetry.azimuth_deg.toFixed(2)}°`],
+              ['Elevation', telemetry?.altitude_deg == null ? '-' : `${telemetry.altitude_deg.toFixed(2)}°`],
+              ['RA', sky == null ? '-' : raHours(sky.radec.ra_deg)],
+              ['Dec', sky == null ? '-' : decDegrees(sky.radec.dec_deg)],
+              ['Galactic l', sky == null ? '-' : `${sky.galactic.l_deg.toFixed(1)}°`],
+              ['Galactic b', sky == null ? '-' : `${sky.galactic.b_deg.toFixed(1)}°`],
+            ]}
+          />
+          <DenseReadout
+            title="Drive"
+            icon={<Zap size={11} />}
+            rows={[
+              ['State', motorState(motorSpeed, motorOutput)],
+              ['Az current', amps(telemetry?.motors.m1?.current_a)],
+              ['El current', amps(telemetry?.motors.m2?.current_a)],
+              ['Az encoder', encoder(telemetry?.motors.m1?.encoder)],
+              ['El encoder', encoder(telemetry?.motors.m2?.encoder)],
+            ]}
+          />
+        </div>
+      </div>
     </div>
   );
 }

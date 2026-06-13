@@ -223,46 +223,49 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
 
   return (
     <div className="speed-slider">
-      <div
-        className="speed-slider-track"
-        role="slider"
-        tabIndex={0}
-        aria-label="Slew speed"
-        aria-valuemin={0}
-        aria-valuemax={steps - 1}
-        aria-valuenow={activeStep}
-        aria-valuetext={SPEED_PRESETS[activeStep].label}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onLostPointerCapture={endDrag}
-        onKeyDown={onKeyDown}
-      >
-        <span className="speed-slider-rail" ref={railRef} aria-hidden="true">
-          <span className="speed-slider-fill" style={{ '--pos': frac(activeStep) } as React.CSSProperties} />
+      <span className="speed-slider-title">Speed</span>
+      <div className="speed-slider-body">
+        <div
+          className="speed-slider-track"
+          role="slider"
+          tabIndex={0}
+          aria-label="Slew speed"
+          aria-valuemin={0}
+          aria-valuemax={steps - 1}
+          aria-valuenow={activeStep}
+          aria-valuetext={SPEED_PRESETS[activeStep].label}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onLostPointerCapture={endDrag}
+          onKeyDown={onKeyDown}
+        >
+          <span className="speed-slider-rail" ref={railRef} aria-hidden="true">
+            <span className="speed-slider-fill" style={{ '--pos': frac(activeStep) } as React.CSSProperties} />
+            {SPEED_PRESETS.map((p, i) => (
+              <span
+                key={p.id}
+                className="speed-slider-notch"
+                style={{ '--pos': frac(i) } as React.CSSProperties}
+              />
+            ))}
+            <span className="speed-slider-thumb" style={{ '--pos': frac(activeStep) } as React.CSSProperties} />
+          </span>
+        </div>
+        <div className="speed-slider-labels" aria-hidden="true">
           {SPEED_PRESETS.map((p, i) => (
-            <span
+            <button
               key={p.id}
-              className="speed-slider-notch"
+              type="button"
+              tabIndex={-1}
+              className={`speed-slider-label${i === activeStep ? ' is-active' : ''}`}
               style={{ '--pos': frac(i) } as React.CSSProperties}
-            />
+              onClick={() => setSlewSpeed(p.value)}
+            >
+              {p.label}
+            </button>
           ))}
-          <span className="speed-slider-thumb" style={{ '--pos': frac(activeStep) } as React.CSSProperties} />
-        </span>
-      </div>
-      <div className="speed-slider-labels" aria-hidden="true">
-        {SPEED_PRESETS.map((p, i) => (
-          <button
-            key={p.id}
-            type="button"
-            tabIndex={-1}
-            className={`speed-slider-label${i === activeStep ? ' is-active' : ''}`}
-            style={{ '--pos': frac(i) } as React.CSSProperties}
-            onClick={() => setSlewSpeed(p.value)}
-          >
-            {p.label}
-          </button>
-        ))}
+        </div>
       </div>
     </div>
   );
@@ -344,8 +347,8 @@ export function MotionControls({
       </header>
 
       <div className="motion-card">
-        <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={changeSpeed} />
         <PointingPad jog={jog} stopJog={stopJog} speed={speed} onStop={onStop} />
+        <SpeedFader slewSpeed={slewSpeed} setSlewSpeed={changeSpeed} />
       </div>
 
       <form className="target-form-overlay" onSubmit={submitTarget} aria-label="Go to celestial coordinates">
