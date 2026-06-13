@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Navigation, Square } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Square } from 'lucide-react';
 import React, { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { track } from '../analytics';
@@ -153,10 +153,12 @@ function PointingPad({ jog, stopJog, speed, onStop }: {
   );
 }
 
+// Authentic telescope hand-controller rate names rather than generic
+// slow/med/fast: Guide (fine tracking), Set (centring), Slew (full traverse).
 const SPEED_PRESETS: { id: 'fine' | 'coarse' | 'slew'; label: string; value: number }[] = [
-  { id: 'fine',   label: 'Fine',   value: 10 },
-  { id: 'coarse', label: 'Coarse', value: 40 },
-  { id: 'slew',   label: 'Fast',   value: 85 },
+  { id: 'fine',   label: 'Guide', value: 10 },
+  { id: 'coarse', label: 'Set',   value: 40 },
+  { id: 'slew',   label: 'Slew',  value: 85 },
 ];
 
 function SpeedFader({ slewSpeed, setSlewSpeed }: {
@@ -176,16 +178,20 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
       <span className="speed-toggle-heading">Speed</span>
       {ordered.map((p) => {
         const selected = p.id === active.id;
+        // Light every segment at or below the chosen level so the column
+        // fills from the bottom like a throttle lever (taller fill = faster).
+        const lit = p.value <= active.value;
         return (
           <button
             key={p.id}
             type="button"
             role="radio"
             aria-checked={selected}
-            className={`speed-toggle-btn speed-toggle-${p.id}${selected ? ' is-active' : ''}`}
+            className={`speed-toggle-btn speed-toggle-${p.id}${selected ? ' is-active' : ''}${lit ? ' is-lit' : ''}`}
             onClick={() => setSlewSpeed(p.value)}
           >
-            {p.label}
+            <span className="speed-toggle-rail" aria-hidden="true" />
+            <span className="speed-toggle-label">{p.label}</span>
           </button>
         );
       })}
@@ -198,13 +204,16 @@ function SpeedFader({ slewSpeed, setSlewSpeed }: {
 // how to nudge it (pad + speed), and where to send it (inline go-to row).
 // Both interaction modes stay visible at once — no tabs hiding the other half.
 // The typed go-to speaks RA/Dec — the coordinates star charts and catalogues
-// actually give you — while map clicks keep their own alt/az slew chip.
+// actually give you. Rather than slewing directly, entering valid coordinates
+// drops the target pin on the sky map (exactly as clicking it would), so the
+// shared Slew button confirms the move just like a map click.
 export function MotionControls({
-  jog, stopJog, gotoRaDec, onStop, targetRaDeg, targetDecDeg,
+  jog, stopJog, onPickTarget, onStop, targetRaDeg, targetDecDeg,
 }: {
   jog: (direction: JogDirection, speed: number, token: string, seq: number) => Promise<void>;
   stopJog: (token: string, seq: number) => Promise<void>;
-  gotoRaDec: (raDeg: number, decDeg: number) => Promise<void>;
+  /** Pin a target on the sky map at the given RA/Dec (degrees). */
+  onPickTarget: (raDeg: number, decDeg: number) => void;
   onStop: () => Promise<void>;
   /** RA/Dec (degrees) of the latest sky-map click, to prefill the GoTo inputs. */
   targetRaDeg?: number | null;
@@ -246,10 +255,17 @@ export function MotionControls({
   const raInvalid = raText.trim() !== '' && !raValid;
   const decInvalid = decText.trim() !== '' && !decValid;
 
-  const submitTarget = async (e: FormEvent) => {
-    e.preventDefault();
+  // Commit the typed coordinates as the map target. Fires on Enter and when a
+  // field loses focus, so finishing the pair drops the pin and reveals the
+  // shared Slew button — without re-pinning on every keystroke mid-number.
+  const pickTarget = () => {
     if (!targetValid) return;
-    await gotoRaDec(raHoursVal * 15, decDegVal).catch(() => { /* tracked in the hook */ });
+    onPickTarget(raHoursVal * 15, decDegVal);
+  };
+
+  const submitTarget = (e: FormEvent) => {
+    e.preventDefault();
+    pickTarget();
   };
 
   return (
@@ -275,6 +291,7 @@ export function MotionControls({
               const next = filterNumeric(e.target.value, false);
               if (next !== null) setRaText(next);
             }}
+            onBlur={pickTarget}
             aria-label="Target right ascension in hours"
             aria-invalid={raInvalid}
             title={raInvalid ? 'RA must be between 0 and 24 hours' : undefined}
@@ -291,21 +308,16 @@ export function MotionControls({
               const next = filterNumeric(e.target.value, true);
               if (next !== null) setDecText(next);
             }}
+            onBlur={pickTarget}
             aria-label="Target declination in degrees"
             aria-invalid={decInvalid}
             title={decInvalid ? 'Dec must be between −90 and 90 degrees' : undefined}
           />
           <span className="goto-unit">°</span>
         </div>
-        <button
-          type="submit"
-          className="motion-goto-btn"
-          disabled={!targetValid}
-          title={targetValid ? 'Slew to these coordinates' : 'Enter RA (hours) and Dec (degrees)'}
-          aria-label="Slew to these coordinates"
-        >
-          <Navigation size={14} />
-        </button>
+        {/* Submit on Enter still pins the target; the visible button is the
+            shared map Slew button that appears once a target is selected. */}
+        <button type="submit" className="goto-submit-hidden" tabIndex={-1} aria-hidden="true" />
       </form>
     </div>
   );

@@ -3,6 +3,8 @@
 
 import { useCallback, useState } from 'react';
 import { track } from '../analytics';
+import { raDecToAltAz } from './astro';
+import type { TelescopeConfig } from '../types';
 
 export interface UseMapTargetResult {
   targetAz: number;
@@ -15,6 +17,8 @@ export interface UseMapTargetResult {
   setTargetAlt: (v: number) => void;
   /** Pin the target on the map at the rounded (az, alt) with its RA/Dec. */
   setTarget: (az: number, alt: number, raDeg: number, decDeg: number) => void;
+  /** Pin the target from RA/Dec (degrees), converting to alt/az for the slew. */
+  setTargetFromRaDec: (raDeg: number, decDeg: number, config: TelescopeConfig) => void;
   /** Drop the pin; safe to call when no target exists. */
   clearTarget: () => void;
 }
@@ -35,6 +39,13 @@ export function useMapTarget(): UseMapTargetResult {
     track('map_target_picked', { alt_deg: alt, az_deg: az });
   }, []);
 
+  // Typed-in coordinates arrive as RA/Dec; convert to the alt/az the slew uses
+  // (same path a map click takes, just sourced from the GoTo inputs).
+  const setTargetFromRaDec = useCallback((raDeg: number, decDeg: number, config: TelescopeConfig) => {
+    const { altitude_deg, azimuth_deg } = raDecToAltAz(raDeg, decDeg, config, new Date());
+    setTarget(azimuth_deg, altitude_deg, raDeg, decDeg);
+  }, [setTarget]);
+
   const clearTarget = useCallback(() => {
     setHasMapTarget((prev) => {
       if (!prev) return prev;
@@ -45,6 +56,6 @@ export function useMapTarget(): UseMapTargetResult {
 
   return {
     targetAz, targetAlt, targetRaDeg, targetDecDeg, hasMapTarget,
-    setTargetAz, setTargetAlt, setTarget, clearTarget,
+    setTargetAz, setTargetAlt, setTarget, setTargetFromRaDec, clearTarget,
   };
 }

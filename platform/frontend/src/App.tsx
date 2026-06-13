@@ -1,5 +1,5 @@
 import { Maximize2, Minimize2, Navigation } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { setAnalyticsContext, track } from './analytics';
 import { BRAND } from './branding';
@@ -43,6 +43,14 @@ function ControlUI({ queue }: ControlUIProps) {
   const { commands, telescopeConfig } = useBackendCatalog({ enabled: liveControlsEnabled, onError: trackErrorOnce });
   const map = useMapTarget();
   const motion = useMotionCommands(commands, setTelemetry);
+
+  // Stable identity so the sky-map pin overlay isn't redrawn on every telemetry tick.
+  const pendingTarget = useMemo(
+    () => (map.hasMapTarget && map.targetRaDeg != null && map.targetDecDeg != null
+      ? { ra_deg: map.targetRaDeg, dec_deg: map.targetDecDeg }
+      : null),
+    [map.hasMapTarget, map.targetRaDeg, map.targetDecDeg],
+  );
 
   // Observation mode is a boot-time hardware choice (hydrogen line vs GOES);
   // it decides which panel set fills the right column. The GOES stream hook
@@ -88,6 +96,7 @@ function ControlUI({ queue }: ControlUIProps) {
             onNotice={() => { /* errors suppressed for demo */ }}
             onTarget={map.setTarget}
             onClearTarget={map.clearTarget}
+            pendingTarget={pendingTarget}
             tooltipsEnabled={true}
             toolbarLeading={(
               <button
@@ -110,7 +119,9 @@ function ControlUI({ queue }: ControlUIProps) {
               <MotionControls
                 jog={motion.jog}
                 stopJog={motion.stopJog}
-                gotoRaDec={motion.gotoRaDec}
+                onPickTarget={(raDeg, decDeg) => {
+                  if (telescopeConfig) map.setTargetFromRaDec(raDeg, decDeg, telescopeConfig);
+                }}
                 onStop={motion.stopMotion}
                 targetRaDeg={map.targetRaDeg}
                 targetDecDeg={map.targetDecDeg}

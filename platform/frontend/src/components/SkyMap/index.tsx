@@ -23,12 +23,14 @@ interface SkyMapProps {
   onNotice: (msg: string | null) => void;
   onTarget: (az: number, alt: number, raDeg: number, decDeg: number) => void;
   onClearTarget?: () => void;
+  /** Currently selected target (from a click or the typed GoTo). Drives the pin. */
+  pendingTarget?: RaDecTarget | null;
   tooltipsEnabled: boolean;
   overlays?: SkyOverlay[];
   toolbarLeading?: ReactNode;
 }
 
-export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, tooltipsEnabled, overlays = [], toolbarLeading }: SkyMapProps) {
+export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, pendingTarget = null, tooltipsEnabled, overlays = [], toolbarLeading }: SkyMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const configRef       = useRef<TelescopeConfig | null>(null);
   const telemetryRef    = useRef<RoboClawTelemetry | null>(null);
@@ -43,7 +45,9 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
   // once in the init effect) can check it without being rebuilt.
   const surveyRef = useRef<SurveyId>(HYDROGEN_SURVEY_ID);
   const [ready, setReady] = useState(false);
-  const [pending, setPending] = useState<RaDecTarget | null>(null);
+  // The selected target is owned by the parent (map clicks and the typed GoTo
+  // both flow through onTarget/onClearTarget), so the pin is fully controlled.
+  const pending = pendingTarget;
   const [survey, setSurvey] = useState<SurveyId>(HYDROGEN_SURVEY_ID);
   const [viewSelectorOpen, setViewSelectorOpen] = useState(false);
   const [hoverTooltip, setHoverTooltip] = useState<
@@ -80,7 +84,6 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, t
     onClearTargetRef,
     onNoticeRef,
     setReady,
-    setPending,
     setHoverTooltip,
   });
 

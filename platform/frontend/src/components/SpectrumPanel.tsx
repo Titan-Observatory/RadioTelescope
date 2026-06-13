@@ -402,9 +402,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
 
   const chartEmptyMessage = !connected
     ? 'Spectrum websocket is offline.'
-    : !frame
-      ? 'Waiting for first spectrum frame from SDR service.'
-      : null;
+    : null;
   const integrationStats = useMemo(() => {
     if (!frame) return null;
     const bins = frame.freqs_mhz.length;
@@ -519,17 +517,6 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
       </header>
 
       <div className="spectrum-chart-wrap">
-        {integrationStats && (
-          <p className="spectrum-stats" aria-label="Integration statistics">
-            Integrating <strong>{integrationStats.windowSeconds.toFixed(1)} s</strong>
-            {' '}({integrationStats.effectiveFrames}/{integrationStats.targetFrames} frames)
-            {' · '}
-            <strong>{integrationStats.binHz.toFixed(0)} Hz</strong> bins
-            {' · '}
-            {integrationStats.frameHz.toFixed(1)} Hz FFT
-          </p>
-        )}
-
         <div className="spectrum-toolbar spectrum-baseline-row" aria-label="Baseline correction">
           <span className={`spectrum-baseline-state${baselineApplies ? ' is-applied' : ''}`}>
             <span className="spectrum-baseline-dot" aria-hidden />
@@ -548,6 +535,29 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
           >
             <Sliders size={12} /> {baselineApplies ? 'Recapture' : 'Set up baseline'}
           </button>
+        </div>
+
+        <div className="spectrum-chart-head">
+          <button
+            type="button"
+            className="spectrum-learn-link"
+            onClick={() => startSpectrumTour()}
+          >
+            How to read this chart
+          </button>
+          <div className="spectrum-chart-caption">
+            <span className="spectrum-chart-title">Power vs. frequency</span>
+            {integrationStats && (
+              <p className="spectrum-stats" aria-label="Integration statistics">
+                Integrating <strong>{integrationStats.windowSeconds.toFixed(1)} s</strong>
+                {' '}({integrationStats.effectiveFrames}/{integrationStats.targetFrames} frames)
+                {' · '}
+                <strong>{integrationStats.binHz.toFixed(0)} Hz</strong> bins
+                {' · '}
+                {integrationStats.frameHz.toFixed(1)} Hz FFT
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="spectrum-chart-box">
@@ -618,14 +628,6 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
         </div>
         )}
 
-        <button
-          type="button"
-          className="spectrum-learn-link"
-          onClick={() => startSpectrumTour()}
-        >
-          How to read this chart
-        </button>
-
         <details
           className="spectrum-waterfall-dropdown"
           open={waterfallOpen}
@@ -687,9 +689,13 @@ function baseOption(yRange: [number, number]): EChartsOption {
     textStyle: { fontFamily: 'inherit' },
     // Insets here must match PLOT_LEFT_PX / PLOT_RIGHT_PX so the waterfall
     // canvas painted below the chart shares the same frequency-axis pixels.
-    grid: { left: PLOT_LEFT_PX, right: PLOT_RIGHT_PX, top: 26, bottom: 30, containLabel: false },
+    grid: { left: PLOT_LEFT_PX, right: PLOT_RIGHT_PX, top: 12, bottom: 48, containLabel: false },
     xAxis: {
       type: 'value',
+      name: 'Frequency (MHz)',
+      nameLocation: 'middle',
+      nameGap: 28,
+      nameTextStyle: { color: tickColor, fontSize: 11 },
       axisLine: { lineStyle: { color: lineColor } },
       axisTick: { show: false },
       axisLabel: {

@@ -6,7 +6,7 @@ import type { AladinCatalog, AladinInstance, AladinStatic, GraphicOverlay } from
 import { type Dispatch, type RefObject, type SetStateAction, useEffect, useRef } from 'react';
 
 import { altAzToRaDec, isInsidePolygon, raDecToAltAz } from '../../../lib/astro';
-import type { RaDecTarget, RoboClawTelemetry, TelescopeConfig } from '../../../types';
+import type { RoboClawTelemetry, TelescopeConfig } from '../../../types';
 import { HYDROGEN_SURVEY_ID, type SurveyId } from '../spectrum/surveys';
 import { DEFAULT_HORIZON_VIEW, initialHorizonRotationDeg } from './orientation';
 
@@ -29,7 +29,6 @@ interface UseAladinInitOptions {
   onClearTargetRef: RefObject<(() => void) | null>;
   onNoticeRef: RefObject<((msg: string | null) => void) | null>;
   setReady: Dispatch<SetStateAction<boolean>>;
-  setPending: Dispatch<SetStateAction<RaDecTarget | null>>;
   setHoverTooltip: Dispatch<SetStateAction<HoverTooltip>>;
 }
 
@@ -52,7 +51,6 @@ export function useAladinInit(opts: UseAladinInitOptions) {
     onClearTargetRef,
     onNoticeRef,
     setReady,
-    setPending,
     setHoverTooltip,
   } = opts;
 
@@ -192,8 +190,9 @@ export function useAladinInit(opts: UseAladinInitOptions) {
       let suppressClickUntil = 0;
       const dragToleranceSq = TARGET_CLICK_DRAG_TOLERANCE_PX * TARGET_CLICK_DRAG_TOLERANCE_PX;
 
+      // The pin is controlled by the parent (via onTarget/onClearTarget), so
+      // clearing just notifies upstream and resets the local hover state.
       const clearPendingTarget = () => {
-        setPending(null);
         setHoverTooltip(null);
         onNoticeRef.current?.(null);
         onClearTargetRef.current?.();
@@ -282,7 +281,8 @@ export function useAladinInit(opts: UseAladinInitOptions) {
         }
 
         onNoticeRef.current?.(null);
-        setPending({ ra_deg, dec_deg });
+        // Parent owns the pin: report the target and let it flow back as the
+        // pendingTarget prop, which renders the marker.
         onTargetRef.current?.(altAz.azimuth_deg, altAz.altitude_deg, ra_deg, dec_deg);
       };
       container.addEventListener('pointerdown', handlePointerDown, true);

@@ -160,8 +160,11 @@ class JsonWsBridge(Broadcaster[dict]):
                 async with websockets.connect(
                     self.upstream_url,
                     max_size=_WS_MAX_SIZE,
-                    ping_interval=20,
-                    ping_timeout=20,
+                    # The bridged data streams publish continuously while healthy.
+                    # Protocol pings can overlap with hardware-side frame writes
+                    # and trigger websockets legacy drain assertions under load.
+                    ping_interval=None,
+                    ping_timeout=None,
                 ) as ws:
                     self._connected = True
                     logger.info("%s connected to gateway stream at %s", self.name, self.upstream_url)

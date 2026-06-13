@@ -5,7 +5,7 @@
 // telemetry dashboard work without going through the queue.
 
 import { Maximize2, Minimize2, Navigation } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../api';
 import { BRAND } from '../branding';
@@ -41,6 +41,14 @@ export function AdminPage() {
   const { commands, telescopeConfig } = useBackendCatalog({ enabled: true, onError: trackErrorOnce });
   const map = useMapTarget();
   const motion = useMotionCommands(commands, setTelemetry);
+
+  // Stable identity so the sky-map pin overlay isn't redrawn on every telemetry tick.
+  const pendingTarget = useMemo(
+    () => (map.hasMapTarget && map.targetRaDeg != null && map.targetDecDeg != null
+      ? { ra_deg: map.targetRaDeg, dec_deg: map.targetDecDeg }
+      : null),
+    [map.hasMapTarget, map.targetRaDeg, map.targetDecDeg],
+  );
 
   const skymapPanelRef = useRef<HTMLElement>(null);
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(skymapPanelRef);
@@ -79,6 +87,7 @@ export function AdminPage() {
             onNotice={() => { /* errors suppressed */ }}
             onTarget={map.setTarget}
             onClearTarget={map.clearTarget}
+            pendingTarget={pendingTarget}
             tooltipsEnabled={true}
             toolbarLeading={(
               <button
@@ -98,7 +107,9 @@ export function AdminPage() {
               <MotionControls
                 jog={motion.jog}
                 stopJog={motion.stopJog}
-                gotoRaDec={motion.gotoRaDec}
+                onPickTarget={(raDeg, decDeg) => {
+                  if (telescopeConfig) map.setTargetFromRaDec(raDeg, decDeg, telescopeConfig);
+                }}
                 onStop={motion.stopMotion}
                 targetRaDeg={map.targetRaDeg}
                 targetDecDeg={map.targetDecDeg}

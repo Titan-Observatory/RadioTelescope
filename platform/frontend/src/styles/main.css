@@ -855,12 +855,13 @@ input:focus-visible {
   color: var(--on-accent);
 }
 
-/* Go-to row — label on top, then RA and Dec inputs side by side with the slew
-   button at the end. Lives below the jog pad so typing coordinates never hides
-   the manual controls. */
+/* Go-to row — label on top, then RA and Dec inputs side by side. Entering
+   valid coordinates pins the target on the sky map (the shared Slew button then
+   confirms it), so there's no per-field slew button. Lives below the jog pad so
+   typing coordinates never hides the manual controls. */
 .target-form-overlay {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr;
   align-items: stretch;
   gap: 6px;
 }
@@ -942,27 +943,20 @@ input:focus-visible {
   color: var(--fg-subtle);
   pointer-events: none;
 }
-.motion-goto-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  grid-column: 3;
-  grid-row: 2;
-  width: 44px;
-  height: 100%;
-  min-height: 0;
+/* Keeps Enter submitting the go-to form (an implicit submit needs a submit
+   button present) without showing a control — the map's Slew button is the
+   visible confirm. Positioned off-screen rather than display:none so the
+   implicit submission still fires. */
+.goto-submit-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   padding: 0;
-  flex-shrink: 0;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
-.motion-goto-btn:hover {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
-  color: var(--on-accent);
-}
-.motion-goto-btn:active { background: var(--accent-press); }
 
 /* Status panel — always-visible section below the waterfall in the right column */
 .status-side-panel {
@@ -1320,13 +1314,34 @@ input:focus-visible {
   max-width: 420px;
 }
 
-/* "How to read this chart" — a link under the plot that launches a guided
-   tour walking through each part of the spectrum (see startSpectrumTour). */
-.spectrum-learn-link {
-  display: inline-flex;
+/* Caption row above the plot: the graph's title on the left, and a plain-text
+   link on the right that launches a guided tour walking through each part of
+   the spectrum (see startSpectrumTour). */
+.spectrum-chart-head {
+  position: relative;
+  margin: 8px 0 6px;
+}
+.spectrum-chart-caption {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 7px;
-  margin: 10px 0 12px;
+  gap: 2px;
+  text-align: center;
+}
+.spectrum-chart-title {
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+/* Integration specs sit directly under the centered graph title. */
+.spectrum-chart-caption .spectrum-stats {
+  margin: 0;
+}
+.spectrum-learn-link {
+  position: absolute;
+  left: 0;
+  top: 2px;
   padding: 0;
   border: none;
   background: none;
@@ -1337,14 +1352,6 @@ input:focus-visible {
   text-decoration: underline;
   text-decoration-color: var(--accent-edge);
   text-underline-offset: 3px;
-}
-.spectrum-learn-link::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-right: 1.5px solid var(--fg-subtle);
-  border-bottom: 1.5px solid var(--fg-subtle);
-  transform: rotate(-45deg);
 }
 .spectrum-learn-link:hover { color: var(--fg); }
 
@@ -1892,63 +1899,105 @@ h2.panel-header {
 }
 
 /* =========================================================================
-   Speed throttle — vertical segmented control sitting to the left of the
-   d-pad and sharing its height. Three presets stacked fastest-on-top
-   (Fast / Coarse / Fine), so the column reads like a throttle lever: the
-   higher the lit segment, the faster the slew.
+   Speed throttle — a slim vertical lever to the left of the d-pad, sharing
+   its height. Three telescope rates stacked fastest-on-top (Slew / Set /
+   Guide). A single groove runs the full height; amber fill rises from the
+   bottom to the chosen rate and a grip knob marks the current detent, so it
+   reads like a physical throttle: the higher the knob, the faster the slew.
    ========================================================================= */
 .speed-toggle {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  width: 78px;
+  width: 60px;
   gap: 4px;
-  padding: 4px;
+  padding: 7px 6px 6px;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--r-md);
-  background: var(--surface-1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    var(--surface-1);
 }
 
 .speed-toggle-heading {
-  padding: 2px 0 5px;
-  margin-bottom: 1px;
-  border-bottom: 1px solid var(--hairline);
+  padding: 0 2px 2px;
   color: var(--fg-subtle);
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   line-height: 1;
-  text-align: center;
+  text-align: left;
   text-transform: uppercase;
 }
 
 .speed-toggle-btn {
-  display: inline-flex;
+  position: relative;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   flex: 1;
-  min-height: 30px;
-  padding: 0 8px;
+  min-height: 32px;
+  padding: 0 5px 0 22px;
   border: 1px solid transparent;
-  border-radius: var(--r-sm);
+  border-radius: 5px;
   background: transparent;
-  color: var(--fg-muted);
-  font-size: 11px;
-  font-weight: 600;
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
-  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast),
+    color var(--t-fast);
 }
-.speed-toggle-btn:hover:not(:disabled) {
-  background: var(--surface-3);
-  color: var(--fg);
-}
-.speed-toggle-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.speed-toggle-btn.is-active {
+/* The groove + fill. Each segment carries its slice of the lever slot; lit
+   slices touch end-to-end (zero gap) so they form one continuous amber column
+   rising from the bottom. */
+.speed-toggle-rail {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  bottom: 6px;
+  width: 5px;
+  border-radius: 999px;
   background: var(--surface-3);
+  transition: background var(--t-fast);
+}
+.speed-toggle-btn.is-lit .speed-toggle-rail { background: var(--accent-line); }
+
+/* Grip knob: a small horizontal handle straddling the groove at the active
+   detent — the lever you've pushed the throttle to. */
+.speed-toggle-btn.is-active .speed-toggle-rail::after {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  width: 13px;
+  height: 9px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: var(--accent-strong);
+  border: 1px solid var(--accent-edge);
+  box-shadow: 0 0 8px var(--accent-line);
+}
+
+.speed-toggle-btn:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--surface-2);
   border-color: var(--hairline-strong);
+}
+.speed-toggle-btn.is-active {
   color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(255, 198, 61, 0.34);
+}
+.speed-toggle-btn:focus-visible { outline: none; }
+.speed-toggle-btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 /* =========================================================================
    Axis status — two-column readout sitting next to the d-pad. Same height
@@ -3898,10 +3947,6 @@ h2.panel-header {
   background: color-mix(in srgb, var(--bg) 60%, transparent);
 }
 
-.titan-footer-bottom > * {
-  max-width: 1180px;
-}
-
 .titan-footer-bottom {
   display: flex;
   flex-direction: column;
@@ -3933,8 +3978,9 @@ h2.panel-header {
   .titan-footer-bottom {
     flex-direction: row;
     justify-content: space-between;
-    margin: 0 auto;
-    max-width: 1180px;
+    /* Keep the bar's background/border full-width while centering its
+       content within the same 1180px column as the footer body. */
+    padding-inline: max(24px, calc((100% - 1180px) / 2));
   }
 }
 
