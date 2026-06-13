@@ -178,12 +178,18 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
     tb = gr.top_block("rt-spectrum-pipeline")
 
     source = _build_source(soapy, sdr)
+    logger.info("SDR source ready; constructing DSP blocks")
 
     # ── DSP chain ─────────────────────────────────────────────────────
+    logger.info("Constructing stream_to_vector")
     s2v = blocks.stream_to_vector(gr.sizeof_gr_complex, fft_size)
+    logger.info("Constructing FFT block")
     fft_block = fft.fft_vcc(fft_size, True, window.hann(fft_size), True, 1)
+    logger.info("Constructing magnitude block")
     mag2 = blocks.complex_to_mag_squared(fft_size)
+    logger.info("Constructing integrator")
     integrator = blocks.integrate_ff(integrate_k, fft_size)
+    logger.info("Constructing EMA filter")
     ema = single_pole_iir(alpha, fft_size)
 
     chain = [source, s2v, fft_block, mag2, integrator, ema]
@@ -200,12 +206,14 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
         # divide the reciprocal by the scale.
         reciprocal = [r / scale for r in reciprocal]
     if baseline_loaded:
+        logger.info("Constructing baseline division block")
         chain.append(blocks.multiply_const_vff(reciprocal))
 
     # ── dB conversion (+ optional offset) ─────────────────────────────
     # Floor the power before log10 so a dead (zero) bin can't produce -inf,
     # which would serialise as JSON "-Infinity" and break the browser parser.
     # POWER_FLOOR is negligible next to real signal/baseline-divided values.
+    logger.info("Constructing power floor and dB blocks")
     chain.append(blocks.add_const_vff([POWER_FLOOR] * fft_size))
     offset_db = float(sdr.baseline_offset_db)
     nlog10 = blocks.nlog10_ff(10.0, fft_size, offset_db)
@@ -215,6 +223,7 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
     # Vector-typed PUB sink — each ZMQ message carries one full Float32
     # spectrum (in dB) of length fft_size. ``hwm=2`` keeps the queue tight so
     # a stalled consumer can't accumulate stale spectra.
+    logger.info("Constructing ZMQ PUB sink at %s", sdr.pipeline_ipc_path)
     sink = zeromq.pub_sink(
         gr.sizeof_float,
         fft_size,
@@ -226,6 +235,7 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
     )
     chain.append(sink)
 
+    logger.info("Connecting flowgraph blocks")
     tb.connect(*chain)
 
     logger.info(
@@ -297,7 +307,9 @@ def _run(tb) -> None:
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
+    logger.info("Starting GNU Radio top block")
     tb.start()
+    logger.info("GNU Radio top block started; waiting")
     tb.wait()
 
 
