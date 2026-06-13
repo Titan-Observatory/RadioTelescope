@@ -70,7 +70,11 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
     name: str = "spectrum-service"
     idle_close_delay_s: float = 5.0
-    subprocess_start_timeout_s: float = 10.0
+    # GNU Radio's FFT block can take several seconds to construct on the Pi
+    # while FFTW plans the transform, especially at 8192+ bins. This timeout is
+    # measured from subprocess spawn, so it must cover Python startup, SDR open,
+    # block construction, tb.start(), and the first ZMQ frame.
+    subprocess_start_timeout_s: float = 30.0
     subprocess_kill_timeout_s: float = 2.0
     # Backoff schedule when the subprocess dies unexpectedly while subscribers
     # are still attached. Resets to the first value on every successful run.
