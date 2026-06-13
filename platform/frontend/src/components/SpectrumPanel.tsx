@@ -308,6 +308,17 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     onMessage: setFrame,
   });
 
+  useEffect(() => {
+    if (connected && status?.latest_frame_age_s !== null) return;
+    setFrame(null);
+    lastWaterfallFrameRef.current = null;
+    waterfallSigRef.current = '';
+    yRangeInitRef.current = false;
+    chartInstance.current?.setOption({
+      series: [{ data: [] }],
+    });
+  }, [connected, status?.latest_frame_age_s]);
+
   // Update the spectrum line chart on each new frame / range change.
   useEffect(() => {
     const chart = chartInstance.current;
@@ -469,7 +480,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     ctx.putImageData(row, plotLeft, 0);
   }, [frame, displayed, baselineApplies]);
 
-  const chartEmptyMessage = !connected
+  const chartEmptyMessage = !connected || !frame
     ? 'Waiting for spectrum stream to start'
     : null;
   const integrationStats = useMemo(() => {

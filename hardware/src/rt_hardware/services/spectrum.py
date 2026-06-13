@@ -380,10 +380,6 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
     def subscribe(self, maxsize: int | None = None) -> asyncio.Queue[SpectrumFrame]:
         q = super().subscribe(maxsize)
-        if self._latest is not None:
-            # Replay the latest frame so the new subscriber sees something
-            # immediately rather than waiting up to publish_period_s.
-            q.put_nowait(self._latest)
         if not self._shutting_down:
             asyncio.create_task(self._ensure_running(), name=f"{self.name}-spawn")
         return q
@@ -725,10 +721,12 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             except _PipelineDied as exc:
                 self._mode = "fault"
                 self._fault_detail = str(exc)
+                self._latest = None
                 logger.warning("%s pipeline died: %s", self.name, exc)
             except Exception as exc:
                 self._mode = "fault"
                 self._fault_detail = f"Consumer crashed: {exc}"
+                self._latest = None
                 logger.exception("%s ZMQ consumer crashed", self.name)
 
             # Reap the dead proc and tear down its stderr pipe so the next
