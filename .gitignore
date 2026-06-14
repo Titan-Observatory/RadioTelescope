@@ -3,11 +3,11 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 *.log
+*.jsonl
 
 # Local config and runtime artefacts. The template `config.example.toml` is
 # tracked; copy it to `config.toml` on first run and edit there.
 config.toml
 spectrum_baseline.json
 events.json
-events.jsonl
 passwords.txt

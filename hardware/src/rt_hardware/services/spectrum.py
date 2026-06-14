@@ -17,7 +17,6 @@ and frontend can read it.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import subprocess
@@ -95,6 +94,10 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
         # Whether the live flowgraph was spawned with a baseline file present,
         # i.e. whether the frames it emits are baseline-corrected.
         self._baseline_active: bool = False
+        # In-memory baseline. Not persisted to disk — lives only for the
+        # lifetime of this process so each service restart starts uncorrected.
+        self._baseline_power: np.ndarray | None = None
+        self._baseline_cfg_key: tuple[float, float, int] | None = None
 
         self._proc: subprocess.Popen[bytes] | None = None
         self._proc_task: asyncio.Task[None] | None = None
@@ -242,9 +245,8 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
         if axis_changed:
             self._rebuild_freq_axis()
-            # The baseline is keyed off the FFT layout; an axis change makes the
-            # stored vector the wrong length, so drop it. The single reconnect
-            # below respawns the flowgraph without it.
+            self._baseline_power = None
+            self._baseline_cfg_key = None
             self._delete_baseline_files()
 
         restarted = False
@@ -450,17 +452,13 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             return baseline
 
     def load_baseline(self) -> dict[str, Any] | None:
-        """Return the persisted baseline JSON sidecar, or ``None`` if absent."""
-        if not BASELINE_CACHE.exists():
-            return None
-        try:
-            return json.loads(BASELINE_CACHE.read_text())
-        except Exception:
-            logger.exception("Failed to read baseline from %s", BASELINE_CACHE)
-            return None
+        """Baseline is in-memory only; there is no persisted sidecar to load."""
+        return None
 
     async def clear_baseline(self) -> None:
-        """Delete the baseline and respawn the flowgraph so it stops dividing."""
+        """Drop the in-memory baseline and respawn the flowgraph uncorrected."""
+        self._baseline_power = None
+        self._baseline_cfg_key = None
         self._delete_baseline_files()
         if self._capturing or self._shutting_down:
             return
@@ -500,12 +498,6 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
                 logger.exception("Failed to remove baseline file %s", path)
 
     def _capture_file_complete(self) -> bool:
-        """True once the capture temp holds a full ``float32[fft_size]`` vector.
-
-        ``file_sink`` opens the file at construction (0 bytes) and writes the one
-        vector in a single unbuffered write when ``head`` fires, so an exact size
-        match is a reliable "the spectrum has landed" signal.
-        """
         try:
             return BASELINE_F32_TMP.stat().st_size == int(self._cfg.fft_size) * 4
         except OSError:
@@ -514,13 +506,8 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
     async def _run_capture_subprocess(self) -> bool:
         """Run the one-shot capture flowgraph, writing BASELINE_F32_TMP.
 
-        Success is judged by the *output file* being complete, not by a clean
-        process exit. The RTL-SDR Soapy source routinely hangs on teardown
-        (``PLL not locked``, direct-sampling toggling) *after* ``head(1)`` has
-        already flushed the baseline vector to disk — so waiting for the process
-        to exit would burn the whole timeout and then discard a perfectly good
-        capture. Instead we poll for the file to land, then kill the (possibly
-        stuck) subprocess and proceed.
+        Polls the output file rather than waiting for a clean process exit —
+        the RTL-SDR Soapy source hangs on teardown after the vector is written.
         """
         try:
             BASELINE_F32_TMP.unlink(missing_ok=True)
@@ -543,9 +530,6 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             logger.error("%s baseline capture spawn failed: %s", self.name, exc)
             return False
 
-        # Poll for the integrated vector to be written, then stop waiting — even
-        # if the process is still alive (stuck in source teardown). Budget covers
-        # the integration window plus subprocess startup grace and slack.
         timeout_s = self._cfg.integration_seconds + self.subprocess_start_timeout_s + 5.0
         deadline = time.monotonic() + timeout_s
         complete = False
@@ -555,15 +539,12 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
                     complete = True
                     break
                 if proc.poll() is not None:
-                    # Process exited (cleanly or with an error) — check the file
-                    # one last time below, then surface its stderr.
                     complete = self._capture_file_complete()
                     break
                 await asyncio.sleep(0.25)
         except Exception:
             logger.exception("%s baseline capture polling failed", self.name)
 
-        # Reap the subprocess (it may be hung on RTL teardown) and drain stderr.
         if proc.poll() is None:
             proc.kill()
         try:
@@ -576,20 +557,17 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
         if not complete:
             logger.error(
-                "%s baseline capture produced no spectrum within %.1fs (exit code %s)",
-                self.name, timeout_s, proc.returncode,
+                "%s baseline capture produced no spectrum within %.1fs", self.name, timeout_s,
             )
-            return False
-        if proc.returncode not in (0, None) or proc.poll() is None:
-            logger.warning(
-                "%s baseline capture vector was written but the subprocess did not "
-                "exit cleanly (likely stuck SDR teardown); using the captured spectrum",
-                self.name,
-            )
-        return True
+        return complete
+
+    def _cfg_baseline_key(self) -> tuple[float, float, int]:
+        return (self._cfg.center_freq_hz, self._cfg.sample_rate_hz, self._cfg.fft_size)
 
     def _persist_baseline_from_capture(self) -> dict[str, Any] | None:
-        """Read the captured .f32, write the JSON sidecar, commit the .f32."""
+        """Read the captured .f32, store it in memory, commit the .f32 for the
+        immediately-following subprocess spawn. No JSON sidecar is written —
+        the baseline is not persisted beyond this service process."""
         try:
             power = np.fromfile(BASELINE_F32_TMP, dtype=np.float32)
         except Exception:
@@ -615,12 +593,9 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             "power_db": power_db.astype(np.float32).round(3).tolist(),
             "capture_samples": int(cfg.integration_frames),
         }
-        try:
-            BASELINE_CACHE.write_text(json.dumps(baseline))
-        except Exception:
-            logger.exception("Failed to persist baseline to %s", BASELINE_CACHE)
-            return None
-        # Commit the raw vector for the live flowgraph last and atomically.
+        self._baseline_power = power
+        self._baseline_cfg_key = self._cfg_baseline_key()
+        # Commit the raw vector for the subprocess that's about to spawn.
         try:
             os.replace(BASELINE_F32_TMP, BASELINE_F32)
         except Exception:
@@ -631,40 +606,24 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
     # ── Subprocess management ────────────────────────────────────────────
 
     def _pipeline_cmd(self) -> list[str]:
-        """Build the live-pipeline launch command, including the baseline file
-        when one has been captured *and* still matches the current FFT layout.
-        Records whether the spawned flowgraph will be baseline-corrected."""
+        """Build the live-pipeline launch command. Includes ``--baseline`` when
+        an in-memory baseline has been captured for the current FFT layout."""
         cmd = [sys.executable, "-m", "rt_hardware.sdr_pipeline", "--config", self._config_path]
-        if self._baseline_file_matches():
-            cmd += ["--baseline", str(BASELINE_F32)]
-            self._baseline_active = True
+        if (self._baseline_power is not None
+                and self._baseline_cfg_key == self._cfg_baseline_key()):
+            # Re-write the .f32 each spawn so subprocess restarts within the
+            # same service session keep applying the user's baseline.
+            try:
+                self._baseline_power.tofile(str(BASELINE_F32))
+                cmd += ["--baseline", str(BASELINE_F32)]
+                self._baseline_active = True
+            except Exception:
+                logger.exception("%s failed to write baseline for subprocess", self.name)
+                self._baseline_active = False
         else:
-            # A stale baseline (e.g. config changed between runs) would silently
-            # mis-divide; drop it rather than apply a mismatched correction.
-            if BASELINE_F32.exists():
-                self._delete_baseline_files()
+            self._delete_baseline_files()
             self._baseline_active = False
         return cmd
-
-    def _baseline_file_matches(self) -> bool:
-        """True if a captured baseline exists and matches the current config."""
-        if not BASELINE_F32.exists():
-            return False
-        meta = self.load_baseline()
-        if meta is None:
-            # No metadata to validate against; the flowgraph still length-checks.
-            return True
-        cfg = self._cfg
-        try:
-            if int(len(meta.get("power_linear", []))) != int(cfg.fft_size):
-                return False
-            if abs(float(meta["center_freq_mhz"]) - cfg.center_freq_hz / 1e6) > 1e-6:
-                return False
-            if abs(float(meta["sample_rate_mhz"]) - cfg.sample_rate_hz / 1e6) > 1e-6:
-                return False
-        except Exception:
-            return False
-        return True
 
     async def _ensure_running(self) -> None:
         await self._cancel_idle_close()

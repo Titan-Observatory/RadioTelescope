@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import cast
 
 import numpy as np
@@ -264,7 +263,7 @@ def test_publish_frame_reports_baseline_corrected_from_active_flag(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_capture_baseline_writes_sidecar_and_commits_f32(tmp_path, baseline_paths, monkeypatch):
+async def test_capture_baseline_stores_in_memory_and_commits_f32(tmp_path, baseline_paths, monkeypatch):
     cache, f32, tmp = baseline_paths
     service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
     Broadcaster.subscribe(service)
@@ -288,10 +287,11 @@ async def test_capture_baseline_writes_sidecar_and_commits_f32(tmp_path, baselin
     assert baseline["power_linear"] == pytest.approx(power.tolist())
     assert baseline["power_db"] == pytest.approx((10.0 * np.log10(power)).round(3).tolist())
     assert baseline["capture_samples"] == service._cfg.integration_frames
-    # The .f32 is committed (renamed off the temp) and the JSON sidecar written.
+    # .f32 committed for the subprocess; no JSON sidecar (baseline is in-memory only).
     assert f32.exists()
     assert not tmp.exists()
-    assert json.loads(cache.read_text())["power_linear"] == pytest.approx(power.tolist())
+    assert not cache.exists()
+    assert service._baseline_power is not None
 
 
 @pytest.mark.asyncio
@@ -408,41 +408,42 @@ async def test_clear_baseline_removes_files(tmp_path, baseline_paths, monkeypatc
     assert not f32.exists()
 
 
-# ── Baseline file validation in the launch command ───────────────────────
+# ── Baseline in-memory validation in the launch command ──────────────────
 
 
-def _write_baseline(cache, f32, *, center_mhz: float, sample_mhz: float, bins: int) -> None:
-    power = np.ones(bins, dtype=np.float32)
-    f32.write_bytes(power.tobytes())
-    cache.write_text(json.dumps({
-        "center_freq_mhz": center_mhz,
-        "sample_rate_mhz": sample_mhz,
-        "power_linear": power.tolist(),
-    }))
-
-
-def test_pipeline_cmd_uses_matching_baseline(tmp_path, baseline_paths):
-    cache, f32, _tmp = baseline_paths
+def test_pipeline_cmd_uses_in_memory_baseline(tmp_path, baseline_paths):
+    _cache, f32, _tmp = baseline_paths
     cfg = SDRConfig(fft_size=64, center_freq_hz=1.4204e9, sample_rate_hz=3.0e6)
     service = SpectrumService(cfg, tmp_path / "config.toml")
-    _write_baseline(cache, f32, center_mhz=1420.4, sample_mhz=3.0, bins=64)
+    service._baseline_power = np.ones(64, dtype=np.float32)
+    service._baseline_cfg_key = service._cfg_baseline_key()
 
     cmd = service._pipeline_cmd()
 
     assert "--baseline" in cmd
     assert service._baseline_active is True
+    assert f32.exists()  # written from memory for the subprocess
 
 
-def test_pipeline_cmd_drops_stale_baseline(tmp_path, baseline_paths):
-    cache, f32, _tmp = baseline_paths
+def test_pipeline_cmd_drops_baseline_when_config_changed(tmp_path, baseline_paths):
+    _cache, f32, _tmp = baseline_paths
     cfg = SDRConfig(fft_size=64, center_freq_hz=1.4204e9, sample_rate_hz=3.0e6)
     service = SpectrumService(cfg, tmp_path / "config.toml")
-    # Same bins, but a different centre frequency → mismatched, must be dropped.
-    _write_baseline(cache, f32, center_mhz=1300.0, sample_mhz=3.0, bins=64)
+    # Baseline was captured at a different centre frequency.
+    service._baseline_power = np.ones(64, dtype=np.float32)
+    service._baseline_cfg_key = (1.3e9, cfg.sample_rate_hz, cfg.fft_size)
 
     cmd = service._pipeline_cmd()
 
     assert "--baseline" not in cmd
     assert service._baseline_active is False
-    assert not f32.exists()
-    assert not cache.exists()
+
+
+def test_pipeline_cmd_no_baseline_when_none_captured(tmp_path, baseline_paths):
+    cfg = SDRConfig(fft_size=64, center_freq_hz=1.4204e9, sample_rate_hz=3.0e6)
+    service = SpectrumService(cfg, tmp_path / "config.toml")
+
+    cmd = service._pipeline_cmd()
+
+    assert "--baseline" not in cmd
+    assert service._baseline_active is False
