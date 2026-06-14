@@ -499,10 +499,28 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             except Exception:
                 logger.exception("Failed to remove baseline file %s", path)
 
+    def _capture_file_complete(self) -> bool:
+        """True once the capture temp holds a full ``float32[fft_size]`` vector.
+
+        ``file_sink`` opens the file at construction (0 bytes) and writes the one
+        vector in a single unbuffered write when ``head`` fires, so an exact size
+        match is a reliable "the spectrum has landed" signal.
+        """
+        try:
+            return BASELINE_F32_TMP.stat().st_size == int(self._cfg.fft_size) * 4
+        except OSError:
+            return False
+
     async def _run_capture_subprocess(self) -> bool:
         """Run the one-shot capture flowgraph, writing BASELINE_F32_TMP.
 
-        Returns True if the subprocess exited cleanly and a temp file exists.
+        Success is judged by the *output file* being complete, not by a clean
+        process exit. The RTL-SDR Soapy source routinely hangs on teardown
+        (``PLL not locked``, direct-sampling toggling) *after* ``head(1)`` has
+        already flushed the baseline vector to disk — so waiting for the process
+        to exit would burn the whole timeout and then discard a perfectly good
+        capture. Instead we poll for the file to land, then kill the (possibly
+        stuck) subprocess and proceed.
         """
         try:
             BASELINE_F32_TMP.unlink(missing_ok=True)
@@ -525,26 +543,50 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             logger.error("%s baseline capture spawn failed: %s", self.name, exc)
             return False
 
-        # Wait for the window to integrate, plus startup grace and slack.
+        # Poll for the integrated vector to be written, then stop waiting — even
+        # if the process is still alive (stuck in source teardown). Budget covers
+        # the integration window plus subprocess startup grace and slack.
         timeout_s = self._cfg.integration_seconds + self.subprocess_start_timeout_s + 5.0
+        deadline = time.monotonic() + timeout_s
+        complete = False
         try:
-            _, stderr = await asyncio.to_thread(proc.communicate, timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            logger.warning("%s baseline capture timed out after %.1fs; killing", self.name, timeout_s)
-            proc.kill()
-            await asyncio.to_thread(proc.wait)
-            return False
+            while time.monotonic() < deadline:
+                if self._capture_file_complete():
+                    complete = True
+                    break
+                if proc.poll() is not None:
+                    # Process exited (cleanly or with an error) — check the file
+                    # one last time below, then surface its stderr.
+                    complete = self._capture_file_complete()
+                    break
+                await asyncio.sleep(0.25)
         except Exception:
-            logger.exception("%s baseline capture failed", self.name)
-            return False
+            logger.exception("%s baseline capture polling failed", self.name)
 
+        # Reap the subprocess (it may be hung on RTL teardown) and drain stderr.
+        if proc.poll() is None:
+            proc.kill()
+        try:
+            _, stderr = await asyncio.to_thread(proc.communicate, timeout=self.subprocess_kill_timeout_s)
+        except Exception:
+            stderr = b""
         if stderr:
             for line in stderr.decode("utf-8", errors="replace").splitlines():
                 logger.info("[capture] %s", line)
-        if proc.returncode != 0:
-            logger.error("%s baseline capture exited with code %d", self.name, proc.returncode)
+
+        if not complete:
+            logger.error(
+                "%s baseline capture produced no spectrum within %.1fs (exit code %s)",
+                self.name, timeout_s, proc.returncode,
+            )
             return False
-        return BASELINE_F32_TMP.exists()
+        if proc.returncode not in (0, None) or proc.poll() is None:
+            logger.warning(
+                "%s baseline capture vector was written but the subprocess did not "
+                "exit cleanly (likely stuck SDR teardown); using the captured spectrum",
+                self.name,
+            )
+        return True
 
     def _persist_baseline_from_capture(self) -> dict[str, Any] | None:
         """Read the captured .f32, write the JSON sidecar, commit the .f32."""

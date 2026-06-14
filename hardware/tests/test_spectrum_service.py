@@ -314,6 +314,60 @@ async def test_capture_baseline_returns_none_when_capture_fails(tmp_path, baseli
     assert not cache.exists()
 
 
+class _FakeCaptureProc:
+    """Stand-in for the capture subprocess so the poll loop can be exercised
+    without GNU Radio or an SDR."""
+
+    def __init__(self, *, exit_after_polls: int | None = None, exit_code: int = 0) -> None:
+        self.returncode: int | None = None
+        self._polls = 0
+        self._exit_after = exit_after_polls
+        self._exit_code = exit_code
+
+    def poll(self) -> int | None:
+        self._polls += 1
+        if self._exit_after is not None and self._polls >= self._exit_after:
+            self.returncode = self._exit_code
+        return self.returncode
+
+    def kill(self) -> None:
+        if self.returncode is None:
+            self.returncode = -9
+
+    def communicate(self, timeout=None):
+        return b"", b"capture stderr line\n"
+
+
+@pytest.mark.asyncio
+async def test_run_capture_succeeds_when_file_lands_despite_hung_process(tmp_path, baseline_paths, monkeypatch):
+    # The RTL-SDR source hangs on teardown after head(1) flushes the vector.
+    # The poll loop must accept the complete file and not wait for a clean exit.
+    cache, f32, tmp = baseline_paths
+    service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
+
+    def fake_popen(*args, **kwargs):
+        tmp.write_bytes(b"\x00" * (64 * 4))  # full float32[64] vector
+        return _FakeCaptureProc(exit_after_polls=None)  # never exits (hung)
+
+    monkeypatch.setattr(spectrum_module.subprocess, "Popen", fake_popen)
+
+    assert await service._run_capture_subprocess() is True
+
+
+@pytest.mark.asyncio
+async def test_run_capture_fails_when_no_file_written(tmp_path, baseline_paths, monkeypatch):
+    cache, f32, tmp = baseline_paths
+    service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
+
+    def fake_popen(*args, **kwargs):
+        return _FakeCaptureProc(exit_after_polls=2, exit_code=1)  # dies, writes nothing
+
+    monkeypatch.setattr(spectrum_module.subprocess, "Popen", fake_popen)
+
+    assert await service._run_capture_subprocess() is False
+    assert not tmp.exists()
+
+
 @pytest.mark.asyncio
 async def test_capture_baseline_raises_when_state_dir_readonly(tmp_path, baseline_paths, monkeypatch):
     # The Pi runs rt-hardware from a read-only checkout; without RT_STATE_DIR the
