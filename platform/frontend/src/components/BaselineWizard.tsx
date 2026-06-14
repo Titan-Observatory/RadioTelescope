@@ -8,6 +8,21 @@ import tourCopy from '../data/tourCopy.json';
 
 const FORCE_HYDROGEN_SURVEY_EVENT = 'rt-force-hydrogen-survey';
 
+// Pull a human-readable reason out of a failed response. The platform proxies
+// the hardware service's `{detail: ...}` body through verbatim, so a read-only
+// state dir, a missing dongle, or a 403 (no queue control) all arrive here with
+// an actionable message. Fall back to the status code when there's no body.
+async function errorDetail(r: Response): Promise<string> {
+  try {
+    const body = await r.json() as { detail?: unknown };
+    if (typeof body.detail === 'string' && body.detail.trim()) return body.detail;
+  } catch {
+    // non-JSON body — fall through to the generic message
+  }
+  if (r.status === 403) return 'You need telescope control to capture a baseline. Join the queue first.';
+  return `Baseline capture failed (HTTP ${r.status}).`;
+}
+
 interface SpectrumFrame {
   timestamp: number;
   center_freq_mhz: number;
@@ -47,6 +62,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
   const [step, setStep] = useState<Step>('intro');
   const [path, setPath] = useState<Path | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Reset to intro every time the wizard re-opens so we never resume mid-flow
   // from a stale prior session.
@@ -55,6 +71,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
       setStep('intro');
       setPath(null);
       setBusy(false);
+      setError(null);
       track('baseline_wizard_opened');
     }
   }, [open]);
@@ -128,9 +145,11 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
     if (!frame) return;
     const startedAt = Date.now();
     setBusy(true);
+    setError(null);
     try {
       const r = await fetch('/api/spectrum/baseline', { method: 'POST' });
       if (!r.ok) {
+        setError(await errorDetail(r));
         track('baseline_capture_result', { result: 'error', status: r.status });
         return;
       }
@@ -143,6 +162,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
       });
       setStep('done');
     } catch {
+      setError('Could not reach the telescope to capture a baseline. Check your connection and try again.');
       track('baseline_capture_result', { result: 'error' });
     } finally {
       setBusy(false);
@@ -208,6 +228,9 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
                     {tourCopy.baselineWizard.capture.countdownPrefix}
                     {' '}<strong>~{expectedWaitSeconds}s</strong> {tourCopy.baselineWizard.capture.countdownSuffix}
                   </div>
+                )}
+                {error && !busy && (
+                  <p className="baseline-warn" role="alert">{error}</p>
                 )}
                 {frame && (
                   <p className="baseline-meta">

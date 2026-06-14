@@ -410,7 +410,17 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
         it divides by the new baseline. Bounded by a timeout so the request can
         never hang; returns ``None`` (→ HTTP 409) if no spectrum could be
         captured (pipeline unavailable, dongle busy, etc.).
+
+        Raises :class:`BaselineCaptureError` when the baseline directory is not
+        writable — the common Pi misconfiguration where rt-hardware runs from a
+        read-only checkout without ``RT_STATE_DIR`` pointing at a writable
+        volume. Checked up front so the request fails with an actionable message
+        instead of silently tearing down the live stream and then failing when
+        the capture subprocess can't open its output file.
         """
+        write_error = self._state_dir_write_error()
+        if write_error is not None:
+            raise BaselineCaptureError(write_error)
         async with self._baseline_capture_lock:
             await self._cancel_idle_close()
             async with self._lifecycle_lock:
@@ -455,6 +465,32 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
         if self._capturing or self._shutting_down:
             return
         await self.reconnect()
+
+    def _state_dir_write_error(self) -> str | None:
+        """Return a human-readable error if the baseline dir isn't writable.
+
+        The capture subprocess writes its ``.f32`` via a GNU Radio ``file_sink``,
+        which fails opaquely on a read-only filesystem. Probe the directory with
+        a throwaway file first so the API can report the real cause (and the fix:
+        set ``RT_STATE_DIR``) without bouncing the live pipeline for a doomed
+        capture. Returns ``None`` when the directory is writable.
+        """
+        state_dir = BASELINE_F32.parent
+        probe = state_dir / ".rt-baseline-write-test"
+        try:
+            state_dir.mkdir(parents=True, exist_ok=True)
+            probe.write_bytes(b"")
+        except Exception as exc:
+            return (
+                f"Baseline directory {state_dir} is not writable ({exc}). "
+                "Set RT_STATE_DIR to a writable path and restart the hardware service."
+            )
+        finally:
+            try:
+                probe.unlink(missing_ok=True)
+            except Exception:
+                pass
+        return None
 
     def _delete_baseline_files(self) -> None:
         for path in (BASELINE_CACHE, BASELINE_F32, BASELINE_F32_TMP):
@@ -994,4 +1030,9 @@ class _PipelineDied(RuntimeError):
     """The GNU Radio subprocess exited or stopped sending data."""
 
 
-__all__: Iterable[str] = ("SpectrumService", "SpectrumFrame")
+class BaselineCaptureError(RuntimeError):
+    """Baseline capture can't proceed for a reportable reason (e.g. the state
+    directory is read-only). Carries a user-facing message for the HTTP layer."""
+
+
+__all__: Iterable[str] = ("SpectrumService", "SpectrumFrame", "BaselineCaptureError")

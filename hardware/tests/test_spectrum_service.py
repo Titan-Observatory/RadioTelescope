@@ -315,6 +315,28 @@ async def test_capture_baseline_returns_none_when_capture_fails(tmp_path, baseli
 
 
 @pytest.mark.asyncio
+async def test_capture_baseline_raises_when_state_dir_readonly(tmp_path, baseline_paths, monkeypatch):
+    # The Pi runs rt-hardware from a read-only checkout; without RT_STATE_DIR the
+    # capture subprocess can't write its .f32. Capture must fail up front with an
+    # actionable error and must NOT tear down the live pipeline for a doomed run.
+    service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
+    Broadcaster.subscribe(service)
+
+    killed = False
+
+    async def fake_kill() -> None:
+        nonlocal killed
+        killed = True
+
+    monkeypatch.setattr(service, "_kill_subprocess_locked", fake_kill)
+    monkeypatch.setattr(service, "_state_dir_write_error", lambda: "read-only filesystem")
+
+    with pytest.raises(spectrum_module.BaselineCaptureError, match="read-only filesystem"):
+        await service.capture_baseline()
+    assert killed is False
+
+
+@pytest.mark.asyncio
 async def test_clear_baseline_removes_files(tmp_path, baseline_paths, monkeypatch):
     cache, f32, _tmp = baseline_paths
     service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")

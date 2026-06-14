@@ -6,6 +6,8 @@ import time
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
+from rt_hardware.services.spectrum import BaselineCaptureError
+
 router = APIRouter(tags=["spectrum"])
 
 
@@ -72,9 +74,18 @@ async def get_baseline(request: Request):
 @router.post("/api/spectrum/baseline")
 async def capture_baseline(request: Request):
     service = _service(request)
-    baseline = await service.capture_baseline()
+    try:
+        baseline = await service.capture_baseline()
+    except BaselineCaptureError as exc:
+        # Reportable precondition failure (e.g. read-only state dir). Surface
+        # the actionable message rather than a generic 409.
+        raise HTTPException(503, str(exc)) from exc
     if baseline is None:
-        raise HTTPException(409, "No spectrum frame is available yet to capture")
+        raise HTTPException(
+            409,
+            "Baseline capture failed: the SDR produced no spectrum. "
+            "Check that the dongle is connected and see the hardware logs.",
+        )
     return baseline
 
 

@@ -559,7 +559,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     return (
       <section className="spectrum-section">
         <h2 className="panel-header head-amber">
-          Hydrogen line spectrum
+          Hydrogen Observation
         </h2>
         <div className="spectrum-empty">SDR disabled in config.toml.</div>
       </section>
