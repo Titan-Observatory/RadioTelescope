@@ -2025,6 +2025,7 @@ h2.panel-header {
   gap: 8px;
   min-height: 140px;
   padding-left: 3px;
+  padding-right: 10px;
   --thumb: 18px;
   --rail-w: 6px;
 }
@@ -2118,7 +2119,7 @@ h2.panel-header {
   /* Absolutely-positioned labels contribute no width, so reserve enough for
      the longest rate name explicitly. */
   flex: 0 0 auto;
-  width: 40px;
+  width: 54px;
   margin: calc(var(--thumb) / 2) 0;
 }
 .speed-slider-label {

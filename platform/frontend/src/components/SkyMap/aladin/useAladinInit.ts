@@ -13,6 +13,7 @@ import {
   raDecToGalactic,
 } from '../../../lib/astro';
 import type { RoboClawTelemetry, TelescopeConfig } from '../../../types';
+import { ALTITUDE_LIMIT_MAX_DEG, ALTITUDE_LIMIT_MIN_DEG } from '../horizon/layers';
 import { HYDROGEN_SURVEY_ID, type SurveyId } from '../spectrum/surveys';
 import { DEFAULT_HORIZON_VIEW, initialHorizonRotationDeg } from './orientation';
 
@@ -297,6 +298,16 @@ export function useAladinInit(opts: UseAladinInitOptions) {
         }
 
         const altAz = raDecToAltAz(ra_deg, dec_deg, currentConfig, new Date());
+        if (
+          altAz.altitude_deg < ALTITUDE_LIMIT_MIN_DEG ||
+          altAz.altitude_deg > ALTITUDE_LIMIT_MAX_DEG
+        ) {
+          clearPendingTarget();
+          onNoticeRef.current?.(
+            `Selected target is outside the available altitude range (${ALTITUDE_LIMIT_MIN_DEG}°-${ALTITUDE_LIMIT_MAX_DEG}°).`,
+          );
+          return;
+        }
 
         // No physical hardware to protect when disconnected — skip limit checks
         const isDisconnected = telemetryRef.current?.connection.mode === 'disconnected';

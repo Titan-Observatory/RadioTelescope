@@ -65,8 +65,8 @@ export type Layer = (state: FrameState) => void;
 
 const ALT_RINGS = [15, 30, 45, 60, 75];
 const AZ_LINES = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
-const ALTITUDE_LIMIT_MIN_DEG = 30;
-const ALTITUDE_LIMIT_MAX_DEG = 70;
+export const ALTITUDE_LIMIT_MIN_DEG = 30;
+export const ALTITUDE_LIMIT_MAX_DEG = 70;
 
 export function buildHorizonSamples(config: TelescopeConfig, date: Date): {
   horizonRaDec: RaDecTarget[];
@@ -224,7 +224,38 @@ function buildAltitudeBandQuads(
   return quads;
 }
 
-export const drawAltitudeLimitOverlay: Layer = ({ ctx, aladin, w, h, config, date }) => {
+let altitudeUnavailablePattern: CanvasPattern | null = null;
+let altitudeUnavailablePatternCtx: CanvasRenderingContext2D | null = null;
+function altitudeLimitPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+  if (altitudeUnavailablePattern && altitudeUnavailablePatternCtx === ctx) return altitudeUnavailablePattern;
+  const size = 14;
+  const tile = document.createElement('canvas');
+  tile.width = size;
+  tile.height = size;
+  const tctx = tile.getContext('2d');
+  if (!tctx) return null;
+  tctx.strokeStyle = 'rgba(220, 228, 236, 0.24)';
+  tctx.lineWidth = 1.2;
+  tctx.lineCap = 'square';
+  tctx.beginPath();
+  tctx.moveTo(-2, size + 2);
+  tctx.lineTo(size + 2, -2);
+  tctx.stroke();
+  altitudeUnavailablePattern = ctx.createPattern(tile, 'repeat');
+  altitudeUnavailablePatternCtx = ctx;
+  return altitudeUnavailablePattern;
+}
+
+export const drawAltitudeLimitOverlay: Layer = ({
+  ctx,
+  aladin,
+  w,
+  h,
+  config,
+  date,
+  horizonPx,
+  groundIsInside,
+}) => {
   const validBandQuads = buildAltitudeBandQuads(
     aladin,
     config,
@@ -237,17 +268,30 @@ export const drawAltitudeLimitOverlay: Layer = ({ ctx, aladin, w, h, config, dat
 
   ctx.save();
   ctx.beginPath();
+  if (groundIsInside) ctx.rect(0, 0, w, h);
+  ctx.moveTo(horizonPx[0][0], horizonPx[0][1]);
+  for (const [x, y] of horizonPx.slice(1)) ctx.lineTo(x, y);
+  ctx.closePath();
+  ctx.clip(groundIsInside ? 'evenodd' : 'nonzero');
+
+  ctx.beginPath();
   ctx.rect(0, 0, w, h);
   for (const quad of validBandQuads) {
     ctx.moveTo(quad[0][0], quad[0][1]);
     for (const [x, y] of quad.slice(1)) ctx.lineTo(x, y);
     ctx.closePath();
   }
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+  ctx.fillStyle = 'rgba(3, 6, 10, 0.22)';
   ctx.fill('evenodd');
 
-  ctx.strokeStyle = 'rgba(232, 238, 244, 0.72)';
-  ctx.lineWidth = 1.5;
+  const hatch = altitudeLimitPattern(ctx);
+  if (hatch) {
+    ctx.fillStyle = hatch;
+    ctx.fill('evenodd');
+  }
+
+  ctx.strokeStyle = 'rgba(232, 238, 244, 0.62)';
+  ctx.lineWidth = 1.35;
   for (const alt of [ALTITUDE_LIMIT_MIN_DEG, ALTITUDE_LIMIT_MAX_DEG]) {
     drawProjectedPolyline(ctx, aladin, buildAltitudeRing(config, date, alt), true, w, h);
   }

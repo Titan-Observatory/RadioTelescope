@@ -11,6 +11,10 @@ Group=telescope
 SupplementaryGroups=dialout plugdev video
 WorkingDirectory=/opt/radiotelescope/hardware
 Environment=PYTHONPATH=/usr/lib/python3/dist-packages
+# Persisted state (spectrum baseline, GOES products index). Must be a writable
+# path — ProtectSystem=strict makes everything except ReadWritePaths read-only,
+# so without this the baseline default (CWD) lands on a read-only mount.
+Environment=RT_STATE_DIR=/var/lib/radiotelescope
 
 ExecStart=/opt/radiotelescope/hardware/.venv/bin/rt-hardware -c /etc/radiotelescope/hardware.toml
 
