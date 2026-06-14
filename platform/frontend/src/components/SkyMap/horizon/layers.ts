@@ -65,10 +65,6 @@ export type Layer = (state: FrameState) => void;
 
 const ALT_RINGS = [15, 30, 45, 60, 75];
 const AZ_LINES = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
-export const ALTITUDE_LIMIT_MIN_DEG = 30;
-export const ALTITUDE_LIMIT_MAX_DEG = 70;
-export const AZIMUTH_LIMIT_MIN_DEG = 55;
-export const AZIMUTH_LIMIT_MAX_DEG = 190;
 
 export function buildHorizonSamples(config: TelescopeConfig, date: Date): {
   horizonRaDec: RaDecTarget[];
@@ -284,14 +280,15 @@ export const drawAltitudeLimitOverlay: Layer = ({
   horizonPx,
   groundIsInside,
 }) => {
+  const limits = config.hard_safety_limits;
   const validBandQuads = buildAltitudeBandQuads(
     aladin,
     config,
     date,
-    ALTITUDE_LIMIT_MIN_DEG,
-    ALTITUDE_LIMIT_MAX_DEG,
-    AZIMUTH_LIMIT_MIN_DEG,
-    AZIMUTH_LIMIT_MAX_DEG,
+    limits.altitude_min_deg,
+    limits.altitude_max_deg,
+    limits.azimuth_min_deg,
+    limits.azimuth_max_deg,
     w,
     h,
   );
@@ -322,21 +319,21 @@ export const drawAltitudeLimitOverlay: Layer = ({
 
   ctx.strokeStyle = 'rgba(232, 238, 244, 0.62)';
   ctx.lineWidth = 1.35;
-  for (const alt of [ALTITUDE_LIMIT_MIN_DEG, ALTITUDE_LIMIT_MAX_DEG]) {
+  for (const alt of [limits.altitude_min_deg, limits.altitude_max_deg]) {
     drawProjectedPolyline(
       ctx,
       aladin,
-      buildAltitudeBoundary(config, date, alt, AZIMUTH_LIMIT_MIN_DEG, AZIMUTH_LIMIT_MAX_DEG),
+      buildAltitudeBoundary(config, date, alt, limits.azimuth_min_deg, limits.azimuth_max_deg),
       false,
       w,
       h,
     );
   }
-  for (const az of [AZIMUTH_LIMIT_MIN_DEG, AZIMUTH_LIMIT_MAX_DEG]) {
+  for (const az of [limits.azimuth_min_deg, limits.azimuth_max_deg]) {
     drawProjectedPolyline(
       ctx,
       aladin,
-      buildAzimuthBoundary(config, date, az, ALTITUDE_LIMIT_MIN_DEG, ALTITUDE_LIMIT_MAX_DEG),
+      buildAzimuthBoundary(config, date, az, limits.altitude_min_deg, limits.altitude_max_deg),
       false,
       w,
       h,

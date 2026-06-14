@@ -81,6 +81,13 @@ export interface AltAzPoint {
   azimuth_deg: number;
 }
 
+export interface HardSafetyLimits {
+  altitude_min_deg: number;
+  altitude_max_deg: number;
+  azimuth_min_deg: number;
+  azimuth_max_deg: number;
+}
+
 export interface TelescopeConfig {
   beam_fwhm_deg: number;
   goto_speed_qpps: number;
@@ -89,6 +96,7 @@ export interface TelescopeConfig {
   observer_latitude_deg: number;
   observer_longitude_deg: number;
   pointing_limit_altaz: AltAzPoint[];
+  hard_safety_limits: HardSafetyLimits;
 }
 
 export interface SkyOverlay {

@@ -13,6 +13,7 @@ from rt_hardware.config import MountConfig
 from rt_hardware.hardware.roboclaw import RoboClawClient
 from rt_hardware.models.state import PollStats, RoboClawTelemetry
 from rt_hardware.pointing import altaz_to_radec
+from rt_hardware.safety import inside_hard_safety_limits, jog_moves_outside_hard_limits
 from rt_hardware.services._pubsub import Broadcaster
 from rt_hardware.services.geometry import encoder_counts_to_altitude
 
@@ -50,6 +51,7 @@ class RoboClawService:
         self._position_target: PositionTarget | None = None
         self._jog_sequences: dict[str, int] = {}
         self._active_jog: tuple[str, int] | None = None
+        self._active_jog_direction: str | None = None
         self._jog_watchdog_task: asyncio.Task | None = None
         self._io_lock = asyncio.Lock()
 
@@ -105,8 +107,9 @@ class RoboClawService:
     def is_current_jog_sequence(self, token: str, seq: int) -> bool:
         return self._jog_sequences.get(token) == seq
 
-    def arm_jog_watchdog(self, token: str, seq: int, timeout_s: float) -> None:
+    def arm_jog_watchdog(self, token: str, seq: int, timeout_s: float, *, direction: str | None = None) -> None:
         self._active_jog = (token, seq)
+        self._active_jog_direction = direction
         if self._jog_watchdog_task is not None:
             self._jog_watchdog_task.cancel()
         self._jog_watchdog_task = asyncio.create_task(self._expire_jog_after(token, seq, timeout_s))
@@ -114,6 +117,7 @@ class RoboClawService:
     def clear_jog_watchdog(self, token: str, seq: int) -> None:
         if self._active_jog is not None and self._active_jog[0] == token and self._active_jog[1] <= seq:
             self._active_jog = None
+            self._active_jog_direction = None
         if self._jog_watchdog_task is not None and self._active_jog is None:
             self._jog_watchdog_task.cancel()
             self._jog_watchdog_task = None
@@ -132,6 +136,7 @@ class RoboClawService:
             if self._active_jog != (token, seq):
                 return
             self._active_jog = None
+            self._active_jog_direction = None
             result = await self.stop_all()
             failed = [item.error or item.command_id for item in result.values() if not item.ok]
             if failed:
@@ -228,9 +233,36 @@ class RoboClawService:
                     logger.debug("altaz_to_radec failed", exc_info=True)
 
         self._latest = snap.model_copy(update=updates) if updates else snap
+        await self._stop_if_active_jog_exits_hard_limits(self._latest)
         await self._stop_if_position_target_reached(self._latest)
         self._broadcaster.publish(self._latest)
         return self._latest
+
+    async def _stop_if_active_jog_exits_hard_limits(self, snap: RoboClawTelemetry) -> None:
+        if self._active_jog is None or self._active_jog_direction is None:
+            return
+        if snap.altitude_deg is None or snap.azimuth_deg is None:
+            return
+        if inside_hard_safety_limits(snap.altitude_deg, snap.azimuth_deg):
+            return
+        if not jog_moves_outside_hard_limits(self._active_jog_direction, snap.altitude_deg, snap.azimuth_deg):
+            return
+
+        token, seq = self._active_jog
+        self._active_jog = None
+        self._active_jog_direction = None
+        result = await self.stop_all()
+        failed = [item.error or item.command_id for item in result.values() if not item.ok]
+        if failed:
+            logger.warning("Failed to stop jog outside hard limits token=%s seq=%s: %s", token, seq, "; ".join(failed))
+        else:
+            logger.warning(
+                "Stopped jog outside hard limits token=%s seq=%s alt=%.1f az=%.1f",
+                token,
+                seq,
+                snap.altitude_deg,
+                snap.azimuth_deg,
+            )
 
     async def _stop_if_position_target_reached(self, snap: RoboClawTelemetry) -> None:
         target = self._position_target

@@ -16,6 +16,7 @@ from rt_hardware.models.state import (
     HealthStatus,
     JogRequest,
     JogStopRequest,
+    HardSafetyLimits,
     PidBundle,
     PidWriteRequest,
     PositionPid,
@@ -25,6 +26,14 @@ from rt_hardware.models.state import (
     VelocityPid,
 )
 from rt_hardware.pointing import radec_to_altaz
+from rt_hardware.safety import (
+    HARD_ALTITUDE_MAX_DEG,
+    HARD_ALTITUDE_MIN_DEG,
+    HARD_AZIMUTH_MAX_DEG,
+    HARD_AZIMUTH_MIN_DEG,
+    inside_hard_safety_limits,
+    jog_moves_outside_hard_limits,
+)
 from rt_hardware.services.geometry import altitude_to_encoder_counts
 
 router = APIRouter(tags=["roboclaw"])
@@ -36,10 +45,6 @@ JOG_COMMANDS: dict[str, str] = {
     "down": "backward_m2",
 }
 JOG_HEARTBEAT_TIMEOUT_S = 1.0
-HARD_ALTITUDE_MIN_DEG = 30.0
-HARD_ALTITUDE_MAX_DEG = 70.0
-HARD_AZIMUTH_MIN_DEG = 55.0
-HARD_AZIMUTH_MAX_DEG = 190.0
 
 
 def _position_targets(command_id: str, args: dict[str, int | bool]) -> dict[str, int | None] | None:
@@ -100,12 +105,7 @@ def _enforce_pointing_limits(altitude_deg: float, azimuth_deg: float, request: R
 
 
 def _enforce_hard_safety_limits(altitude_deg: float, azimuth_deg: float) -> None:
-    if (
-        altitude_deg < HARD_ALTITUDE_MIN_DEG
-        or altitude_deg > HARD_ALTITUDE_MAX_DEG
-        or azimuth_deg < HARD_AZIMUTH_MIN_DEG
-        or azimuth_deg > HARD_AZIMUTH_MAX_DEG
-    ):
+    if not inside_hard_safety_limits(altitude_deg, azimuth_deg):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -115,6 +115,26 @@ def _enforce_hard_safety_limits(altitude_deg: float, azimuth_deg: float) -> None
                 f"az={HARD_AZIMUTH_MIN_DEG:.0f}-{HARD_AZIMUTH_MAX_DEG:.0f} deg)"
             ),
         )
+
+
+async def _enforce_jog_hard_safety_limits(body: JogRequest, request: Request) -> None:
+    current = await _service(request).refresh()
+    if current.altitude_deg is None or current.azimuth_deg is None:
+        return
+    if not jog_moves_outside_hard_limits(body.direction, current.altitude_deg, current.azimuth_deg):
+        return
+
+    _service(request).clear_jog_watchdog(body.token, body.seq)
+    await _service(request).stop_all()
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Jog would move outside hard safety limits "
+            f"(current alt={current.altitude_deg:.1f} deg, az={current.azimuth_deg:.1f} deg; "
+            f"allowed alt={HARD_ALTITUDE_MIN_DEG:.0f}-{HARD_ALTITUDE_MAX_DEG:.0f} deg, "
+            f"az={HARD_AZIMUTH_MIN_DEG:.0f}-{HARD_AZIMUTH_MAX_DEG:.0f} deg)"
+        ),
+    )
 
 
 def _shortest_az_delta(from_az: float, to_az: float) -> float:
@@ -204,6 +224,7 @@ async def jog(body: JogRequest, request: Request):
     if not service.accept_jog_sequence(body.token, body.seq):
         return {"ok": True, "accepted": False, "stale": True}
 
+    await _enforce_jog_hard_safety_limits(body, request)
     service.set_position_target()
     command_id = JOG_COMMANDS[body.direction]
     result = await service.execute(command_id, {"speed": body.speed})
@@ -219,7 +240,7 @@ async def jog(body: JogRequest, request: Request):
             await service.stop_all()
         return {"ok": True, "accepted": False, "stale": True}
 
-    service.arm_jog_watchdog(body.token, body.seq, JOG_HEARTBEAT_TIMEOUT_S)
+    service.arm_jog_watchdog(body.token, body.seq, JOG_HEARTBEAT_TIMEOUT_S, direction=body.direction)
     return {"ok": True, "accepted": True, "command_id": command_id, "seq": body.seq}
 
 
@@ -376,6 +397,12 @@ async def telescope_config(request: Request):
         observer_latitude_deg=observer.latitude_deg,
         observer_longitude_deg=observer.longitude_deg,
         pointing_limit_altaz=[point.model_dump() for point in cfg.pointing_limit_altaz],
+        hard_safety_limits=HardSafetyLimits(
+            altitude_min_deg=HARD_ALTITUDE_MIN_DEG,
+            altitude_max_deg=HARD_ALTITUDE_MAX_DEG,
+            azimuth_min_deg=HARD_AZIMUTH_MIN_DEG,
+            azimuth_max_deg=HARD_AZIMUTH_MAX_DEG,
+        ),
     )
 
 

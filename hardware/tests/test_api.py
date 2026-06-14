@@ -196,6 +196,9 @@ def test_jog_rejects_stale_heartbeat(simulated_config_path):
 
 def test_stale_heartbeat_after_newer_jog_does_not_stop_active_motion(simulated_config_path):
     with TestClient(create_app(simulated_config_path)) as client:
+        service = client.app.state.roboclaw_service
+        service.client._encoders["m1"] = 1100  # az = 100 deg
+        service.client._encoders["m2"] = 1100  # alt = 45 deg
         old = client.post(
             "/api/telescope/jog",
             json={"token": "jog-token-race", "seq": 1, "direction": "down", "speed": 40},
@@ -208,7 +211,6 @@ def test_stale_heartbeat_after_newer_jog_does_not_stop_active_motion(simulated_c
             "/api/telescope/jog",
             json={"token": "jog-token-race", "seq": 1, "direction": "down", "speed": 40},
         )
-        service = client.app.state.roboclaw_service
 
     assert old.status_code == 200
     assert newer.status_code == 200
@@ -316,6 +318,44 @@ def test_jog_watchdog_stops_when_heartbeats_stop(simulated_config_path):
 # ─── Pointing limits / range checks ───────────────────────────────────────
 
 
+def test_jog_rejects_motion_outside_hard_safety_limits(simulated_config_path):
+    with TestClient(create_app(simulated_config_path)) as client:
+        service = client.app.state.roboclaw_service
+        service.client._encoders["m1"] = 2000  # az = 190 deg
+        service.client._encoders["m2"] = 1100  # alt = 45 deg
+
+        rejected = client.post(
+            "/api/telescope/jog",
+            json={"token": "jog-limit-token", "seq": 1, "direction": "west", "speed": 40},
+        )
+
+    assert rejected.status_code == 400
+    assert "outside hard safety limits" in rejected.json()["detail"]
+    assert service.client._speeds["m1"] == 0
+    assert service.client._speeds["m2"] == 0
+
+
+def test_active_jog_stops_when_it_crosses_hard_safety_limits(simulated_config_path):
+    import time
+
+    with TestClient(create_app(simulated_config_path)) as client:
+        service = client.app.state.roboclaw_service
+        service.client._encoders["m1"] = 1990  # az = 189 deg
+        service.client._encoders["m2"] = 1100  # alt = 45 deg
+
+        started = client.post(
+            "/api/telescope/jog",
+            json={"token": "jog-cross-token", "seq": 1, "direction": "west", "speed": 40},
+        )
+        assert started.status_code == 200
+        assert service.client._speeds["m1"] > 0
+
+        time.sleep(0.5)
+
+    assert service.client._speeds["m1"] == 0
+    assert service.client._speeds["m2"] == 0
+
+
 def test_api_rejects_goto_outside_pointing_limit_triangle(simulated_config_path):
     simulated_config_path.write_text(
         simulated_config_path.read_text(encoding="utf-8").replace(
@@ -367,6 +407,12 @@ pointing_limit_altaz = [
         {"altitude_deg": 70.0, "azimuth_deg": 90.0},
         {"altitude_deg": 10.0, "azimuth_deg": 170.0},
     ]
+    assert body["hard_safety_limits"] == {
+        "altitude_min_deg": 30.0,
+        "altitude_max_deg": 70.0,
+        "azimuth_min_deg": 55.0,
+        "azimuth_max_deg": 190.0,
+    }
 
 
 def test_api_describes_alt_az_goto_for_browser_gets(simulated_config_path):

@@ -132,6 +132,13 @@ class AltAzPoint(BaseModel):
     azimuth_deg: float = Field(ge=0, le=360)
 
 
+class HardSafetyLimits(BaseModel):
+    altitude_min_deg: float
+    altitude_max_deg: float
+    azimuth_min_deg: float
+    azimuth_max_deg: float
+
+
 class _MotionParams(BaseModel):
     """Common optional motion overrides for goto requests.
 
@@ -162,6 +169,7 @@ class TelescopeConfig(BaseModel):
     observer_latitude_deg: float
     observer_longitude_deg: float
     pointing_limit_altaz: list[AltAzPoint] = Field(default_factory=list)
+    hard_safety_limits: HardSafetyLimits
 
 
 class RaDecRequest(_MotionParams):

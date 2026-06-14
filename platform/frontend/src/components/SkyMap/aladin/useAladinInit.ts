@@ -13,12 +13,6 @@ import {
   raDecToGalactic,
 } from '../../../lib/astro';
 import type { RoboClawTelemetry, TelescopeConfig } from '../../../types';
-import {
-  ALTITUDE_LIMIT_MAX_DEG,
-  ALTITUDE_LIMIT_MIN_DEG,
-  AZIMUTH_LIMIT_MAX_DEG,
-  AZIMUTH_LIMIT_MIN_DEG,
-} from '../horizon/layers';
 import { HYDROGEN_SURVEY_ID, type SurveyId } from '../spectrum/surveys';
 import { DEFAULT_HORIZON_VIEW, initialHorizonRotationDeg } from './orientation';
 
@@ -303,15 +297,16 @@ export function useAladinInit(opts: UseAladinInitOptions) {
         }
 
         const altAz = raDecToAltAz(ra_deg, dec_deg, currentConfig, new Date());
+        const hardLimits = currentConfig.hard_safety_limits;
         if (
-          altAz.altitude_deg < ALTITUDE_LIMIT_MIN_DEG ||
-          altAz.altitude_deg > ALTITUDE_LIMIT_MAX_DEG ||
-          altAz.azimuth_deg < AZIMUTH_LIMIT_MIN_DEG ||
-          altAz.azimuth_deg > AZIMUTH_LIMIT_MAX_DEG
+          altAz.altitude_deg < hardLimits.altitude_min_deg ||
+          altAz.altitude_deg > hardLimits.altitude_max_deg ||
+          altAz.azimuth_deg < hardLimits.azimuth_min_deg ||
+          altAz.azimuth_deg > hardLimits.azimuth_max_deg
         ) {
           clearPendingTarget();
           onNoticeRef.current?.(
-            `Selected target is outside the available sky region (Alt ${ALTITUDE_LIMIT_MIN_DEG}°-${ALTITUDE_LIMIT_MAX_DEG}°, Az ${AZIMUTH_LIMIT_MIN_DEG}°-${AZIMUTH_LIMIT_MAX_DEG}°).`,
+            `Selected target is outside the available sky region (Alt ${hardLimits.altitude_min_deg}°-${hardLimits.altitude_max_deg}°, Az ${hardLimits.azimuth_min_deg}°-${hardLimits.azimuth_max_deg}°).`,
           );
           return;
         }

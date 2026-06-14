@@ -18,6 +18,12 @@ const DEFAULT_TELESCOPE_CONFIG: TelescopeConfig = {
   observer_latitude_deg: 51.5,
   observer_longitude_deg: -0.1,
   pointing_limit_altaz: [],
+  hard_safety_limits: {
+    altitude_min_deg: 30,
+    altitude_max_deg: 70,
+    azimuth_min_deg: 55,
+    azimuth_max_deg: 190,
+  },
 };
 
 export interface UseBackendCatalogOptions {
