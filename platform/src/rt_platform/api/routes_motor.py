@@ -19,16 +19,14 @@ from typing import Any
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException,
     Request,
     WebSocket,
     WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse
 
+from rt_platform.api import _proxy
 from rt_platform.api.dependencies import (
-    is_lan_admin,
-    queue_service,
     read_session_token,
     require_active_queue_session,
     require_control,
@@ -41,14 +39,6 @@ logger = logging.getLogger("rt_platform.motor_proxy")
 router = APIRouter(tags=["motor-proxy"])
 
 _motion_audit_lock = asyncio.Lock()
-
-
-def _hardware(request_or_ws) -> "HardwareClient":  # noqa: F821 — forward ref to avoid import cycle
-    return request_or_ws.app.state.hardware_client
-
-
-def _ws_base_url(app) -> str:
-    return app.state.hardware_client.ws_base_url
 
 
 def _session_fingerprint(request: Request) -> str | None:
@@ -105,15 +95,12 @@ async def _forward(
     json_body: dict | None = None,
     timeout_s: float = 10.0,
 ) -> JSONResponse:
-    try:
-        r = await _hardware(request).request(method, path, json=json_body, timeout=timeout_s)
-    except Exception as exc:
-        raise HTTPException(502, f"Hardware gateway unreachable: {exc}") from exc
-    try:
-        body = r.json()
-    except Exception:
-        body = {"detail": r.text}
-    return JSONResponse(body, status_code=r.status_code)
+    # Motor commands keep a more generous default timeout than the other
+    # proxies (the hardware-side jog watchdog is latency-sensitive); the
+    # forwarding body itself is shared via _proxy.
+    return await _proxy.proxy_json(
+        method, request, path, json_body=json_body, timeout_s=timeout_s, label="Hardware",
+    )
 
 
 # ─── Read-only endpoints (no queue gate) ──────────────────────────────────
@@ -275,12 +262,9 @@ async def save_pid_to_nvm(request: Request) -> JSONResponse:
 async def roboclaw_ws(ws: WebSocket) -> None:
     """Open one upstream WS to the hardware, relay frames to the browser."""
     await ws.accept()
-    if ws.app.state.config.queue.enabled:
-        token = read_session_token(ws)
-        if not (is_lan_admin(ws) or queue_service(ws).is_active(token)):
-            await ws.close(code=1008, reason="Active queue session required")
-            return
-    upstream_url = _ws_base_url(ws.app) + "/ws/roboclaw"
+    if await _proxy.reject_unauthorized_ws(ws):
+        return
+    upstream_url = _proxy.ws_base_url(ws.app) + "/ws/roboclaw"
     import websockets
 
     try:

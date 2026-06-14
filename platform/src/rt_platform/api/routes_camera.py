@@ -3,17 +3,21 @@
 The camera is plugged into the hardware host. The platform exposes the same
 `/api/camera/*` URLs the frontend already uses and pipes them through to the
 hardware service. Browser-side code never has to know the camera isn't local.
+
+The status + single-frame endpoints share the common forwarding plumbing in
+``_proxy``. The MJPEG stream is special — its ``httpx`` client lifecycle is
+tied to the long-lived response — so it stays hand-rolled here.
 """
 from __future__ import annotations
 
-import logging
 from typing import AsyncIterator
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-logger = logging.getLogger("radiotelescope.camera_proxy")
+from rt_platform.api import _proxy
+
 router = APIRouter(tags=["camera-proxy"])
 
 
@@ -21,36 +25,25 @@ def _base_url(request: Request) -> str:
     return request.app.state.config.hardware_url
 
 
-def _hardware(request: Request):
-    return request.app.state.hardware_client
-
-
 @router.get("/api/camera/status")
 async def camera_status(request: Request) -> JSONResponse:
-    try:
-        r = await _hardware(request).request("GET", "/api/camera/status", timeout=3.0)
-        r.raise_for_status()
-        return JSONResponse(r.json())
-    except Exception as exc:
-        logger.warning("Camera status proxy failed: %s", exc)
-        return JSONResponse({"enabled": False, "label": "Cam A"})
+    return await _proxy.status_with_fallback(
+        request, "/api/camera/status",
+        {"enabled": False, "label": "Cam A"},
+        log_label="Camera status",
+    )
 
 
 @router.get("/api/camera/frame")
 async def camera_frame(request: Request) -> Response:
     """Single-shot JPEG proxy. Short timeout so a stalled hardware fetch
     doesn't pin a connection — the browser polls anyway, it'll retry."""
-    try:
-        r = await _hardware(request).request("GET", "/api/camera/frame", timeout=4.0)
-    except Exception as exc:
-        logger.warning("Camera frame proxy failed: %s", exc)
-        raise HTTPException(502, "Camera gateway unreachable")
-    if r.status_code >= 400:
-        raise HTTPException(r.status_code, "Camera gateway returned an error")
-    return Response(
-        content=r.content,
-        media_type=r.headers.get("content-type", "image/jpeg"),
-        headers={"Cache-Control": "no-store"},
+    return await _proxy.binary_passthrough(
+        request, "/api/camera/frame",
+        timeout_s=4.0,
+        default_media_type="image/jpeg",
+        cache_control="no-store",
+        label="Camera",
     )
 
 

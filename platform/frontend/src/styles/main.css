@@ -1295,7 +1295,6 @@ h2.panel-header.spectrum-title-lg {
   display: block;
   flex: 0 0 auto;
   margin-top: -2px;
-  border-top: 1px solid rgba(122, 126, 170, 0.16);
 }
 .spectrum-waterfall-summary {
   display: flex;

@@ -698,6 +698,67 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
         </div>
       </header>
 
+      {!baselineApplies ? (
+        <div className="spectrum-baseline-row spectrum-baseline-callout" aria-label="Baseline correction">
+          <span className="spectrum-baseline-state">
+            No baseline
+          </span>
+          <span className="spectrum-baseline-hint">
+            Capture a reference on empty sky so faint signals stand out from the receiver itself.
+          </span>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => setWizardOpen(true)}
+            title="Open the guided flow to point at empty sky and capture a baseline"
+          >
+            <Sliders size={12} /> Set up baseline
+          </button>
+        </div>
+      ) : frame ? (
+        <div className="spectrum-readouts" aria-label="Hydrogen line measurements">
+          <div className="spectrum-readout">
+            <span className="spectrum-readout-label">Peak</span>
+            <span className="spectrum-readout-value">
+              {detection?.detected ? `${detection.freqMhz.toFixed(3)} MHz` : '—'}
+            </span>
+          </div>
+          <div className="spectrum-readout">
+            <span className="spectrum-readout-label">Strength</span>
+            <span className="spectrum-readout-value">
+              {detection?.detected ? `+${detection.prominenceDb.toFixed(1)} dB` : '—'}
+            </span>
+          </div>
+          <div className="spectrum-readout">
+            <span className="spectrum-readout-label">Doppler velocity</span>
+            <span className="spectrum-readout-value">
+              {velocity == null ? '—' : `${velocity >= 0 ? '+' : '−'}${Math.abs(velocity).toFixed(0)} km/s`}
+            </span>
+            {velocity != null && Math.abs(velocity) >= 3 && (
+              <span className="spectrum-readout-sub">
+                {velocity >= 0 ? 'gas receding' : 'gas approaching'}
+              </span>
+            )}
+          </div>
+          {detection && !detection.detected && (
+            <div className="spectrum-readout spectrum-readout-wide">
+              <span className="spectrum-readout-hint">
+                No clear hydrogen peak yet — the signal is strongest along the galactic plane
+                (galactic latitude near 0°).
+              </span>
+            </div>
+          )}
+          <button
+            type="button"
+            className="ghost-btn spectrum-recapture-btn"
+            onClick={() => setWizardOpen(true)}
+            title="Capture a fresh baseline"
+          >
+            <Sliders size={12} /> Recapture
+          </button>
+        </div>
+      ) : null}
+
       <div className="spectrum-chart-wrap">
         <div className="spectrum-chart-head">
           {baselineApplies && (
@@ -781,67 +842,6 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
           </summary>
           <canvas className="spectrum-waterfall" ref={waterfallCanvasRef} />
         </details>
-
-        {!baselineApplies ? (
-          <div className="spectrum-baseline-row spectrum-baseline-callout" aria-label="Baseline correction">
-            <span className="spectrum-baseline-state">
-              No baseline
-            </span>
-            <span className="spectrum-baseline-hint">
-              Capture a reference on empty sky so faint signals stand out from the receiver itself.
-            </span>
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={() => setWizardOpen(true)}
-              title="Open the guided flow to point at empty sky and capture a baseline"
-            >
-              <Sliders size={12} /> Set up baseline
-            </button>
-          </div>
-        ) : frame ? (
-          <div className="spectrum-readouts" aria-label="Hydrogen line measurements">
-            <div className="spectrum-readout">
-              <span className="spectrum-readout-label">Peak</span>
-              <span className="spectrum-readout-value">
-                {detection?.detected ? `${detection.freqMhz.toFixed(3)} MHz` : '—'}
-              </span>
-            </div>
-            <div className="spectrum-readout">
-              <span className="spectrum-readout-label">Strength</span>
-              <span className="spectrum-readout-value">
-                {detection?.detected ? `+${detection.prominenceDb.toFixed(1)} dB` : '—'}
-              </span>
-            </div>
-            <div className="spectrum-readout">
-              <span className="spectrum-readout-label">Doppler velocity</span>
-              <span className="spectrum-readout-value">
-                {velocity == null ? '—' : `${velocity >= 0 ? '+' : '−'}${Math.abs(velocity).toFixed(0)} km/s`}
-              </span>
-              {velocity != null && Math.abs(velocity) >= 3 && (
-                <span className="spectrum-readout-sub">
-                  {velocity >= 0 ? 'gas receding' : 'gas approaching'}
-                </span>
-              )}
-            </div>
-            {detection && !detection.detected && (
-              <div className="spectrum-readout spectrum-readout-wide">
-                <span className="spectrum-readout-hint">
-                  No clear hydrogen peak yet — the signal is strongest along the galactic plane
-                  (galactic latitude near 0°).
-                </span>
-              </div>
-            )}
-            <button
-              type="button"
-              className="ghost-btn spectrum-recapture-btn"
-              onClick={() => setWizardOpen(true)}
-              title="Capture a fresh baseline"
-            >
-              <Sliders size={12} /> Recapture
-            </button>
-          </div>
-        ) : null}
       </div>
 
       <BaselineWizard
