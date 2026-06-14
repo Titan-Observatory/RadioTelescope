@@ -732,22 +732,6 @@ input:focus-visible {
 .dashboard-rightcol .spectrum-panel-host { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .dashboard-rightcol .spectrum-panel-host .spectrum-section { margin-bottom: 0; padding-bottom: 0; border-bottom: none; display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap { flex: 1; min-height: 0; margin-bottom: 0; height: auto; overflow-y: auto; }
-/* In the right-column layout the wrap fills the available vertical space.
-   The line chart keeps its fixed height. The waterfall toggle hugs the bottom
-   of the wrap (margin-top: auto soaks up the slack), and when opened the
-   waterfall canvas expands to consume whatever's left. */
-.dashboard-rightcol .spectrum-panel-host .spectrum-waterfall-dropdown { margin-top: auto; }
-.dashboard-rightcol .spectrum-panel-host .spectrum-waterfall-dropdown[open] {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.dashboard-rightcol .spectrum-panel-host .spectrum-waterfall-dropdown[open] .spectrum-waterfall {
-  flex: 1 1 auto;
-  min-height: 120px;
-  height: auto;
-}
 
 .panel {
   min-width: 0;
@@ -1310,16 +1294,17 @@ h2.panel-header.spectrum-title-lg {
 .spectrum-waterfall-dropdown {
   display: block;
   flex: 0 0 auto;
-  border-top: 1px solid var(--hairline);
+  margin-top: -2px;
+  border-top: 1px solid rgba(122, 126, 170, 0.16);
 }
 .spectrum-waterfall-summary {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 2px;
-  color: var(--fg);
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 2px 0 var(--plot-left);
+  color: var(--fg-muted);
   cursor: pointer;
   list-style: none;
   touch-action: manipulation;
@@ -1329,10 +1314,10 @@ h2.panel-header.spectrum-title-lg {
 }
 .spectrum-waterfall-summary::after {
   content: "";
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--fg-muted);
-  border-bottom: 2px solid var(--fg-muted);
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--fg-subtle);
+  border-bottom: 1px solid var(--fg-subtle);
   transform: rotate(45deg);
   transition: transform var(--t-fast);
 }
@@ -1340,19 +1325,20 @@ h2.panel-header.spectrum-title-lg {
   transform: rotate(225deg);
 }
 .spectrum-waterfall-summary span {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 .spectrum-waterfall-caption {
   margin-right: auto;
-  color: var(--fg-subtle);
-  font-size: 11px;
+  color: var(--fg-faint);
+  font-size: 10px;
   font-weight: 400;
 }
 .spectrum-waterfall {
   display: block;
   width: 100%;
-  height: 190px;
+  height: 128px;
   /* Match the panel surface so the empty area below the data reads as part
      of the section rather than a separate black box. */
   background: var(--surface-1);
@@ -1374,6 +1360,40 @@ h2.panel-header.spectrum-title-lg {
   width: 0;
   border-left: 1px solid rgba(119, 203, 185, 0.7);
 }
+.spectrum-rfi-guide {
+  position: absolute;
+  inset: 12px var(--plot-right) 48px var(--plot-left);
+  z-index: 4;
+  pointer-events: none;
+}
+.spectrum-rfi-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+}
+.spectrum-rfi-line {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-left: 1px solid rgba(255, 90, 95, 0.44);
+  box-shadow: 0 0 5px rgba(255, 90, 95, 0.18);
+}
+.spectrum-rfi-label {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ffd2d4;
+  background: rgba(16, 18, 24, 0.88);
+  border: 1px solid rgba(255, 90, 95, 0.64);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 1px rgba(5, 6, 12, 0.38), 0 2px 8px rgba(5, 6, 12, 0.35);
+}
 .spectrum-peak-marker {
   position: absolute;
   width: 9px;
@@ -1382,22 +1402,6 @@ h2.panel-header.spectrum-title-lg {
   border-radius: 50%;
   transform: translate(-50%, -50%);
   box-shadow: 0 0 8px rgba(255, 188, 66, 0.45);
-}
-.spectrum-hydrogen-line > small {
-  position: absolute;
-  top: 4px;
-  left: 0;
-  transform: translateX(-50%);
-  padding: 3px 6px;
-  border: 1px solid rgba(119, 203, 185, 0.18);
-  border-radius: 4px;
-  background: rgba(8, 10, 18, 0.72);
-  color: rgba(119, 203, 185, 0.78);
-  font-size: 10px;
-  font-family: var(--font-mono);
-  line-height: 1;
-  white-space: nowrap;
-  box-shadow: 0 0 0 1px rgba(8, 10, 18, 0.36);
 }
 /* Center the waiting message in a soft pill so it reads as an intentional
    status chip in the plot, not loose text drifting over the grid. */
@@ -1729,9 +1733,12 @@ h2.panel-header.spectrum-title-lg {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
+  flex: 0 0 32px;
   gap: 8px 12px;
   box-sizing: border-box;
   height: 32px;
+  min-height: 32px;
+  max-height: 32px;
   margin-top: 8px;
   padding: 0;
   background: var(--surface-2);

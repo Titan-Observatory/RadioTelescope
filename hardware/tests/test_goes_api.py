@@ -19,6 +19,9 @@ def goes_config_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # Distinct filename: tests may use this fixture alongside
     # `simulated_config_path`, which also writes into tmp_path.
     path = tmp_path / "config-goes.toml"
+    # as_posix() avoids backslashes in the path being parsed as TOML string
+    # escapes (e.g. Windows "\Users\..." -> invalid \U escape). Forward-slash
+    # paths are valid on Windows too.
     path.write_text(
         f"""
 [general]
@@ -43,7 +46,7 @@ mode = "goes"
 
 [goes]
 simulate = true
-products_dir = "{products_dir}"
+products_dir = "{products_dir.as_posix()}"
 """,
         encoding="utf-8",
     )

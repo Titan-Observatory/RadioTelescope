@@ -139,7 +139,9 @@ class ProductStore:
                 preview = path.read_text(errors="replace")[:_TEXT_PREVIEW_CHARS].strip() or None
             except OSError:
                 preview = None
-        group = str(rel.parent) if rel.parent != Path(".") else None
+        # as_posix() keeps the group identifier OS-independent (forward slashes)
+        # so the API response is stable regardless of the server platform.
+        group = rel.parent.as_posix() if rel.parent != Path(".") else None
         return GoesProduct(
             id=product_id,
             kind=kind,  # type: ignore[arg-type]

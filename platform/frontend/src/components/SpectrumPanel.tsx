@@ -555,6 +555,40 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
       lineLeft: toPct(H1_REST_MHZ),
     };
   }, [frame]);
+  const rfiGuide = useMemo(() => {
+    if (!frame?.rfi_bands?.length || !displayed?.length) return [];
+    const win = displayWindow(frame);
+    if (!win) return [];
+    const { xMin, xMax } = win;
+    const span = xMax - xMin;
+    if (span <= 0) return [];
+    const [yMin, yMax] = yRangeRef.current;
+    if (yMax <= yMin) return [];
+    const clamp = (v: number) => Math.max(0, Math.min(100, v));
+    return frame.rfi_bands
+      .map(([lo, hi]) => {
+        const visibleLo = Math.max(lo, xMin);
+        const visibleHi = Math.min(hi, xMax);
+        if (visibleHi < visibleLo) return null;
+        const center = (visibleLo + visibleHi) / 2;
+        let closestIdx = 0;
+        let closestDistance = Infinity;
+        for (let i = 0; i < frame.freqs_mhz.length; i++) {
+          const distance = Math.abs(frame.freqs_mhz[i] - center);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestIdx = i;
+          }
+        }
+        const traceTop = clamp(((yMax - displayed[closestIdx]) / (yMax - yMin)) * 100);
+        return {
+          key: `${lo.toFixed(6)}-${hi.toFixed(6)}`,
+          left: `${clamp(((center - xMin) / span) * 100)}%`,
+          bottom: `${clamp(100 - traceTop)}%`,
+        };
+      })
+      .filter((marker): marker is { key: string; left: string; bottom: string } => marker !== null);
+  }, [frame, displayed]);
 
   // Live interpretation of the spectrum: the strongest bin inside the H I
   // search band, its height above the spectrum median, and the Doppler
@@ -707,12 +741,20 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
               } as React.CSSProperties}
               aria-hidden
             >
-              <span className="spectrum-hydrogen-line">
-                <small>{H1_REST_MHZ.toFixed(4)} MHz</small>
-              </span>
+              <span className="spectrum-hydrogen-line" />
               {peakMarker && (
                 <span className="spectrum-peak-marker" style={{ left: peakMarker.left, top: peakMarker.top }} />
               )}
+            </div>
+          )}
+          {rfiGuide.length > 0 && (
+            <div className="spectrum-rfi-guide" aria-hidden>
+              {rfiGuide.map((marker) => (
+                <span className="spectrum-rfi-marker" style={{ left: marker.left }} key={marker.key}>
+                  <span className="spectrum-rfi-line" style={{ bottom: marker.bottom }} />
+                  <span className="spectrum-rfi-label">RFI</span>
+                </span>
+              ))}
             </div>
           )}
           <div className="spectrum-chart" ref={chartRef} />
@@ -727,6 +769,18 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
             </div>
           )}
         </div>
+
+        <details
+          className="spectrum-waterfall-dropdown"
+          open={waterfallOpen}
+          onToggle={(event) => setWaterfallOpen(event.currentTarget.open)}
+        >
+          <summary className="spectrum-waterfall-summary">
+            <span>Waterfall</span>
+            <small className="spectrum-waterfall-caption">signal history over time</small>
+          </summary>
+          <canvas className="spectrum-waterfall" ref={waterfallCanvasRef} />
+        </details>
 
         {!baselineApplies ? (
           <div className="spectrum-baseline-row spectrum-baseline-callout" aria-label="Baseline correction">
@@ -788,18 +842,6 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
             </button>
           </div>
         ) : null}
-
-        <details
-          className="spectrum-waterfall-dropdown"
-          open={waterfallOpen}
-          onToggle={(event) => setWaterfallOpen(event.currentTarget.open)}
-        >
-          <summary className="spectrum-waterfall-summary">
-            <span>Waterfall</span>
-            <small className="spectrum-waterfall-caption">signal history over time</small>
-          </summary>
-          <canvas className="spectrum-waterfall" ref={waterfallCanvasRef} />
-        </details>
       </div>
 
       <BaselineWizard
@@ -941,7 +983,22 @@ function baseOption(yRange: [number, number]): EChartsOption {
         fontSize: 11,
         margin: 10,
         hideOverlap: true,
-        formatter: (v: number) => v.toFixed(1),
+        formatter: (v: number) => {
+          const label = v.toFixed(1);
+          return label === H1_REST_MHZ.toFixed(1) ? `{h1|${label}}` : label;
+        },
+        rich: {
+          h1: {
+            color: '#b8fff2',
+            fontSize: 12,
+            fontWeight: 800,
+            backgroundColor: 'rgba(119, 203, 185, 0.12)',
+            borderColor: 'rgba(119, 203, 185, 0.34)',
+            borderWidth: 1,
+            borderRadius: 3,
+            padding: [2, 5],
+          },
+        },
       },
       splitLine: { lineStyle: { color: gridColor, type: 'dashed' } },
       splitNumber: 6,
@@ -1006,20 +1063,7 @@ function rfiMarkArea(bands: number[][] | undefined) {
   return {
     silent: true,
     itemStyle: { color: RFI_BAND_COLOR },
-    label: {
-      show: true,
-      formatter: 'RFI',
-      position: 'insideTop',
-      distance: 5,
-      color: '#ffd2d4',
-      fontSize: 11,
-      fontWeight: 700,
-      backgroundColor: 'rgba(16, 18, 24, 0.74)',
-      borderColor: 'rgba(255, 90, 95, 0.52)',
-      borderWidth: 1,
-      borderRadius: 3,
-      padding: [2, 5],
-    },
+    label: { show: false },
     data,
   };
 }
