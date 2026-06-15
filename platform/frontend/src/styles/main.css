@@ -1742,66 +1742,51 @@ h2.panel-header.spectrum-title-lg {
 /* Group state + hint + action into one contained card so it reads as the
    "baseline setup" control rather than floating loose against the chart. */
 /* ── Baseline prompt ─────────────────────────────────────────────────────
-   Replaces the readouts strip while no baseline is captured. Styled as a
-   *missing readout* rather than an alert card: the mono "baseline —" tag
-   mirrors how the live readouts render an absent value, and the dashed
-   border reads as an empty slot waiting to be filled. */
+   Replaces the readouts strip while no baseline is captured. Just the
+   message and the action, in the same red the chart trace turns while the
+   baseline is missing (ALERT_TRACE_COLOR in SpectrumPanel). */
 .baseline-prompt {
+  --baseline-red: #ff5a5f;
   display: flex;
   align-items: center;
   gap: 16px;
   box-sizing: border-box;
   flex: 0 0 auto;
   margin-top: 8px;
-  padding: 10px 12px;
-  background: color-mix(in srgb, var(--accent) 5%, var(--surface-1));
-  border: 1px dashed var(--accent-edge);
+  padding: 11px 13px;
+  background: color-mix(in srgb, var(--baseline-red) 8%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--baseline-red) 32%, var(--hairline));
   border-radius: var(--r-sm);
-}
-.baseline-prompt-tag {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-}
-.baseline-prompt-key {
-  color: var(--fg-subtle);
-  text-transform: uppercase;
-}
-.baseline-prompt-val {
-  color: var(--accent);
-  font-size: 15px;
-  line-height: 0.8;
 }
 .baseline-prompt-text {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  color: var(--fg-muted);
+  color: var(--fg);
   font-size: 12px;
   line-height: 1.45;
 }
 .baseline-prompt-go {
   flex-shrink: 0;
   align-self: center;
-  padding: 4px 1px;
-  background: none;
-  border: 0;
-  border-bottom: 1px solid var(--accent-line);
-  border-radius: 0;
-  color: var(--accent);
+  padding: 7px 13px;
+  background: var(--baseline-red);
+  border: 1px solid var(--baseline-red);
+  border-radius: var(--r-sm);
+  color: #fff;
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
 .baseline-prompt-go:hover:not(:disabled) {
-  background: none;
-  border-bottom-color: var(--accent);
-  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--baseline-red) 85%, white);
+  border-color: color-mix(in srgb, var(--baseline-red) 85%, white);
+  color: #fff;
+}
+.baseline-prompt-go:active:not(:disabled) {
+  background: color-mix(in srgb, var(--baseline-red) 82%, black);
+  border-color: color-mix(in srgb, var(--baseline-red) 82%, black);
 }
 
 /* Trailing "Recapture" affordance inside the readouts strip once a baseline is
@@ -4229,11 +4214,10 @@ h2.panel-header {
   .target-form button[type="submit"] { grid-column: 1 / -1; }
   .baseline-prompt {
     flex-wrap: wrap;
-    gap: 8px 12px;
+    gap: 10px 12px;
   }
   .baseline-prompt-text {
     flex-basis: 100%;
-    order: 3;
   }
   .baseline-prompt-go {
     margin-left: auto;

@@ -705,12 +705,8 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
 
       {!baselineApplies ? (
         <div className="baseline-prompt" role="status" aria-label="Baseline not captured">
-          <span className="baseline-prompt-tag">
-            <span className="baseline-prompt-key">baseline</span>
-            <span className="baseline-prompt-val">—</span>
-          </span>
           <p className="baseline-prompt-text">
-            None recorded yet, so the trace is raw SDR output — real hydrogen is still buried under system noise and RFI.
+            No baseline recorded yet — the trace is raw SDR output, with real hydrogen still buried under system noise and RFI.
           </p>
           <button
             type="button"
