@@ -37,17 +37,18 @@ type StatusBlock = { kind: 'ok' | 'err'; msg: string } | null;
 
 export function AdminPage() {
   const { trackErrorOnce } = useErrorTracking();
-  const { telemetry, setTelemetry } = useTelemetry({ enabled: true, onError: trackErrorOnce });
+  const { telemetry } = useTelemetry({ enabled: true, onError: trackErrorOnce });
   const { lnaStatus } = useLna(true);
   const { commands, telescopeConfig } = useBackendCatalog({ enabled: true, onError: trackErrorOnce });
   const map = useMapTarget();
-  const motion = useMotionCommands(commands, setTelemetry);
+  const motion = useMotionCommands(commands);
   const trackSubmittedSlewTarget = useSlewTargetArrivalClear({
     hasMapTarget: map.hasMapTarget,
     targetAlt: map.targetAlt,
     targetAz: map.targetAz,
     telemetry,
     clearTarget: map.clearTarget,
+    stopMotion: motion.stopMotion,
   });
 
   // Stable identity so the sky-map pin overlay isn't redrawn on every telemetry tick.

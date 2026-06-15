@@ -40,17 +40,18 @@ interface ControlUIProps {
 function ControlUI({ queue }: ControlUIProps) {
   const { trackErrorOnce } = useErrorTracking();
   const liveControlsEnabled = useAfterInitialPaint();
-  const { telemetry, setTelemetry } = useTelemetry({ enabled: liveControlsEnabled, onError: trackErrorOnce });
+  const { telemetry } = useTelemetry({ enabled: liveControlsEnabled, onError: trackErrorOnce });
   const { lnaStatus } = useLna(liveControlsEnabled);
   const { commands, telescopeConfig } = useBackendCatalog({ enabled: liveControlsEnabled, onError: trackErrorOnce });
   const map = useMapTarget();
-  const motion = useMotionCommands(commands, setTelemetry);
+  const motion = useMotionCommands(commands);
   const trackSubmittedSlewTarget = useSlewTargetArrivalClear({
     hasMapTarget: map.hasMapTarget,
     targetAlt: map.targetAlt,
     targetAz: map.targetAz,
     telemetry,
     clearTarget: map.clearTarget,
+    stopMotion: motion.stopMotion,
   });
 
   // Stable identity so the sky-map pin overlay isn't redrawn on every telemetry tick.

@@ -15,13 +15,11 @@ from rt_hardware.services.spectrum import SpectrumService
 @pytest.fixture
 def baseline_paths(tmp_path, monkeypatch):
     """Point the module-level baseline file paths at a temp dir."""
-    cache = tmp_path / "spectrum_baseline.json"
     f32 = tmp_path / "spectrum_baseline.f32"
     tmp = tmp_path / "spectrum_baseline.f32.tmp"
-    monkeypatch.setattr(spectrum_module, "BASELINE_CACHE", cache)
     monkeypatch.setattr(spectrum_module, "BASELINE_F32", f32)
     monkeypatch.setattr(spectrum_module, "BASELINE_F32_TMP", tmp)
-    return cache, f32, tmp
+    return f32, tmp
 
 
 # ── Lifecycle (unchanged behaviour) ──────────────────────────────────────
@@ -205,14 +203,14 @@ def _freqs_for(n: int, bin_hz: float = _BIN_HZ) -> list[float]:
 
 
 def test_flag_rfi_flags_obvious_spike():
-    from rt_hardware.services.spectrum import _flag_rfi
+    from rt_hardware.services.spectrum_rfi import flag_rfi
 
     rng = np.random.default_rng(0)
     spectrum = rng.normal(0.0, 0.1, 1024).astype(np.float32)  # flat dB noise floor
     spectrum[400:404] += 12.0  # an obvious ~4 kHz birdie, well above the noise
     freqs = _freqs_for(1024)
 
-    bands = _flag_rfi(spectrum, freqs, _BIN_HZ, sigma=6.0, max_width_khz=50.0)
+    bands = flag_rfi(spectrum, freqs, _BIN_HZ, sigma=6.0, max_width_khz=50.0)
 
     # Exactly one band, bracketing the spur's bin centres (± half a bin).
     assert len(bands) == 1
@@ -222,7 +220,7 @@ def test_flag_rfi_flags_obvious_spike():
 
 
 def test_flag_rfi_flags_broad_hydrogen_line_shape():
-    from rt_hardware.services.spectrum import _flag_rfi
+    from rt_hardware.services.spectrum_rfi import flag_rfi
 
     # A gentle ~275 kHz-wide bump like the 21 cm line: far wider than the
     # narrow-spur gate, but still surfaced as a band for the frontend label path.
@@ -230,7 +228,7 @@ def test_flag_rfi_flags_broad_hydrogen_line_shape():
     spectrum = (4.0 * np.exp(-0.5 * ((x - 512) / 70.0) ** 2)).astype(np.float32)
     freqs = _freqs_for(1024)
 
-    bands = _flag_rfi(spectrum, freqs, _BIN_HZ, sigma=6.0, max_width_khz=50.0)
+    bands = flag_rfi(spectrum, freqs, _BIN_HZ, sigma=6.0, max_width_khz=50.0)
 
     assert len(bands) == 1
     lo, hi = bands[0]
@@ -239,13 +237,13 @@ def test_flag_rfi_flags_broad_hydrogen_line_shape():
 
 
 def test_flag_rfi_does_not_mutate_input():
-    from rt_hardware.services.spectrum import _flag_rfi
+    from rt_hardware.services.spectrum_rfi import flag_rfi
 
     spectrum = np.zeros(1024, dtype=np.float32)
     spectrum[500] = 20.0
     before = spectrum.copy()
 
-    _flag_rfi(spectrum, _freqs_for(1024), _BIN_HZ, sigma=6.0, max_width_khz=50.0)
+    flag_rfi(spectrum, _freqs_for(1024), _BIN_HZ, sigma=6.0, max_width_khz=50.0)
 
     assert np.array_equal(spectrum, before)
 
@@ -305,7 +303,7 @@ def test_publish_frame_reports_baseline_corrected_from_active_flag(tmp_path):
 
 @pytest.mark.asyncio
 async def test_capture_baseline_stores_in_memory_and_commits_f32(tmp_path, baseline_paths, monkeypatch):
-    cache, f32, tmp = baseline_paths
+    f32, tmp = baseline_paths
     service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
     Broadcaster.subscribe(service)
 
@@ -328,16 +326,15 @@ async def test_capture_baseline_stores_in_memory_and_commits_f32(tmp_path, basel
     assert baseline["power_linear"] == pytest.approx(power.tolist())
     assert baseline["power_db"] == pytest.approx((10.0 * np.log10(power)).round(3).tolist())
     assert baseline["capture_samples"] == service._cfg.integration_frames
-    # .f32 committed for the subprocess; no JSON sidecar (baseline is in-memory only).
+    # .f32 committed for the subprocess (baseline is in-memory only).
     assert f32.exists()
     assert not tmp.exists()
-    assert not cache.exists()
     assert service._baseline_power is not None
 
 
 @pytest.mark.asyncio
 async def test_capture_baseline_returns_none_when_capture_fails(tmp_path, baseline_paths, monkeypatch):
-    cache, _f32, _tmp = baseline_paths
+    _f32, _tmp = baseline_paths
     service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
     Broadcaster.subscribe(service)
 
@@ -352,7 +349,6 @@ async def test_capture_baseline_returns_none_when_capture_fails(tmp_path, baseli
     monkeypatch.setattr(service, "_spawn_subprocess_locked", noop)
 
     assert await service.capture_baseline() is None
-    assert not cache.exists()
 
 
 class _FakeCaptureProc:
@@ -418,7 +414,7 @@ async def test_idle_close_keeps_baseline_while_subscribed(tmp_path, baseline_pat
 async def test_run_capture_succeeds_when_file_lands_despite_hung_process(tmp_path, baseline_paths, monkeypatch):
     # The RTL-SDR source hangs on teardown after head(1) flushes the vector.
     # The poll loop must accept the complete file and not wait for a clean exit.
-    cache, f32, tmp = baseline_paths
+    f32, tmp = baseline_paths
     service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
 
     def fake_popen(*args, **kwargs):
@@ -432,7 +428,7 @@ async def test_run_capture_succeeds_when_file_lands_despite_hung_process(tmp_pat
 
 @pytest.mark.asyncio
 async def test_run_capture_fails_when_no_file_written(tmp_path, baseline_paths, monkeypatch):
-    cache, f32, tmp = baseline_paths
+    f32, tmp = baseline_paths
     service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
 
     def fake_popen(*args, **kwargs):
@@ -468,9 +464,8 @@ async def test_capture_baseline_raises_when_state_dir_readonly(tmp_path, baselin
 
 @pytest.mark.asyncio
 async def test_clear_baseline_removes_files(tmp_path, baseline_paths, monkeypatch):
-    cache, f32, _tmp = baseline_paths
+    f32, _tmp = baseline_paths
     service = SpectrumService(SDRConfig(fft_size=64), tmp_path / "config.toml")
-    cache.write_text("{}")
     f32.write_bytes(b"\x00\x00\x00\x00")
 
     async def fake_reconnect() -> str:
@@ -480,7 +475,6 @@ async def test_clear_baseline_removes_files(tmp_path, baseline_paths, monkeypatc
 
     await service.clear_baseline()
 
-    assert not cache.exists()
     assert not f32.exists()
 
 
@@ -488,7 +482,7 @@ async def test_clear_baseline_removes_files(tmp_path, baseline_paths, monkeypatc
 
 
 def test_pipeline_cmd_uses_in_memory_baseline(tmp_path, baseline_paths):
-    _cache, f32, _tmp = baseline_paths
+    f32, _tmp = baseline_paths
     cfg = SDRConfig(fft_size=64, center_freq_hz=1.4204e9, sample_rate_hz=3.0e6)
     service = SpectrumService(cfg, tmp_path / "config.toml")
     service._baseline_power = np.ones(64, dtype=np.float32)
@@ -502,7 +496,7 @@ def test_pipeline_cmd_uses_in_memory_baseline(tmp_path, baseline_paths):
 
 
 def test_pipeline_cmd_drops_baseline_when_config_changed(tmp_path, baseline_paths):
-    _cache, f32, _tmp = baseline_paths
+    f32, _tmp = baseline_paths
     cfg = SDRConfig(fft_size=64, center_freq_hz=1.4204e9, sample_rate_hz=3.0e6)
     service = SpectrumService(cfg, tmp_path / "config.toml")
     # Baseline was captured at a different centre frequency.

@@ -36,10 +36,6 @@ from rt_hardware.models.state import LnaStatus
 from rt_hardware.services._pubsub import Broadcaster
 from rt_hardware.services.spectrum_rfi import flag_rfi
 
-# Re-exported under its legacy private name for existing callers/tests that do
-# ``from rt_hardware.services.spectrum import _flag_rfi``.
-_flag_rfi = flag_rfi
-
 # The baseline ``.f32`` is the IPC handoff between the capture subprocess (which
 # writes it) and the live subprocess (which reads it with ``--baseline``). It
 # lives next to where the server was launched; override the directory with
@@ -48,10 +44,6 @@ _flag_rfi = flag_rfi
 # is rewritten from ``_baseline_power`` on every spawn and is not relied on
 # across restarts.
 _STATE_DIR = Path(os.environ.get("RT_STATE_DIR", "."))
-# Legacy JSON sidecar from when the baseline was persisted; no longer written,
-# kept here only so _delete_baseline_files removes a stale one left by an older
-# build after an upgrade.
-BASELINE_CACHE = _STATE_DIR / "spectrum_baseline.json"
 BASELINE_F32 = _STATE_DIR / "spectrum_baseline.f32"
 # Capture writes here first, then we atomically rename onto BASELINE_F32 so the
 # live flowgraph never reads a half-written file.
@@ -520,7 +512,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
         return None
 
     def _delete_baseline_files(self) -> None:
-        for path in (BASELINE_CACHE, BASELINE_F32, BASELINE_F32_TMP):
+        for path in (BASELINE_F32, BASELINE_F32_TMP):
             try:
                 path.unlink(missing_ok=True)
             except Exception:

@@ -10,8 +10,7 @@ Auth mirrors the spectrum proxy: viewers (active queue session) can read
 status/products and watch the stream; only the controller can bounce the
 pipeline or clear the product archive.
 
-Shared forwarding plumbing lives in ``_proxy`` — see that module and
-``audits/duplication-audit-2026-06-14.md`` (finding 1).
+Shared forwarding plumbing lives in ``_proxy`` — see that module.
 """
 from __future__ import annotations
 

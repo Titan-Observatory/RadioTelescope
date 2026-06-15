@@ -6,8 +6,7 @@ bands describing where RFI sits. The spectrum itself is *never* modified — the
 service forwards the untouched trace and the frontend shades these bands.
 
 Split out of ``spectrum.py`` so the DSP can be unit-tested in isolation from the
-GNU Radio subprocess lifecycle. ``SpectrumService`` re-exports ``_flag_rfi`` for
-back-compat with existing callers/tests.
+GNU Radio subprocess lifecycle.
 """
 from __future__ import annotations
 

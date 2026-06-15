@@ -10,7 +10,7 @@ import { track } from '../analytics';
 import { startGuidedObservation } from '../guidedObservation';
 import { errorMessage } from './formatters';
 import type { JogDirection } from '../api';
-import type { CommandInfo, RoboClawTelemetry } from '../types';
+import type { CommandInfo } from '../types';
 
 export interface UseMotionCommandsResult {
   runCommand: (commandId: string, args: Record<string, number | boolean>) => Promise<void>;
@@ -25,9 +25,6 @@ export interface UseMotionCommandsResult {
 
 export function useMotionCommands(
   commands: CommandInfo[],
-  // Kept in the signature for API compatibility with App.tsx; no longer
-  // called per-command — telemetry comes in over the websocket.
-  _setTelemetry: (next: RoboClawTelemetry) => void,
 ): UseMotionCommandsResult {
   const commandById = useMemo(
     () => Object.fromEntries(commands.map((c) => [c.id, c])),

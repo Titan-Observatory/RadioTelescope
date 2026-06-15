@@ -704,20 +704,21 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
       </header>
 
       {!baselineApplies ? (
-        <div className="spectrum-baseline-row spectrum-baseline-callout" aria-label="Baseline correction">
-          <span className="spectrum-baseline-state">
-            Missing Baseline
+        <div className="baseline-prompt" role="status" aria-label="Baseline not captured">
+          <span className="baseline-prompt-tag">
+            <span className="baseline-prompt-key">baseline</span>
+            <span className="baseline-prompt-val">—</span>
           </span>
-          <span className="spectrum-baseline-hint">
-            Capturing a baseline will allow you to isolate real signal by removing system noise and radio frequency interference (RFI).
-          </span>
+          <p className="baseline-prompt-text">
+            None recorded yet, so the trace is raw SDR output — real hydrogen is still buried under system noise and RFI.
+          </p>
           <button
             type="button"
-            className="ghost-btn"
+            className="baseline-prompt-go"
             onClick={() => setWizardOpen(true)}
             title="Open the guided flow to point at empty sky and capture a baseline"
           >
-            <Sliders size={12} /> Capture Baseline
+            Capture baseline →
           </button>
         </div>
       ) : frame ? (

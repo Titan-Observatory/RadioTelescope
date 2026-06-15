@@ -1741,135 +1741,67 @@ h2.panel-header.spectrum-title-lg {
    The guided tour anchors on .spectrum-toolbar, so keep that class here. */
 /* Group state + hint + action into one contained card so it reads as the
    "baseline setup" control rather than floating loose against the chart. */
-.spectrum-baseline-row {
+/* ── Baseline prompt ─────────────────────────────────────────────────────
+   Replaces the readouts strip while no baseline is captured. Styled as a
+   *missing readout* rather than an alert card: the mono "baseline —" tag
+   mirrors how the live readouts render an absent value, and the dashed
+   border reads as an empty slot waiting to be filled. */
+.baseline-prompt {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
-  flex: 0 0 32px;
-  gap: 8px 12px;
+  gap: 16px;
   box-sizing: border-box;
-  height: 32px;
-  min-height: 32px;
-  max-height: 32px;
+  flex: 0 0 auto;
   margin-top: 8px;
-  padding: 0;
-  background: var(--surface-2);
-  border: 1px solid var(--hairline);
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-1));
+  border: 1px dashed var(--accent-edge);
   border-radius: var(--r-sm);
-  overflow: hidden;
 }
-.spectrum-baseline-row:has(.spectrum-baseline-state.is-applied) {
-  border-color: color-mix(in srgb, var(--ok) 45%, var(--hairline));
-}
-.spectrum-baseline-state {
+.baseline-prompt-tag {
   display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  align-self: stretch;
+  align-items: baseline;
+  gap: 8px;
   flex-shrink: 0;
-  padding-left: 12px;
-  color: var(--fg-muted);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
+}
+.baseline-prompt-key {
+  color: var(--fg-subtle);
   text-transform: uppercase;
-  white-space: nowrap;
 }
-.spectrum-baseline-state.is-applied { color: var(--ok); }
-.spectrum-baseline-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--fg-faint);
+.baseline-prompt-val {
+  color: var(--accent);
+  font-size: 15px;
+  line-height: 0.8;
 }
-.spectrum-baseline-state.is-applied .spectrum-baseline-dot {
-  background: var(--ok);
-  box-shadow: 0 0 6px rgba(119, 203, 185, 0.5);
-}
-.spectrum-baseline-hint {
-  display: flex;
-  align-items: center;
+.baseline-prompt-text {
   flex: 1 1 auto;
   min-width: 0;
-  color: var(--fg-subtle);
-  font-size: 11px;
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
-/* The card is surface-2, so the action needs a darker base (and a darker
-   hover) to stay legible as a button rather than melting into the card. */
-.spectrum-baseline-row .ghost-btn {
-  align-self: stretch;
+.baseline-prompt-go {
   flex-shrink: 0;
-  margin-left: auto;
-  min-height: 0;
-  padding-inline: 14px;
-  background: var(--surface-1);
-  border-width: 0 0 0 1px;
-  border-color: var(--hairline);
+  align-self: center;
+  padding: 4px 1px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--accent-line);
   border-radius: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
 }
-.spectrum-baseline-row .ghost-btn:hover:not(:disabled) {
-  background: var(--surface-3);
-}
-/* When no baseline is captured this callout takes the place of the peak
-   readouts under the chart. */
-.spectrum-baseline-callout {
-  --spectrum-alert-red: #ff5a5f;
-  flex: 0 0 auto;
-  height: auto;
-  min-height: 0;
-  max-height: none;
-  background: color-mix(in srgb, var(--spectrum-alert-red) 12%, var(--surface-2));
-  border-color: var(--spectrum-alert-red);
-}
-.spectrum-baseline-callout .spectrum-baseline-state {
-  flex: 0 0 min-content;
-  padding-left: 16px;
-  padding-block: 9px;
-  color: var(--fg);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.15;
-  text-align: center;
-  white-space: normal;
-}
-.spectrum-baseline-callout .spectrum-baseline-hint {
-  display: -webkit-box;
-  padding-block: 9px;
-  color: var(--fg);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.35;
-  white-space: normal;
-  text-overflow: clip;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.spectrum-baseline-callout .ghost-btn {
-  justify-content: center;
-  flex-basis: 116px;
-  min-height: 100%;
-  gap: 3px;
-  padding-inline: 12px;
-  background: var(--spectrum-alert-red);
-  border-color: var(--spectrum-alert-red);
-  font-size: 13px;
-  line-height: 1.2;
-  text-align: center;
-  white-space: normal;
-  color: var(--bg);
-}
-.spectrum-baseline-callout .ghost-btn svg {
-  width: 18px;
-  height: 18px;
-}
-.spectrum-baseline-callout .ghost-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--spectrum-alert-red) 86%, white);
-  border-color: color-mix(in srgb, var(--spectrum-alert-red) 86%, white);
-  color: var(--bg);
+.baseline-prompt-go:hover:not(:disabled) {
+  background: none;
+  border-bottom-color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* Trailing "Recapture" affordance inside the readouts strip once a baseline is
@@ -4295,19 +4227,16 @@ h2.panel-header {
   .pad-btn { min-height: 52px; }
   .target-form { grid-template-columns: 1fr 1fr; }
   .target-form button[type="submit"] { grid-column: 1 / -1; }
-  .spectrum-baseline-row .ghost-btn {
-    padding-inline: 12px;
-  }
-  .spectrum-baseline-row,
-  .spectrum-baseline-callout {
-    height: auto;
-    min-height: 0;
-    max-height: none;
+  .baseline-prompt {
     flex-wrap: wrap;
+    gap: 8px 12px;
   }
-  .spectrum-baseline-hint {
+  .baseline-prompt-text {
     flex-basis: 100%;
-    white-space: normal;
+    order: 3;
+  }
+  .baseline-prompt-go {
+    margin-left: auto;
   }
   .spectrum-readouts { gap: 6px 18px; }
   .dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap,

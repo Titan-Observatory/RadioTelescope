@@ -122,28 +122,6 @@ export function startSpectrumTour() {
     });
   }
 
-  if (has('.spectrum-hydrogen-band')) {
-    steps.push({
-      element: '.spectrum-hydrogen-band',
-      popover: {
-        title: tourCopy.spectrumTour.steps.searchBand.title,
-        description: tourCopy.spectrumTour.steps.searchBand.description,
-        side: 'bottom',
-      },
-    });
-  }
-
-  if (has('.spectrum-peak-marker')) {
-    steps.push({
-      element: '.spectrum-peak-marker',
-      popover: {
-        title: tourCopy.spectrumTour.steps.detectedPeak.title,
-        description: tourCopy.spectrumTour.steps.detectedPeak.description,
-        side: 'bottom',
-      },
-    });
-  }
-
   if (has('.spectrum-readouts')) {
     steps.push({
       element: '.spectrum-readouts',

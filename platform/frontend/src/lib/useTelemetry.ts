@@ -1,7 +1,5 @@
 // Owns the RoboClaw telemetry stream: the initial fetch, the websocket
-// subscription, and the latest snapshot. `setTelemetry` is exposed so command
-// handlers can prime the cache with a fresh status read immediately after a
-// motion command (without waiting for the next WS frame).
+// subscription, and the latest snapshot.
 
 import { useEffect, useState } from 'react';
 import { api } from '../api';
@@ -16,7 +14,6 @@ export interface UseTelemetryOptions {
 
 export interface UseTelemetryResult {
   telemetry: RoboClawTelemetry | null;
-  setTelemetry: (next: RoboClawTelemetry) => void;
 }
 
 export function useTelemetry({ onError, enabled = true }: UseTelemetryOptions): UseTelemetryResult {
@@ -39,5 +36,5 @@ export function useTelemetry({ onError, enabled = true }: UseTelemetryOptions): 
     onError: () => onError('WebSocket', 'RoboClaw telemetry websocket disconnected.'),
   });
 
-  return { telemetry, setTelemetry };
+  return { telemetry };
 }

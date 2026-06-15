@@ -9,8 +9,7 @@ on the queue. Those are collected here so the routers stay declarative and
 there is a single place to change forwarding semantics.
 
 All four proxy routers (``routes_motor``, ``routes_spectrum``, ``routes_goes``,
-``routes_camera``) forward through these helpers. See
-``audits/duplication-audit-2026-06-14.md`` (findings 1 and 2).
+``routes_camera``) forward through these helpers.
 """
 from __future__ import annotations
 
