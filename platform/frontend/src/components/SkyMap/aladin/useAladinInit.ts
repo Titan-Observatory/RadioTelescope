@@ -109,6 +109,16 @@ export function useAladinInit(opts: UseAladinInitOptions) {
       });
       aladin.setRotation(initialRotation);
 
+      // Cap how deep the user can zoom. Aladin's default min FoV is ~0.1 arcsec;
+      // at that depth the stereographic projection of far-away points (e.g. the
+      // galactic-band exclusion quads, projected from the antipodes) degenerates
+      // into huge finite screen coordinates, and a single band quad ends up
+      // spanning the whole canvas — shading the entire view even when the centre
+      // is well clear of the Milky Way. There's also no scientific reason to go
+      // finer than a fraction of a degree on a ~6.5° beam instrument, so clamp
+      // the FoV range to keep the projection well-behaved.
+      aladin.setFoVRange(0.5, 180);
+
       // Keep the local zenith pinned to screen-up. The position-angle of
       // local-up depends on where the view is centred, so we recompute the
       // rotation whenever the centre moves. Two triggers:

@@ -62,6 +62,11 @@ export interface FrameState {
   dashOffset: { current: number };
   /** When true, shade the galactic-plane band the baseline wizard excludes. */
   galacticExclusion: boolean;
+  /**
+   * False on exploration surveys (anything but the hydrogen line), where the
+   * pointing is locked and the hardware-limit shading is just clutter.
+   */
+  showHardwareLimits: boolean;
 }
 
 
@@ -339,7 +344,9 @@ export const drawAltitudeLimitOverlay: Layer = ({
   date,
   horizonPx,
   groundIsInside,
+  showHardwareLimits,
 }) => {
+  if (!showHardwareLimits) return;
   const limits = config.hard_safety_limits;
 
   // Project the boundary as a single closed loop. When every vertex projects

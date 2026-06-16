@@ -382,9 +382,10 @@ async def test_capture_baseline_drops_existing_baseline_before_integrating(
     state = await feeder
 
     assert baseline is not None
-    assert state.warmup == 0  # consumed during feed, but a window was reserved
+    # A full settling window is discarded before accumulation begins.
+    assert state.target == service._cfg.integration_frames
     assert baseline["capture_samples"] == state.target
-    # One reconnect to drop the old baseline (raw), one to apply the new one.
+    # One reconnect to restart the integration (raw), one to apply the new baseline.
     assert reconnects == 2
     assert service._baseline_power is not None
     assert f32.exists()
@@ -406,8 +407,9 @@ async def test_capture_baseline_times_out_when_no_frames(tmp_path, baseline_path
 
     monkeypatch.setattr(service, "reconnect", noop_reconnect)
     monkeypatch.setattr(service, "_ensure_running", noop_ensure)
-    # Shrink the startup grace so the timeout fires fast with no frames fed.
+    # Shrink the deadline so the timeout fires fast with no frames fed.
     service.subprocess_start_timeout_s = 0.05
+    service.baseline_capture_grace_s = 0.05
     service._proc = cast("subprocess.Popen[bytes]", object())
     service._mode = "running"
 

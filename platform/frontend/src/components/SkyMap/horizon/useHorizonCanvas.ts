@@ -1,6 +1,7 @@
 import { type RefObject, useEffect, useRef } from 'react';
 
 import type { RaDecTarget, RoboClawTelemetry, SkyOverlay, TelescopeConfig } from '../../../types';
+import { HYDROGEN_SURVEY_ID, type SurveyId } from '../spectrum/surveys';
 import {
   type AladinInstance,
   type FrameState,
@@ -34,6 +35,8 @@ interface UseHorizonCanvasOptions {
   overlaysRef: RefObject<SkyOverlay[]>;
   /** Shade the galactic-plane exclusion band (baseline wizard pick step). */
   galacticExclusionRef: RefObject<boolean>;
+  /** Current sky survey — the hardware-limit shading only draws on hydrogen. */
+  surveyRef: RefObject<SurveyId>;
 }
 
 
@@ -72,6 +75,7 @@ export function useHorizonCanvas(opts: UseHorizonCanvasOptions) {
     pendingRef,
     overlaysRef,
     galacticExclusionRef,
+    surveyRef,
   } = opts;
 
   const sunZoneRef = useRef<{ cx: number; cy: number; r: number } | null>(null);
@@ -153,6 +157,7 @@ export function useHorizonCanvas(opts: UseHorizonCanvasOptions) {
         hoverZones,
         dashOffset,
         galacticExclusion: galacticExclusionRef.current ?? false,
+        showHardwareLimits: (surveyRef.current ?? HYDROGEN_SURVEY_ID) === HYDROGEN_SURVEY_ID,
       };
 
       for (const layer of LAYERS) layer(state);

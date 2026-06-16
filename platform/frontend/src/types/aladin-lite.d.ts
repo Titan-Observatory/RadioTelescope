@@ -78,6 +78,7 @@ declare module 'aladin-lite' {
     world2pix(c1: number, c2: number): [number, number];
     setRotation(rotation: number): void;
     setFov(fov: number): void;
+    setFoVRange(minFov: number, maxFov: number): void;
     gotoRaDec(ra: number, dec: number): void;
     getFov(): [number, number];
     addOverlay(overlay: GraphicOverlay): void;

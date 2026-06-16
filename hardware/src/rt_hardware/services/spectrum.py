@@ -122,6 +122,10 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
     # block construction, tb.start(), and the first ZMQ frame.
     subprocess_start_timeout_s: float = 30.0
     subprocess_kill_timeout_s: float = 2.0
+    # Extra slack on the baseline-capture deadline, on top of the settling +
+    # capture windows and the subprocess start timeout. Small so the request
+    # fails fast when the pipeline never produces frames.
+    baseline_capture_grace_s: float = 5.0
     # Backoff schedule when the subprocess dies unexpectedly while subscribers
     # are still attached. Resets to the first value on every successful run.
     _backoff_schedule: tuple[float, ...] = (1.0, 2.0, 5.0, 15.0, 30.0)
@@ -466,19 +470,19 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
     # ── Baseline capture / load / clear ──────────────────────────────────
 
     async def capture_baseline(self) -> dict[str, Any] | None:
-        """Capture a baseline by integrating the live spectrum stream.
+        """Capture a baseline by integrating a fresh window of the live stream.
 
-        Rather than stopping the SDR, this averages one ``integration_seconds``
-        window of the frames already flowing over ZeroMQ into a per-bin mean,
-        then respawns the live flowgraph so it divides by that mean. The live
-        stream keeps updating throughout, so the browser shows the bandpass
-        being measured frame by frame.
+        Restarts the integration first (bounces the flowgraph, flushing the
+        rolling EMA) so the baseline reflects the *current* pointing rather than
+        whatever the EMA still held from before the user slewed onto their empty
+        patch. It then discards one settling window while the freshly-restarted
+        EMA fills, averages the next window of frames into a per-bin mean, and
+        respawns the live flowgraph so it divides by that mean. The SDR keeps
+        running throughout (apart from the two brief respawns), so the browser
+        shows the bandpass being measured frame by frame.
 
-        A baseline must be measured from *uncorrected* frames, so if one is
-        already applied we drop it and respawn raw first (a brief gap), then
-        discard one window while the EMA re-settles. Bounded by a timeout so the
-        request can never hang; returns ``None`` (→ HTTP 409) if no frames
-        arrived (pipeline unavailable, dongle busy, etc.).
+        Bounded by a timeout so the request can never hang; returns ``None`` (→
+        HTTP 409) if no frames arrived (pipeline unavailable, dongle busy, etc.).
 
         Raises :class:`BaselineCaptureError` when the baseline directory is not
         writable — the common Pi misconfiguration where rt-hardware runs from a
@@ -498,37 +502,30 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             # spawn path run (`_ensure_running` bails once capturing is set).
             keepalive = self.subscribe()
             try:
-                # We need uncorrected frames. If a baseline is live, drop it and
-                # respawn raw; otherwise just make sure the pipeline is up.
-                restarted = self._baseline_active or self._baseline_power is not None
-                if restarted:
-                    self._baseline_power = None
-                    self._baseline_cfg_key = None
-                    self._delete_baseline_files()
-                    await self.reconnect()
-                else:
-                    await self._ensure_running()
-                # Skip a settling window unless we know the pipeline was already
-                # warm (running, uncorrected, not just respawned).
-                warm = (
-                    not restarted
-                    and self._proc is not None
-                    and self._mode == "running"
-                )
+                # Restart the integration: drop any active baseline (we need
+                # uncorrected frames) and bounce the flowgraph so the rolling EMA
+                # flushes and refills from scratch at the current pointing.
+                self._baseline_power = None
+                self._baseline_cfg_key = None
+                self._delete_baseline_files()
+                self._frames_seen = 0
+                await self.reconnect()
+
                 target = max(1, int(self._cfg.integration_frames))
-                warmup = 0 if warm else target
+                # Discard one full window while the restarted EMA settles, then
+                # average the next window into the baseline.
                 state = _BaselineCapture(
                     target=target,
-                    warmup=warmup,
+                    warmup=target,
                     offset_db=float(self._cfg.baseline_offset_db),
                 )
                 self._capture_state = state
                 self._capturing = True
-                # Headroom: warmup window (if any) + capture window + startup grace.
-                windows = 2 if warmup else 1
+                # Headroom: settling window + capture window + startup grace.
                 timeout_s = (
-                    windows * self._cfg.integration_seconds
-                    + self.subprocess_start_timeout_s + 5.0
+                    2 * self._cfg.integration_seconds
+                    + self.subprocess_start_timeout_s
+                    + self.baseline_capture_grace_s
                 )
                 try:
                     await asyncio.wait_for(state.done.wait(), timeout=timeout_s)

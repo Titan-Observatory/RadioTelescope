@@ -157,6 +157,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, p
     pendingRef,
     overlaysRef,
     galacticExclusionRef,
+    surveyRef,
   });
 
   // Project the fixed Alt/Az pointing-limit triangle onto the current sky.

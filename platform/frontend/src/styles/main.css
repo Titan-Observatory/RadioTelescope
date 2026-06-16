@@ -1083,7 +1083,7 @@ input:focus-visible {
 }
 .spectrum-subtitle {
   margin: 0;
-  color: var(--fg-subtle);
+  color: var(--fg-muted);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -1770,8 +1770,8 @@ h2.panel-header.spectrum-title-lg {
   flex-shrink: 0;
   align-self: center;
   padding: 7px 13px;
-  background: var(--baseline-red);
-  border: 1px solid var(--baseline-red);
+  background: color-mix(in srgb, var(--baseline-red) 78%, black);
+  border: 1px solid color-mix(in srgb, var(--baseline-red) 78%, black);
   border-radius: var(--r-sm);
   color: #fff;
   font-size: 12px;
@@ -1780,8 +1780,8 @@ h2.panel-header.spectrum-title-lg {
   cursor: pointer;
 }
 .baseline-prompt-go:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--baseline-red) 85%, white);
-  border-color: color-mix(in srgb, var(--baseline-red) 85%, white);
+  background: var(--baseline-red);
+  border-color: var(--baseline-red);
   color: #fff;
 }
 .baseline-prompt-go:active:not(:disabled) {
@@ -4440,6 +4440,45 @@ body.rt-baseline-pick .skymap-panel {
 @media (prefers-reduced-motion: reduce) {
   .baseline-live-active .baseline-live-spectrum { animation:none; }
 }
+
+/* Intro-step explainer: a looping schematic of baseline subtraction. Borrows
+   the breathing-trace look of the queue page's hero spectrum. */
+.baseline-explainer { margin:0; display:flex; flex-direction:column; gap:8px; }
+.baseline-explainer-svg {
+  width:100%; height:auto; display:block;
+  background:var(--surface-1);
+  border:1px solid var(--hairline); border-radius:var(--r-md);
+}
+.bx-panel { fill:rgba(0,0,0,.22); stroke:var(--hairline); stroke-width:1; }
+.bx-trace {
+  fill:none; stroke:var(--accent); stroke-width:2;
+  stroke-linejoin:round; stroke-linecap:round;
+}
+.bx-fill { fill:var(--accent-soft); }
+.bx-fly {
+  fill:none; stroke:var(--accent-strong); stroke-width:1.6;
+  stroke-dasharray:4 3; stroke-linejoin:round; stroke-linecap:round;
+}
+.bx-panel-label {
+  fill:var(--fg-subtle); font-size:11px; font-weight:600; letter-spacing:.08em;
+  text-anchor:middle; font-family:ui-monospace,monospace;
+}
+.bx-rfi-label {
+  fill:var(--crit); font-size:7.5px; font-weight:700;
+  text-anchor:middle; font-family:ui-monospace,monospace;
+}
+.bx-hyd-line { stroke:var(--ok); stroke-width:1.4; stroke-dasharray:4 3; opacity:.85; }
+.bx-hyd-label {
+  fill:var(--ok); font-size:9px; font-weight:700;
+  text-anchor:middle; font-family:ui-monospace,monospace;
+}
+.bx-hyd { animation:bx-hyd-pulse 1.8s ease-in-out infinite; }
+@keyframes bx-hyd-pulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
+.baseline-explainer-caption {
+  font-size:12.5px; color:var(--fg-muted); line-height:1.45; min-height:2.6em;
+}
+@media (prefers-reduced-motion: reduce) { .bx-hyd { animation:none; } }
+
 .baseline-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
 .baseline-actions-stack { flex-direction:column; align-items:stretch; }
 .baseline-actions-stack > button { justify-content:center; }

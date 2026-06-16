@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { Camera, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { track } from '../analytics';
 import tourCopy from '../data/tourCopy.json';
@@ -143,6 +143,288 @@ function LiveSpectrum({ frame }: { frame: SpectrumFrame | null }) {
   );
 }
 
+// ─── Baseline explainer animation ──────────────────────────────────────────
+// A looping, self-contained schematic shown on the intro step so the user sees
+// WHY baseline correction matters before committing to capturing one. Three
+// beats, narrated by the caption underneath:
+//   1. BASELINE  — the receiver's bandpass dome + local RFI spikes (what you
+//      get pointed at empty sky), breathing with live receiver noise.
+//   2. SIGNAL    — the same shape with a faint hydrogen bump riding on top,
+//      almost lost in the curve.
+//   3. subtract  — the stored baseline slides across onto the signal, the
+//      shared bandpass + RFI cancel, and the hydrogen line is left standing.
+// The breathing-trace technique (per-frame noise low-passed across frames) is
+// borrowed from the queue page's HeroSpectrum so the two animations feel of a
+// piece.
+const EXP_N = 140;
+const EXP_PANEL_W = 196;
+const EXP_PANEL_H = 104;
+const EXP_PEAK_PX = 92; // power 1.0 → this many px above the panel baseline
+const EXP_HYD_C = 0.54; // hydrogen-bump centre (normalised x)
+
+function expSmoothstep(a: number, b: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+function expGauss(u: number, c: number, w: number): number {
+  const z = (u - c) / w;
+  return Math.exp(-z * z);
+}
+// Receiver bandpass: a flat-topped dome on a pedestal, rolling off at the band
+// edges — the "shape" baseline correction is all about.
+function expBandpass(u: number): number {
+  const plateau = 0.5 * expSmoothstep(0.04, 0.22, u) * expSmoothstep(0.04, 0.22, 1 - u);
+  const ripple = 0.045 * Math.sin(u * Math.PI * 2.6);
+  return 0.2 + plateau + ripple;
+}
+// Narrow RFI spikes — present in BOTH the baseline and the live signal, which
+// is exactly why subtracting the baseline removes them.
+const EXP_RFI = [
+  { c: 0.3, a: 0.3 },
+  { c: 0.45, a: 0.34 },
+  { c: 0.68, a: 0.26 },
+];
+function expRfi(u: number): number {
+  let s = 0;
+  for (const r of EXP_RFI) s += r.a * expGauss(u, r.c, 0.007);
+  return s;
+}
+
+const EXP_BASELINE = new Float32Array(EXP_N);
+const EXP_SIGNAL = new Float32Array(EXP_N);
+const EXP_RESULT = new Float32Array(EXP_N);
+for (let i = 0; i < EXP_N; i++) {
+  const u = i / (EXP_N - 1);
+  const base = Math.min(1, expBandpass(u) + expRfi(u));
+  EXP_BASELINE[i] = base;
+  // Faint hydrogen bump on top of the same receiver shape — nearly lost in it.
+  EXP_SIGNAL[i] = Math.min(1.02, base + 0.11 * expGauss(u, EXP_HYD_C, 0.04));
+  // After subtraction: flat near zero, hydrogen now clearly standing alone.
+  EXP_RESULT[i] = 0.1 + 0.46 * expGauss(u, EXP_HYD_C, 0.045);
+}
+const EXP_HYD_X = EXP_HYD_C * EXP_PANEL_W;
+
+function expPath(buf: Float32Array): { line: string; fill: string } {
+  let pts = '';
+  for (let i = 0; i < EXP_N; i++) {
+    const x = (i / (EXP_N - 1)) * EXP_PANEL_W;
+    const y = EXP_PANEL_H - Math.max(0, Math.min(1.02, buf[i])) * EXP_PEAK_PX;
+    pts += (i === 0 ? '' : ' L ') + x.toFixed(1) + ',' + y.toFixed(1);
+  }
+  return {
+    line: `M ${pts}`,
+    fill: `M 0,${EXP_PANEL_H} L ${pts} L ${EXP_PANEL_W},${EXP_PANEL_H} Z`,
+  };
+}
+const EXP_BASELINE_PATH = expPath(EXP_BASELINE);
+const EXP_SIGNAL_PATH = expPath(EXP_SIGNAL);
+const EXP_RESULT_PATH = expPath(EXP_RESULT);
+
+// Cheap symmetric receiver-noise sample, same as the hero spectrum.
+function expNoise(): number {
+  return (Math.random() + Math.random() + Math.random() - 1.5) * (2 / 3);
+}
+function expEaseInOut(p: number): number {
+  return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+}
+
+// Storyboard beats and their durations (seconds); the loop runs continuously
+// while the intro dialog is open.
+const EXP_PHASES = [
+  { key: 'baseline', dur: 2.8 },
+  { key: 'signal', dur: 2.8 },
+  { key: 'overlay', dur: 1.8 },
+  { key: 'subtract', dur: 2.0 },
+  { key: 'reveal', dur: 3.0 },
+] as const;
+type ExpPhase = (typeof EXP_PHASES)[number]['key'];
+const EXP_TOTAL = EXP_PHASES.reduce((s, p) => s + p.dur, 0);
+
+const EXP_CAPTION: Record<ExpPhase, string> = {
+  baseline:
+    'Baseline — the receiver’s own bandpass shape plus local RFI spikes. Even pointed at empty sky, this is what you get.',
+  signal:
+    'Signal — on the real sky a faint hydrogen bump rides on top of that same shape, nearly lost in it.',
+  overlay: 'Line the stored baseline up against the live signal…',
+  subtract: '…and divide it out. The bandpass and RFI cancel — they’re in both traces.',
+  reveal: 'What’s left is the hydrogen line, standing on its own.',
+};
+
+const EXP_PANEL_LX = 14; // left panel x-origin in SVG coords
+const EXP_PANEL_RX = 270; // right panel x-origin
+const EXP_PANEL_Y = 44;
+
+// Renders the looping schematic. All per-frame trace updates are written
+// imperatively to path/group attributes via refs so React never reconciles
+// during the rAF loop (mirrors HeroSpectrum on the queue page).
+function BaselineExplainer() {
+  const reduce = useMemo(
+    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+  const [phase, setPhase] = useState<ExpPhase>(reduce ? 'reveal' : 'baseline');
+
+  const leftLineRef = useRef<SVGPathElement | null>(null);
+  const leftFillRef = useRef<SVGPathElement | null>(null);
+  const rightLineRef = useRef<SVGPathElement | null>(null);
+  const rightFillRef = useRef<SVGPathElement | null>(null);
+  const rightGroupRef = useRef<SVGGElement | null>(null);
+  const flyGroupRef = useRef<SVGGElement | null>(null);
+
+  useEffect(() => {
+    if (reduce) return;
+    const leftBuf = Float32Array.from(EXP_BASELINE);
+    const rightBuf = Float32Array.from(EXP_SIGNAL);
+    const rightTarget = new Float32Array(EXP_N);
+    let raf = 0;
+    let startTs = 0;
+    let lastTs = 0;
+    let prevKey: ExpPhase | null = null;
+    const minIntervalMs = 1000 / 20;
+    const alpha = 0.22;
+    const noiseAmp = 0.05;
+
+    const tick = (ts: number) => {
+      raf = requestAnimationFrame(tick);
+      if (startTs === 0) startTs = ts;
+      if (ts - lastTs < minIntervalMs) return;
+      lastTs = ts;
+
+      // Locate the current beat and its local progress.
+      let t = ((ts - startTs) / 1000) % EXP_TOTAL;
+      let key: ExpPhase = EXP_PHASES[0].key;
+      let local = 0;
+      for (const ph of EXP_PHASES) {
+        if (t < ph.dur) {
+          key = ph.key;
+          local = t / ph.dur;
+          break;
+        }
+        t -= ph.dur;
+      }
+      if (key !== prevKey) {
+        // Snap working buffers on beat changes so the loop restarts cleanly.
+        if (key === 'baseline') {
+          leftBuf.set(EXP_BASELINE);
+          rightBuf.set(EXP_SIGNAL);
+        } else if (key === 'signal') {
+          rightBuf.set(EXP_SIGNAL);
+        }
+        prevKey = key;
+        setPhase(key);
+      }
+
+      // Left panel: always the breathing baseline.
+      for (let i = 0; i < EXP_N; i++) {
+        leftBuf[i] += (EXP_BASELINE[i] + expNoise() * noiseAmp - leftBuf[i]) * alpha;
+      }
+      const lp = expPath(leftBuf);
+      leftLineRef.current?.setAttribute('d', lp.line);
+      leftFillRef.current?.setAttribute('d', lp.fill);
+
+      // Right panel target depends on the beat: signal, morphing to the
+      // corrected result during the subtract beat, then holding on the result.
+      if (key === 'subtract') {
+        const e = expEaseInOut(local);
+        for (let i = 0; i < EXP_N; i++) {
+          rightTarget[i] = EXP_SIGNAL[i] + (EXP_RESULT[i] - EXP_SIGNAL[i]) * e;
+        }
+      } else if (key === 'reveal') {
+        rightTarget.set(EXP_RESULT);
+      } else {
+        rightTarget.set(EXP_SIGNAL);
+      }
+      const rNoise = key === 'reveal' ? noiseAmp * 0.6 : noiseAmp;
+      for (let i = 0; i < EXP_N; i++) {
+        rightBuf[i] += (rightTarget[i] + expNoise() * rNoise - rightBuf[i]) * alpha;
+      }
+      const rp = expPath(rightBuf);
+      rightLineRef.current?.setAttribute('d', rp.line);
+      rightFillRef.current?.setAttribute('d', rp.fill);
+
+      // Right panel hidden during the baseline-only beat, fading in as the
+      // signal arrives, solid thereafter.
+      let rightOpacity = 1;
+      if (key === 'baseline') rightOpacity = 0;
+      else if (key === 'signal') rightOpacity = expEaseInOut(local);
+      rightGroupRef.current?.setAttribute('opacity', rightOpacity.toFixed(3));
+
+      // Flying baseline: slides from the left panel onto the right during the
+      // overlay beat, then fades as it cancels through the subtract beat.
+      let flyOpacity = 0;
+      let flyX = EXP_PANEL_LX;
+      if (key === 'overlay') {
+        flyOpacity = Math.min(1, local * 2);
+        flyX = EXP_PANEL_LX + (EXP_PANEL_RX - EXP_PANEL_LX) * expEaseInOut(local);
+      } else if (key === 'subtract') {
+        flyOpacity = Math.max(0, 1 - local * 1.4);
+        flyX = EXP_PANEL_RX;
+      }
+      flyGroupRef.current?.setAttribute('transform', `translate(${flyX.toFixed(1)},${EXP_PANEL_Y})`);
+      flyGroupRef.current?.setAttribute('opacity', flyOpacity.toFixed(3));
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [reduce]);
+
+  const rightInit = reduce ? EXP_RESULT_PATH : EXP_SIGNAL_PATH;
+  const rightLabel = phase === 'subtract' || phase === 'reveal' ? 'CORRECTED' : 'SIGNAL';
+  const showHyd = reduce || phase === 'subtract' || phase === 'reveal';
+
+  return (
+    <figure className="baseline-explainer">
+      <svg
+        className="baseline-explainer-svg"
+        viewBox="0 0 480 156"
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="Animation: subtracting the receiver baseline from the live signal leaves the hydrogen line standing on its own."
+      >
+        {/* ── Left panel: the stored baseline ─────────────────────────────── */}
+        <text className="bx-panel-label" x={EXP_PANEL_LX + EXP_PANEL_W / 2} y={EXP_PANEL_Y - 12}>
+          BASELINE
+        </text>
+        <g transform={`translate(${EXP_PANEL_LX},${EXP_PANEL_Y})`}>
+          <rect className="bx-panel" x="0" y="0" width={EXP_PANEL_W} height={EXP_PANEL_H} rx="3" />
+          <path ref={leftFillRef} className="bx-fill" d={EXP_BASELINE_PATH.fill} />
+          <path ref={leftLineRef} className="bx-trace" d={EXP_BASELINE_PATH.line} />
+          {EXP_RFI.map(r => (
+            <text key={r.c} className="bx-rfi-label" x={r.c * EXP_PANEL_W} y="11">
+              RFI
+            </text>
+          ))}
+        </g>
+
+        {/* ── Right panel: live signal → corrected result ─────────────────── */}
+        <text className="bx-panel-label" x={EXP_PANEL_RX + EXP_PANEL_W / 2} y={EXP_PANEL_Y - 12}>
+          {rightLabel}
+        </text>
+        <g ref={rightGroupRef} opacity={reduce ? 1 : 0}>
+          <g transform={`translate(${EXP_PANEL_RX},${EXP_PANEL_Y})`}>
+            <rect className="bx-panel" x="0" y="0" width={EXP_PANEL_W} height={EXP_PANEL_H} rx="3" />
+            <path ref={rightFillRef} className="bx-fill" d={rightInit.fill} />
+            <path ref={rightLineRef} className="bx-trace" d={rightInit.line} />
+            {showHyd && (
+              <g className="bx-hyd">
+                <line className="bx-hyd-line" x1={EXP_HYD_X} y1="28" x2={EXP_HYD_X} y2={EXP_PANEL_H} />
+                <text className="bx-hyd-label" x={EXP_HYD_X} y="22">
+                  H I
+                </text>
+              </g>
+            )}
+          </g>
+        </g>
+
+        {/* ── Flying baseline that slides across and cancels ──────────────── */}
+        <g ref={flyGroupRef} transform={`translate(${EXP_PANEL_LX},${EXP_PANEL_Y})`} opacity="0">
+          <path className="bx-fly" d={EXP_BASELINE_PATH.line} />
+        </g>
+      </svg>
+      <figcaption className="baseline-explainer-caption">{EXP_CAPTION[phase]}</figcaption>
+    </figure>
+  );
+}
+
 export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: Props) {
   const [step, setStep] = useState<Step>('intro');
   const [busy, setBusy] = useState(false);
@@ -198,11 +480,11 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
     setStep('pick');
   }
 
-  // Server-side capture collects one full integration window of fresh samples
-  // before responding. Show a generous wait estimate so the user knows the
-  // request hasn't hung - round up and add a small buffer for round-tripping.
+  // Capture restarts the integration, discards one settling window, then
+  // averages a second window into the baseline - so budget ~2 integration
+  // windows. Show a generous estimate so the user knows the request hasn't hung.
   const expectedWaitSeconds = frame
-    ? Math.max(2, Math.ceil(frame.integration_seconds + 1))
+    ? Math.max(2, Math.ceil(2 * frame.integration_seconds + 1))
     : null;
 
   async function capture() {
@@ -257,6 +539,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
             {step === 'intro' && (
               <div id="baseline-desc" className="baseline-body">
                 <p>{tourCopy.baselineWizard.intro.body}</p>
+                <BaselineExplainer />
                 <p className="baseline-prompt">{tourCopy.baselineWizard.intro.prompt}</p>
                 <div className="baseline-actions baseline-actions-stack">
                   <button type="button" className="baseline-btn-primary" onClick={chooseCapture}>

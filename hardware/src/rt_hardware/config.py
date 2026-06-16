@@ -73,6 +73,12 @@ class MountConfig(BaseModel):
     goto_accel_qpps2: int = Field(default=25_000, ge=0)
     goto_decel_qpps2: int = Field(default=25_000, ge=0)
     goto_arrival_tolerance_counts: int = Field(default=1, ge=0)
+    # Temporary: drive goto in software by jogging each axis toward its target
+    # encoder count (forward/backward at goto_jog_speed) and letting the
+    # telemetry poll loop stop it on arrival, instead of the controller's
+    # onboard position PID. Set False to use the position-PID command.
+    goto_software_side: bool = True
+    goto_jog_speed: int = Field(default=100, ge=0, le=127)
     pointing_limit_altaz: list[AltAzLimitPoint] = Field(default_factory=list)
     altitude_calibration: AltitudeCalibrationConfig | None = None
     home_elevation_on_boot: bool = False

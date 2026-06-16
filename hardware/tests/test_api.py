@@ -145,6 +145,32 @@ def test_boot_log_says_enabled_when_bias_tee_on(simulated_config_path, monkeypat
 
 
 def test_api_accepts_alt_az_goto(simulated_config_path):
+    """Default (software-side) goto jogs each axis toward its target encoder count."""
+    with TestClient(create_app(simulated_config_path)) as client:
+        response = client.post(
+            "/api/telescope/goto",
+            json={"altitude_deg": 30, "azimuth_deg": 55},
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["ok"] is True
+    assert body["command_id"] == "software_goto"
+    assert body["response"]["m1_position"] == 650
+    assert body["response"]["m2_position"] == 800
+    # Encoders start at 0, both targets are positive, so both axes jog forward.
+    assert body["response"]["m1_command"] == "forward_m1"
+    assert body["response"]["m2_command"] == "forward_m2"
+    assert body["response"]["jog_speed"] == 100
+
+
+def test_api_accepts_alt_az_goto_position_pid(simulated_config_path):
+    """With goto_software_side off, goto falls back to the onboard position PID."""
+    config = simulated_config_path.read_text(encoding="utf-8").replace(
+        "goto_decel_qpps2 = 5000",
+        "goto_decel_qpps2 = 5000\ngoto_software_side = false",
+    )
+    simulated_config_path.write_text(config, encoding="utf-8")
     with TestClient(create_app(simulated_config_path)) as client:
         response = client.post(
             "/api/telescope/goto",
@@ -333,6 +359,32 @@ def test_jog_rejects_motion_outside_hard_safety_limits(simulated_config_path):
     assert "outside hard safety limits" in rejected.json()["detail"]
     assert service.client._speeds["m1"] == 0
     assert service.client._speeds["m2"] == 0
+
+
+def test_jog_allows_recovery_back_toward_hard_safety_limits(simulated_config_path):
+    # Already past the azimuth max: jogging further out (west) is rejected, but
+    # the recovery jog (east, back toward the allowed range) must be accepted so
+    # an out-of-bounds dish is never stranded.
+    with TestClient(create_app(simulated_config_path)) as client:
+        service = client.app.state.roboclaw_service
+        service.client._encoders["m1"] = 2100  # az = 200 deg (beyond max 190)
+        service.client._encoders["m2"] = 1100  # alt = 45 deg
+
+        further_out = client.post(
+            "/api/telescope/jog",
+            json={"token": "jog-further-out", "seq": 1, "direction": "west", "speed": 40},
+        )
+        assert further_out.status_code == 400
+        assert "outside hard safety limits" in further_out.json()["detail"]
+
+        # Stopped on rejection, so the encoder hasn't drifted: still az = 200.
+        recover = client.post(
+            "/api/telescope/jog",
+            json={"token": "jog-recover-east", "seq": 1, "direction": "east", "speed": 40},
+        )
+        assert recover.status_code == 200
+        assert recover.json()["accepted"] is True
+        assert service.client._speeds["m1"] < 0  # driving back toward the range
 
 
 def test_active_jog_stops_when_it_crosses_hard_safety_limits(simulated_config_path):

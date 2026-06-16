@@ -253,6 +253,74 @@ async def goto_alt_az_info(request: Request):
     }
 
 
+def _software_goto_commands(
+    snap: RoboClawTelemetry,
+    m1_position: int,
+    m2_position: int,
+    tolerance: int,
+) -> dict[str, str]:
+    """Pick the jog direction for each axis that needs to move toward its target.
+
+    Returns a mapping of motor id -> jog command. An axis already within
+    ``tolerance`` of its target (or with no encoder reading) is omitted.
+    """
+    commands: dict[str, str] = {}
+    axes = (
+        ("m1", m1_position, "forward_m1", "backward_m1"),
+        ("m2", m2_position, "forward_m2", "backward_m2"),
+    )
+    for motor_id, target, forward, backward in axes:
+        motor = snap.motors.get(motor_id)
+        current = motor.encoder if motor is not None else None
+        if current is None:
+            continue
+        delta = target - current
+        if delta > tolerance:
+            commands[motor_id] = forward
+        elif delta < -tolerance:
+            commands[motor_id] = backward
+    return commands
+
+
+async def _execute_software_goto(
+    altitude_deg: float,
+    azimuth: float,
+    m1_position: int,
+    m2_position: int,
+    request: Request,
+) -> CommandResult:
+    """Drive each axis toward its target with plain jog commands.
+
+    The telemetry poll loop (`_stop_if_position_target_reached`) stops each axis
+    once its encoder reaches the target, so no onboard position PID is involved.
+    """
+    cfg = request.app.state.config.mount
+    service = _service(request)
+    snap = await service.refresh()
+    commands = _software_goto_commands(snap, m1_position, m2_position, cfg.goto_arrival_tolerance_counts)
+
+    for command_id in commands.values():
+        result = await service.execute(command_id, {"speed": cfg.goto_jog_speed})
+        if not result.ok:
+            await service.stop_all()
+            raise HTTPException(status_code=400, detail=result.error or "Goto jog command failed")
+
+    service.set_position_target(m1=m1_position, m2=m2_position)
+    return CommandResult(
+        command_id="software_goto",
+        ok=True,
+        response={
+            "azimuth_deg": azimuth,
+            "altitude_deg": altitude_deg,
+            "m1_position": m1_position,
+            "m2_position": m2_position,
+            "jog_speed": cfg.goto_jog_speed,
+            "m1_command": commands.get("m1"),
+            "m2_command": commands.get("m2"),
+        },
+    )
+
+
 async def _execute_goto_altaz(
     altitude_deg: float,
     azimuth_deg: float,
@@ -267,6 +335,8 @@ async def _execute_goto_altaz(
     _enforce_pointing_limits(altitude_deg, azimuth, request)
     m1_position = round(cfg.az_zero_count + azimuth * cfg.az_counts_per_degree)
     m2_position = altitude_to_encoder_counts(altitude_deg, cfg)
+    if cfg.goto_software_side:
+        return await _execute_software_goto(altitude_deg, azimuth, m1_position, m2_position, request)
     stored_m1, stored_m2 = _service(request).stored_qpps
     az_speed  = _resolve(speed_qpps, stored_m1, cfg.goto_speed_qpps)
     alt_speed = _resolve(speed_qpps, stored_m2, cfg.goto_speed_qpps)

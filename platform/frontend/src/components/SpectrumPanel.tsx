@@ -686,14 +686,14 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
             )}
           </div>
           <p className="spectrum-subtitle">
-            Neutral hydrogen in the Milky Way emits radio energy at <strong>1420.4 MHz</strong>. This panel shows a live spectrum from the SDR, with a vertical marker at that reference frequency. Gas moving toward or away from the telescope shifts the signal slightly by the{' '}
+            Neutral hydrogen in the Milky Way emits radio waves with a frequency of <strong>1420.4 MHz</strong>. This panel shows a live spectrum from the SDR, with a vertical marker at that reference frequency. Gas moving toward or away from the telescope shifts the signal slightly by the{' '}
             <InlineInfoPopover
               label="Doppler effect"
               ariaLabel="Show what the Doppler effect means"
             >
               <strong>Motion shifts the observed frequency.</strong>
               <span>
-                Gas moving toward the telescope is blueshifted slightly higher in frequency, while gas moving away is redshifted slightly lower.
+                Gas clouds moving toward us are blueshifted slightly higher in frequency, while gas clouds moving away are redshifted slightly lower.
               </span>
             </InlineInfoPopover>. By observing several points along the galactic plane, you can see the motion and distribution of the hydrogen gas in our own Milky Way galaxy.
           </p>
@@ -706,7 +706,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
       {!baselineApplies ? (
         <div className="baseline-prompt" role="status" aria-label="Baseline not captured">
           <p className="baseline-prompt-text">
-            No baseline recorded yet — the trace is raw SDR output, with real hydrogen still buried under system noise and RFI.
+            Without a cold-sky baseline, the spectrum is dominated by the receiver's bandpass shape and local radio frequency interference (RFI).
           </p>
           <button
             type="button"
@@ -841,7 +841,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
           )}
           {!baselineApplies && frame && (
             <div className="spectrum-baseline-overlay" aria-hidden>
-              Calibration Needed
+              Baseline Needed
             </div>
           )}
         </div>
