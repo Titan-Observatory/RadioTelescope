@@ -21,9 +21,9 @@ import {
   DEFAULT_Y_RANGE,
   H1_REST_MHZ,
   TRACE_BOXCAR_BINS,
-  bottomHalfYRange,
   boxcarSmooth,
   displayWindow,
+  rawSpectrumYRange,
   robustYRange,
   zeroBaselineSpectrum,
   zeroBaselineYRange,
@@ -42,8 +42,8 @@ echarts.use([
 
 // Plot-area insets for the spectrum line chart. The waterfall canvas uses the
 // same values so its frequency axis lines up perfectly with the trace above.
-const PLOT_LEFT_PX = 52;
-const PLOT_RIGHT_PX = 18;
+const PLOT_LEFT_PX = 44;
+const PLOT_RIGHT_PX = 14;
 
 // How tall each new waterfall row is, in CSS pixels. The render multiplies
 // this by devicePixelRatio. 1 CSS px at 10 Hz would creep at 10 px/sec — too
@@ -353,8 +353,8 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     const chart = chartInstance.current;
     if (!chart || !frame || !displayed) return;
     const data = frame.freqs_mhz.map((f, i) => [f, displayed[i]] as [number, number]);
-    // Raw spectra still use the dynamic lower-half fit so receiver bandpass
-    // shape remains legible. Baseline-corrected frames are rendered relative
+    // Raw spectra use a tight fit with modest label headroom so receiver
+    // bandpass shape remains legible. Baseline-corrected frames are rendered relative
     // to their own robust median (see zeroBaselineSpectrum), so the trace
     // baseline remains visually pinned at 0 dB even if receiver gain or
     // temperature drifts.
@@ -364,7 +364,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     // baseline state changes, since the dB scale shifts wholesale there and
     // sliding across it would look wrong. The waterfall keeps its own tight
     // colour range so its inferno palette still spans the full trace.
-    const axisTarget = frame.baseline_corrected === true ? zeroBaselineYRange(displayed) : bottomHalfYRange(displayed);
+    const axisTarget = frame.baseline_corrected === true ? zeroBaselineYRange(displayed) : rawSpectrumYRange(displayed);
     const wfTarget = robustYRange(displayed);
     const sig = `${frame.center_freq_mhz.toFixed(6)}|${frame.sample_rate_mhz.toFixed(6)}|${frame.freqs_mhz.length}|${baselineApplies ? 'baseline' : 'raw'}`;
     const fresh = !yRangeInitRef.current || sig !== yRangeSigRef.current;
@@ -881,19 +881,19 @@ function baseOption(yRange: [number, number]): EChartsOption {
     textStyle: { fontFamily: 'inherit' },
     // Insets here must match PLOT_LEFT_PX / PLOT_RIGHT_PX so the waterfall
     // canvas painted below the chart shares the same frequency-axis pixels.
-    grid: { left: PLOT_LEFT_PX, right: PLOT_RIGHT_PX, top: 12, bottom: 48, containLabel: false },
+    grid: { left: PLOT_LEFT_PX, right: PLOT_RIGHT_PX, top: 10, bottom: 38, containLabel: false },
     xAxis: {
       type: 'value',
       name: 'Frequency (MHz)',
       nameLocation: 'middle',
-      nameGap: 28,
+      nameGap: 22,
       nameTextStyle: { color: tickColor, fontSize: 11 },
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
         color: tickColor,
         fontSize: 11,
-        margin: 10,
+        margin: 8,
         hideOverlap: true,
         formatter: (v: number) => {
           const label = v.toFixed(1);
@@ -922,11 +922,11 @@ function baseOption(yRange: [number, number]): EChartsOption {
       name: 'dB',
       nameLocation: 'middle',
       nameRotate: 90,
-      nameGap: 34,
+      nameGap: 24,
       nameTextStyle: { color: tickColor, fontSize: 11 },
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: tickColor, fontSize: 11, margin: 8 },
+      axisLabel: { color: tickColor, fontSize: 11, margin: 5 },
       splitLine: { lineStyle: { color: gridColor, type: 'dashed' } },
       splitNumber: 5,
       min: yRange[0],

@@ -65,7 +65,7 @@ export function TelemetryDashboard({
   const roboclawTemp = maxReading(telemetry?.temperature_c, telemetry?.temperature_2_c);
   const motorOutput = maxAbsReading(telemetry?.motors.m1?.pwm, telemetry?.motors.m2?.pwm);
   const motorSpeed = maxAbsReading(telemetry?.motors.m1?.speed_qpps, telemetry?.motors.m2?.speed_qpps);
-  const [collapsed, setCollapsed] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(true);
   const panelId = React.useId();
 
   const sky = React.useMemo(() => {
@@ -94,7 +94,14 @@ export function TelemetryDashboard({
         aria-label={collapsed ? 'Expand telemetry panel' : 'Collapse telemetry panel'}
         onClick={() => setCollapsed((value) => !value)}
       >
-        {collapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+        {collapsed ? (
+          <>
+            <span className="telemetry-collapse-label">Telemetry</span>
+            <ChevronUp size={15} />
+          </>
+        ) : (
+          <ChevronDown size={15} />
+        )}
       </button>
       <div id={panelId} className="telemetry-collapse-body">
         <div className="telemetry-dense">

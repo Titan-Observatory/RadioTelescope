@@ -56,10 +56,20 @@ export function robustYRange(values: number[]): [number, number] {
   return [lo - pad, hi + pad];
 }
 
-// Chart-axis y-range that parks the trace in the bottom half of the plot,
-// leaving the upper half clear for annotations. The bulk band [lo, hi] (plus a
-// sliver of pad below) is sized to occupy the lowest ~1/2 of the axis; the rest
-// is headroom above the trace.
+// Chart-axis y-range for raw spectra. The bulk band [lo, hi] gets asymmetric
+// padding: enough room above for RFI labels and enough below to keep the trace
+// off the x-axis, without wasting half the plot on empty headroom.
+export function rawSpectrumYRange(values: number[]): [number, number] {
+  if (values.length === 0) return DEFAULT_Y_RANGE;
+  const [lo, hi] = robustBulkBounds(values);
+  const span = hi - lo;
+  const padBelow = 0.16 * span;
+  const padAbove = 0.32 * span;
+  return [lo - padBelow, hi + padAbove];
+}
+
+// Legacy preview range used by the baseline wizard, where extra annotation
+// headroom is part of the explanatory graphic.
 export function bottomHalfYRange(values: number[]): [number, number] {
   if (values.length === 0) return DEFAULT_Y_RANGE;
   const [lo, hi] = robustBulkBounds(values);
