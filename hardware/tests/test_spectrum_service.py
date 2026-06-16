@@ -9,7 +9,7 @@ import pytest
 from rt_hardware.config import SDRConfig
 from rt_hardware.services import spectrum as spectrum_module
 from rt_hardware.services._pubsub import Broadcaster
-from rt_hardware.services.spectrum import SpectrumService
+from rt_hardware.services.spectrum import SpectrumFrame, SpectrumService
 
 
 @pytest.fixture
@@ -54,6 +54,34 @@ async def test_relaunch_in_place_reuses_existing_process(tmp_path):
     service._proc = cast("subprocess.Popen[bytes]", proc)
 
     assert await service._relaunch_in_place() is proc
+
+
+@pytest.mark.asyncio
+async def test_relaunch_in_place_resets_integration_epoch(tmp_path, monkeypatch):
+    service = SpectrumService(SDRConfig(), tmp_path / "config.toml")
+    Broadcaster.subscribe(service)
+    service._frames_seen = 99
+    service._latest = SpectrumFrame(timestamp=1.0)
+
+    class FakeProc:
+        pid = 123
+        stderr = None
+
+        def poll(self):
+            return None
+
+    fake_proc = FakeProc()
+    monkeypatch.setattr(spectrum_module.subprocess, "Popen", lambda *args, **kwargs: fake_proc)
+
+    try:
+        assert await service._relaunch_in_place() is fake_proc
+        assert service.frames_seen == 0
+        assert service.latest is None
+    finally:
+        task = service._stderr_task
+        if task is not None:
+            await task
+        service._stderr_task = None
 
 
 @pytest.mark.asyncio

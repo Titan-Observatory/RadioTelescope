@@ -600,7 +600,7 @@ function SpectrumTuningPanel() {
         </div>
 
         <SliderRow
-          label="EMA integration"
+          label="Rolling integration"
           unit="s"
           min={0.5} max={60} step={0.5}
           value={draft.integration_seconds}
@@ -713,7 +713,7 @@ function SpectrumTuningPanel() {
             onClick={() => setDraft(server)}
           >Revert</button>
           <span className="admin-meta">
-            {server.integration_frames} EMA frames · {(server.freq_resolution_hz / 1000).toFixed(2)} kHz/bin
+            {server.integration_frames} rolling frames · {(server.freq_resolution_hz / 1000).toFixed(2)} kHz/bin
           </span>
         </div>
       </div>

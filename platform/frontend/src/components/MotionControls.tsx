@@ -124,12 +124,10 @@ function PointingPad({ jog, stopJog, speed, onStop }: {
   return (
     <div className="pointing-pad" role="group" aria-label="Pointing controls">
       <button type="button" className={`pad-btn pad-up${up.active ? ' jog-active' : ''}`} {...up} aria-label="Up">
-        <ChevronUp size={24} strokeWidth={2.15} />
-        <span className="pad-btn-label">Up</span>
+        <ChevronUp size={36} strokeWidth={2.25} />
       </button>
       <button type="button" className={`pad-btn pad-west${west.active ? ' jog-active' : ''}`} {...west} aria-label="West">
-        <ChevronLeft size={24} strokeWidth={2.15} />
-        <span className="pad-btn-label">West</span>
+        <ChevronLeft size={36} strokeWidth={2.25} />
       </button>
       <button
         type="button"
@@ -138,16 +136,13 @@ function PointingPad({ jog, stopJog, speed, onStop }: {
         aria-label="Stop all motion"
         title="Stop all motion"
       >
-        <Square size={14} fill="currentColor" strokeWidth={0} />
-        <span className="pad-btn-label">Stop</span>
+        <Square size={18} fill="currentColor" strokeWidth={0} />
       </button>
       <button type="button" className={`pad-btn pad-east${east.active ? ' jog-active' : ''}`} {...east} aria-label="East">
-        <ChevronRight size={24} strokeWidth={2.15} />
-        <span className="pad-btn-label">East</span>
+        <ChevronRight size={36} strokeWidth={2.25} />
       </button>
       <button type="button" className={`pad-btn pad-down${down.active ? ' jog-active' : ''}`} {...down} aria-label="Down">
-        <ChevronDown size={24} strokeWidth={2.15} />
-        <span className="pad-btn-label">Down</span>
+        <ChevronDown size={36} strokeWidth={2.25} />
       </button>
     </div>
   );

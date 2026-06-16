@@ -7,7 +7,7 @@ thread-hop overhead drops 60-80% of samples. GNU Radio's native scheduler runs
 the whole chain in C++ with back-pressure between blocks, so throughput is
 bounded by arithmetic rather than Python overhead.
 
-The flowgraph owns the *entire* DSP path: FFT, integration (rolling EMA),
+The flowgraph owns the *entire* DSP path: FFT, integration (rolling average),
 baseline division and the dB conversion. The Python consumer
 ([rt_hardware.services.spectrum.SpectrumService]) is a pure forwarder — it
 just packages each finished spectrum into a WebSocket frame. This keeps a
@@ -26,7 +26,7 @@ Live flowgraph::
         ▼
     blocks.integrate_ff(K, fft_size)            # block-average K raw FFTs
         ▼
-    filter.single_pole_iir_filter_ff(α, fft_size)   # rolling EMA window
+    blocks.moving_average_ff(N, 1/N, vlen=fft_size) # rolling finite window
         ▼
     blocks.multiply_const_vff(1 / baseline)     # baseline division (no-op if none)
         ▼
@@ -35,10 +35,11 @@ Live flowgraph::
     zeromq.pub_sink                              # float32[fft_size] @ ~publish_rate_hz
 
 ``K`` is chosen so one ``integrate_ff`` output covers ``1 / publish_rate_hz``
-of wall-clock time. The EMA constant ``α = 1 / integration_frames`` realises
-the displayed integration window while keeping output at publish-rate (so the
-line chart + waterfall stay live). Pushing the window into a decimating
-``integrate_ff`` instead would drop output to one frame per ``integration_seconds``.
+of wall-clock time. A vector moving-average block then keeps the last
+``integration_frames`` published spectra, so the displayed trace is a true
+finite rolling window while still updating at publish-rate. Pushing the window
+into a decimating ``integrate_ff`` instead would drop output to one frame per
+``integration_seconds``.
 
 Baseline capture is *not* a flowgraph here: rather than freeze the SDR for a
 one-shot capture, :class:`~rt_hardware.services.spectrum.SpectrumService`
@@ -129,7 +130,7 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
     """
     # Imports are deferred so this module can be loaded for help text /
     # arg parsing on hosts without GNU Radio installed.
-    from gnuradio import blocks, fft, filter as gr_filter, gr, zeromq  # type: ignore[import-not-found]
+    from gnuradio import blocks, fft, gr, zeromq  # type: ignore[import-not-found]
     from gnuradio.fft import window  # type: ignore[import-not-found]
 
     try:
@@ -139,10 +140,9 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
             "gr-soapy is not installed. On Debian/Ubuntu: `apt install gr-soapy`."
         ) from exc
 
-    # single_pole_iir_filter_ff ships in gr-filter, but be defensive about the
-    # module split across GNU Radio versions so we never crash at spawn time.
-    single_pole_iir = getattr(gr_filter, "single_pole_iir_filter_ff", None) \
-        or getattr(blocks, "single_pole_iir_filter_ff")
+    moving_average_ff = getattr(blocks, "moving_average_ff", None)
+    if moving_average_ff is None:
+        raise RuntimeError("GNU Radio blocks.moving_average_ff is not available.")
 
     sdr = cfg.sdr
     fft_size = int(sdr.fft_size)
@@ -150,12 +150,10 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
 
     # One integrate_ff output per (1 / publish_rate_hz) seconds. At 3 Msps,
     # fft_size=8192, publish_rate=5 Hz this averages 73 raw FFTs per output.
-    raw_fft_rate = sample_rate / fft_size
-    integrate_k = max(1, round(raw_fft_rate / float(sdr.publish_rate_hz)))
-    # EMA constant for the displayed integration window. integration_frames is
-    # the number of publish-rate outputs inside one window; α = 1/N means each
-    # output contributes ~1/N of the running value.
-    alpha = 1.0 / max(1, int(sdr.integration_frames))
+    raw_fft_rate = float(sdr.raw_fft_rate_hz)
+    integrate_k = int(sdr.pipeline_integrate_k)
+    rolling_frames = max(1, int(sdr.integration_frames))
+    rolling_scale = 1.0 / float(rolling_frames)
 
     tb = gr.top_block("rt-spectrum-pipeline")
 
@@ -166,9 +164,9 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
     fft_block = fft.fft_vcc(fft_size, True, window.hann(fft_size), True, 1)
     mag2 = blocks.complex_to_mag_squared(fft_size)
     integrator = blocks.integrate_ff(integrate_k, fft_size)
-    ema = single_pole_iir(alpha, fft_size)
+    rolling = moving_average_ff(rolling_frames, rolling_scale, 4096, fft_size)
 
-    chain = [source, s2v, fft_block, mag2, integrator, ema]
+    chain = [source, s2v, fft_block, mag2, integrator, rolling]
 
     # ── Baseline division ─────────────────────────────────────────────
     # multiply_const_vff by 1/baseline is an element-wise vector divide. When
@@ -212,9 +210,9 @@ def build_flowgraph(cfg, baseline_path: str | None = None):
 
     logger.info(
         "Live flowgraph built: %.3f MHz centre, %.1f Msps, fft=%d, integrate=%d × FFT "
-        "(~%.1f Hz output), EMA α=%.4f, baseline=%s, offset=%.1f dB, ipc=%s",
+        "(~%.1f Hz output), rolling=%d frames (~%.1f s), baseline=%s, offset=%.1f dB, ipc=%s",
         sdr.center_freq_hz / 1e6, sample_rate / 1e6, fft_size, integrate_k,
-        raw_fft_rate / integrate_k, alpha,
+        raw_fft_rate / integrate_k, rolling_frames, rolling_frames / (raw_fft_rate / integrate_k),
         "loaded" if baseline_loaded else "none", offset_db, sdr.pipeline_ipc_path,
     )
     return tb

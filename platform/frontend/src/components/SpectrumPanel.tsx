@@ -234,6 +234,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
   // it stays correct across page refreshes and for viewers who didn't capture
   // the baseline themselves, neither of which any local UI state can track.
   const baselineApplies = frame?.baseline_corrected === true;
+  const sdrDisabled = status?.enabled === false;
 
   const restartIntegration = async () => {
     if (integrationRestarting) return;
@@ -629,17 +630,6 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
     const velocityKms = SPEED_OF_LIGHT_KMS * (H1_REST_MHZ - freqMhz) / H1_REST_MHZ;
     return { freqMhz, peakDb, prominenceDb, velocityKms, detected: prominenceDb >= DETECTION_MIN_DB };
   }, [frame, displayed]);
-  if (status && !status.enabled) {
-    return (
-      <section className="spectrum-section">
-        <h2 className="panel-header head-amber">
-          Hydrogen Observation
-        </h2>
-        <div className="spectrum-empty">SDR disabled in config.toml.</div>
-      </section>
-    );
-  }
-
   const velocity = detection?.detected ? detection.velocityKms : null;
 
   // Pin a small marker on the trace at the detected peak. Positions are
@@ -694,20 +684,26 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
           </p>
         </div>
         <div className="spectrum-status">
-          {!connected && <span className="spectrum-disconnected">offline</span>}
+          {sdrDisabled
+            ? <span className="spectrum-disconnected">SDR disabled</span>
+            : (!connected && <span className="spectrum-disconnected">offline</span>)}
         </div>
       </header>
 
       {!baselineApplies ? (
         <div className="baseline-prompt" role="status" aria-label="Baseline not captured">
           <p className="baseline-prompt-text">
-            Without a cold-sky baseline, the spectrum is dominated by the receiver's bandpass shape and local radio frequency interference (RFI).
+            {sdrDisabled
+              ? 'The SDR is disabled in config.toml, so the live spectrum is hidden. You can still walk through the baseline capture flow for development.'
+              : "Without a cold-sky baseline, the spectrum is dominated by the receiver's bandpass shape and local radio frequency interference (RFI)."}
           </p>
           <button
             type="button"
             className="baseline-prompt-go"
             onClick={() => setWizardOpen(true)}
-            title="Open the guided flow to point at empty sky and capture a baseline"
+            title={sdrDisabled
+              ? 'Open the guided baseline flow without rendering the SDR spectrum'
+              : 'Open the guided flow to point at empty sky and capture a baseline'}
           >
             Capture baseline →
           </button>
@@ -756,6 +752,11 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
         </div>
       ) : null}
 
+      {sdrDisabled ? (
+        <div className="spectrum-empty" role="status">
+          Spectrum hidden because the SDR is disabled.
+        </div>
+      ) : (
       <div className="spectrum-chart-wrap">
         <div className="spectrum-chart-head">
           {baselineApplies && (
@@ -776,7 +777,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
             <span className="spectrum-chart-title">Power vs. frequency</span>
             {integrationStats && (
               <p className="spectrum-stats" aria-label="Integration statistics">
-                Integrating <strong>{integrationStats.windowSeconds.toFixed(1)} s</strong>
+                Integrating <strong>~{integrationStats.windowSeconds.toFixed(1)} s</strong>
                 {' '}({integrationStats.effectiveFrames}/{integrationStats.targetFrames} frames)
                 {' · '}
                 <strong>{integrationStats.binHz.toFixed(0)} Hz</strong> bins
@@ -853,6 +854,7 @@ export function SpectrumPanel({ enabled = true, onStartGuided }: SpectrumPanelPr
           <canvas className="spectrum-waterfall" ref={waterfallCanvasRef} />
         </details>
       </div>
+      )}
 
       <BaselineWizard
         open={wizardOpen}

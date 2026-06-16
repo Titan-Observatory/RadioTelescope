@@ -798,8 +798,8 @@ input:focus-visible {
 }
 .skymap-overlay-controls .motion-card { gap: 8px; }
 .skymap-overlay-controls .pointing-pad {
-  flex: 0 0 174px;
-  max-width: 174px;
+  --pad-button-size: 56px;
+  --pad-gap: 10px;
 }
 .skymap-overlay-controls .target-form-overlay {
   grid-template-columns: repeat(2, 92px);
@@ -1930,21 +1930,26 @@ h2.panel-header {
 .motion-card {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
-  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 /* Compact 3×3 grid: four direction buttons around a central STOP. Putting
    the cutoff in the middle of the cross is classic instrument-panel layout —
    it's always under the hand that's driving, with no reach. */
 .pointing-pad {
+  --pad-button-size: 70px;
+  --pad-gap: 12px;
+
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
+  grid-template-columns: repeat(3, var(--pad-button-size));
+  grid-template-rows: repeat(3, var(--pad-button-size));
+  gap: var(--pad-gap);
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
 }
 .pad-up    { grid-column: 2; grid-row: 1; }
 .pad-west  { grid-column: 1; grid-row: 2; }
@@ -1957,22 +1962,19 @@ h2.panel-header {
    crimson tint that goes solid on hover. */
 .pad-btn.pad-stop {
   padding: 0;
-  gap: 1px;
   border-radius: 50%;
   color: var(--crit);
   background: rgba(216, 17, 89, 0.12);
   border: 1px solid rgba(216, 17, 89, 0.5);
   touch-action: manipulation;
 }
-.pad-btn.pad-stop .pad-btn-label { color: var(--crit); }
 .pad-btn.pad-stop > svg { color: var(--crit); }
 .pad-btn.pad-stop:hover {
   color: #fff;
   background: var(--crit);
   border-color: var(--crit);
 }
-.pad-btn.pad-stop:hover > svg,
-.pad-btn.pad-stop:hover .pad-btn-label { color: #fff; }
+.pad-btn.pad-stop:hover > svg { color: #fff; }
 
 .pad-btn {
   display: flex;
@@ -1981,12 +1983,10 @@ h2.panel-header {
   justify-content: center;
   justify-self: center;
   align-self: center;
-  gap: 2px;
   width: 100%;
-  max-width: 68px;
   aspect-ratio: 1 / 1;
   min-height: 0;
-  padding: 6px 4px;
+  padding: 8px;
   color: var(--fg);
   background: var(--surface-1);
   border: 1px solid var(--hairline-strong);
@@ -2004,20 +2004,12 @@ h2.panel-header {
   color: var(--fg-muted);
   transition: color var(--t-fast), transform var(--t-fast);
 }
-.pad-btn-label {
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--fg-muted);
-  transition: color var(--t-fast);
-}
 .pad-btn:hover {
   color: var(--sect-teal);
   background: var(--surface-3);
   border-color: rgba(119, 203, 185, 0.38);
 }
-.pad-btn:hover > svg,
-.pad-btn:hover .pad-btn-label {
+.pad-btn:hover > svg {
   color: var(--sect-teal);
 }
 .pad-btn:active {
@@ -2034,7 +2026,6 @@ h2.panel-header {
   border-color: rgba(119, 203, 185, 0.5);
 }
 .pad-btn.jog-active > svg { color: var(--sect-teal); transform: scale(1.08); }
-.pad-btn.jog-active .pad-btn-label { color: var(--sect-teal); }
 
 /* =========================================================================
    Axis status — two-column readout sitting next to the d-pad. Same height
@@ -4404,14 +4395,16 @@ body.rt-baseline-pick .skymap-panel {
 }
 .baseline-dialog {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  z-index: 201; width: min(520px, calc(100vw - 32px));
+  z-index: 201; width: min(920px, calc(100vw - 40px));
+  max-height: min(820px, calc(100vh - 40px));
+  overflow-y: auto;
   background: var(--surface-2); border: 1px solid var(--hairline-strong);
-  border-radius: var(--r-lg); padding: 24px;
-  display: flex; flex-direction: column; gap: 14px;
+  border-radius: var(--r-lg); padding: 28px;
+  display: flex; flex-direction: column; gap: 18px;
   animation: feedback-slide-in 150ms ease;
 }
 .baseline-header { display:flex; align-items:center; justify-content:space-between; }
-.baseline-title  { font-size:15px; font-weight:600; color:var(--fg); margin:0; }
+.baseline-title  { font-size:18px; font-weight:650; color:var(--fg); margin:0; }
 .baseline-close  {
   display:inline-flex; align-items:center; justify-content:center;
   width:28px; height:28px; padding:0; min-height:unset;
@@ -4419,7 +4412,7 @@ body.rt-baseline-pick .skymap-panel {
   color:var(--fg-muted); transition:background var(--t-fast),color var(--t-fast);
 }
 .baseline-close:hover { background:var(--surface-3); color:var(--fg); }
-.baseline-body { display:flex; flex-direction:column; gap:12px; }
+.baseline-body { display:flex; flex-direction:column; gap:16px; }
 .baseline-body p { margin:0; font-size:14px; color:var(--fg-muted); line-height:1.5; }
 .baseline-body p strong { color:var(--fg); font-weight:600; }
 .baseline-step-label {
@@ -4468,7 +4461,7 @@ body.rt-baseline-pick .skymap-panel {
 
 /* Intro-step explainer: a looping schematic of baseline subtraction. Borrows
    the breathing-trace look of the queue page's hero spectrum. */
-.baseline-explainer { margin:0; display:flex; flex-direction:column; gap:8px; }
+.baseline-explainer { margin:0; display:flex; flex-direction:column; gap:12px; }
 .baseline-explainer-svg {
   width:100%; height:auto; display:block;
   background:var(--surface-1);
@@ -4480,6 +4473,13 @@ body.rt-baseline-pick .skymap-panel {
   stroke-linejoin:round; stroke-linecap:round;
 }
 .bx-fill { fill:var(--accent-soft); }
+.bx-overlap {
+  fill:rgba(239,68,68,.22);
+  stroke:rgba(239,68,68,.75);
+  stroke-width:1;
+  stroke-linejoin:round;
+  stroke-linecap:round;
+}
 .bx-fly {
   fill:none; stroke:var(--accent-strong); stroke-width:1.6;
   stroke-dasharray:4 3; stroke-linejoin:round; stroke-linecap:round;
@@ -4500,9 +4500,46 @@ body.rt-baseline-pick .skymap-panel {
 .bx-hyd { animation:bx-hyd-pulse 1.8s ease-in-out infinite; }
 @keyframes bx-hyd-pulse { 0%,100% { opacity:.55; } 50% { opacity:1; } }
 .baseline-explainer-caption {
-  font-size:12.5px; color:var(--fg-muted); line-height:1.45; min-height:2.6em;
+  font-size:14px; color:var(--fg-muted); line-height:1.5;
 }
 @media (prefers-reduced-motion: reduce) { .bx-hyd { animation:none; } }
+
+/* "÷" symbol between the baseline and signal panels on the subtract slide. */
+.bx-divide {
+  fill:var(--fg-muted); font-size:26px; font-weight:600;
+  text-anchor:middle; dominant-baseline:central; font-family:ui-monospace,monospace;
+}
+
+/* Intro mini-lesson: paged carousel of explainer keyframes. */
+.baseline-lesson { gap:14px; }
+.baseline-lesson-text {
+  display:flex; flex-direction:column; gap:6px;
+  min-height:4.8em; max-width:720px; align-self:center; text-align:center;
+}
+.baseline-lesson-step-title { font-size:18px; font-weight:650; color:var(--fg); }
+.baseline-lesson-dots {
+  display:flex; justify-content:center; gap:8px; padding:0 0 2px;
+}
+.baseline-lesson-dot {
+  position:relative;
+  width:28px; height:24px; padding:0; min-height:unset;
+  border:none; border-radius:999px; background:transparent; cursor:pointer;
+}
+.baseline-lesson-dot::before {
+  content:'';
+  position:absolute; left:50%; top:50%;
+  width:9px; height:9px; border-radius:50%;
+  background:var(--surface-3);
+  transform:translate(-50%,-50%);
+  transition:background var(--t-fast),transform var(--t-fast);
+}
+.baseline-lesson-dot:hover::before { background:var(--fg-subtle); transform:translate(-50%,-50%) scale(1.15); }
+.baseline-lesson-dot:focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px;
+}
+.baseline-lesson-dot.is-active::before { background:var(--accent); transform:translate(-50%,-50%) scale(1.35); }
+.baseline-lesson-actions { justify-content:space-between; align-items:center; margin-top:2px; }
+.baseline-lesson-actions-right { display:flex; gap:8px; align-items:center; }
 
 .baseline-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
 .baseline-actions-stack { flex-direction:column; align-items:stretch; }

@@ -22,6 +22,20 @@ def test_sdr_rtlsdr_rejects_out_of_range_sample_rate():
         SDRConfig(driver="rtlsdr", sample_rate_hz=6.0e6)
 
 
+def test_sdr_integration_frames_follow_actual_pipeline_rate():
+    cfg = SDRConfig(
+        sample_rate_hz=3.0e6,
+        fft_size=8192,
+        publish_rate_hz=5.0,
+        integration_seconds=60.0,
+    )
+
+    assert cfg.pipeline_integrate_k == 73
+    assert cfg.effective_publish_rate_hz == pytest.approx(5.0166, rel=1e-4)
+    assert cfg.integration_frames == 301
+    assert cfg.integration_frames / cfg.effective_publish_rate_hz == pytest.approx(60.0, abs=0.1)
+
+
 def test_bias_command_selects_tool_per_driver():
     assert _bias_command("airspy", "1") == ("airspy_gpio", "-p", "1", "-n", "13", "-w", "1")
     assert _bias_command("rtlsdr", "0") == ("rtl_biast", "-b", "0")

@@ -2,7 +2,7 @@
 
 Forwards baseline-corrected power spectra from a GNU Radio subprocess
 ([rt_hardware.sdr_pipeline]) to WebSocket subscribers. The subprocess owns the
-*entire* DSP path — FFT, integration (rolling EMA), baseline division and the dB
+*entire* DSP path — FFT, integration (rolling average), baseline division and the dB
 conversion — so this service does no per-frame numpy work: it just receives one
 dB ``float32[fft_size]`` vector per message over ZeroMQ and packages it into a
 JSON frame.
@@ -69,7 +69,7 @@ class _BaselineCapture:
     Sums the linear power of successive *uncorrected* live frames so their
     per-bin mean becomes the baseline (``power / baseline ≈ 1`` → ~0 dB once the
     live flowgraph divides by it). ``warmup`` frames are skipped first so a
-    freshly (re)started flowgraph's ramping EMA doesn't drag the mean down.
+    freshly (re)started flowgraph's filling rolling average doesn't drag the mean down.
     ``done`` fires once ``target`` frames past warmup have been collected. Fed
     from the ZMQ consumer (event-loop thread), so no locking is needed.
     """
@@ -138,7 +138,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
         self._latest: SpectrumFrame | None = None
         self._frames_seen: int = 0
-        self._publish_period_s: float = 1.0 / max(cfg.publish_rate_hz, 1e-3)
+        self._publish_period_s: float = 1.0 / max(cfg.effective_publish_rate_hz, 1e-3)
         # Full FFT frequency axis plus the cached crop to the displayed H I
         # window (indices + pre-built MHz list), refreshed on any layout change.
         self._rebuild_freq_axis()
@@ -224,6 +224,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             # Derived (echoed so the UI can show effective values).
             "integration_frames": int(cfg.integration_frames),
             "freq_resolution_hz": float(cfg.sample_rate_hz) / float(cfg.fft_size),
+            "effective_publish_rate_hz": float(cfg.effective_publish_rate_hz),
         }
 
     async def apply_processing(
@@ -293,11 +294,12 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             if publish_rate_hz <= 0:
                 raise ValueError("publish_rate_hz must be > 0")
             cfg.publish_rate_hz = float(publish_rate_hz)
-            self._publish_period_s = 1.0 / max(cfg.publish_rate_hz, 1e-3)
+            self._publish_period_s = 1.0 / max(cfg.effective_publish_rate_hz, 1e-3)
             changed = True
 
         if axis_changed:
             self._rebuild_freq_axis()
+            self._publish_period_s = 1.0 / max(cfg.effective_publish_rate_hz, 1e-3)
             self._baseline_power = None
             self._baseline_cfg_key = None
             self._delete_baseline_files()
@@ -450,8 +452,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
     # ── Integration reset ────────────────────────────────────────────────
 
     async def reset_integration(self) -> str:
-        """Restart the flowgraph to flush its rolling EMA back to empty."""
-        self._frames_seen = 0
+        """Restart the flowgraph to flush its rolling average back to empty."""
         return await self.reconnect()
 
     async def ensure_started(self) -> str:
@@ -518,7 +519,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
                 target = max(1, int(self._cfg.integration_frames))
                 # A running raw pipeline is already settled. After dropping an
                 # existing baseline, discard one full window while the restarted
-                # EMA settles before averaging the baseline window.
+                # rolling average fills before averaging the baseline window.
                 warm = (
                     not restarted
                     and self._proc is not None
@@ -657,6 +658,11 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
     # ── Subprocess management ────────────────────────────────────────────
 
+    def _begin_integration_epoch(self) -> None:
+        """Reset metadata that describes the current DSP rolling window."""
+        self._frames_seen = 0
+        self._latest = None
+
     def _pipeline_cmd(self) -> list[str]:
         """Build the live-pipeline launch command. Includes ``--baseline`` when
         an in-memory baseline has been captured for the current FFT layout."""
@@ -693,6 +699,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
 
     async def _spawn_subprocess_locked(self) -> None:
         cmd = self._pipeline_cmd()
+        self._begin_integration_epoch()
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -889,6 +896,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             if self._proc is not None:
                 return self._proc
             cmd = self._pipeline_cmd()
+            self._begin_integration_epoch()
             try:
                 proc = subprocess.Popen(
                     cmd,
@@ -904,10 +912,6 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
             self._proc = proc
             self._mode = "starting"
             self._fault_detail = None
-            # Clear the cached frame so the status reports latest_frame_age_s=null
-            # while the new subprocess warms up, preventing the frontend from
-            # firing another reconnect before the first frame arrives.
-            self._latest = None
             self._stderr_task = asyncio.create_task(
                 self._pipe_stderr(proc), name=f"{self.name}-stderr",
             )

@@ -220,12 +220,13 @@ export interface SpectrumProcessing {
   // Derived
   integration_frames: number;
   freq_resolution_hz: number;
+  effective_publish_rate_hz: number;
   // Only present in POST response
   restarted?: boolean;
   live_applied?: boolean;
 }
 
-export type SpectrumProcessingUpdate = Partial<Omit<SpectrumProcessing, 'integration_frames' | 'freq_resolution_hz' | 'restarted' | 'live_applied'>>;
+export type SpectrumProcessingUpdate = Partial<Omit<SpectrumProcessing, 'integration_frames' | 'freq_resolution_hz' | 'effective_publish_rate_hz' | 'restarted' | 'live_applied'>>;
 
 export interface RaDecTarget {
   ra_deg: number;

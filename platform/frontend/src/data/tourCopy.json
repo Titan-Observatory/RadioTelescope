@@ -126,9 +126,27 @@
       "setupTitle": "Set up baseline"
     },
     "intro": {
-      "body": "Radio receivers have their own \"shape\" - even with no signal at all, the spectrum from a real antenna isn't flat. Baseline correction stores a reference trace of that shape and divides it out of live data, so real features like the hydrogen line stand out instead of getting lost in the bandpass curve.",
-      "prompt": "We'll capture one by pointing somewhere quiet and freezing the trace.",
+      "lesson": [
+        {
+          "title": "Receivers have a shape",
+          "body": "Even pointed at empty sky with no signal at all, a real antenna's spectrum isn't flat. The receiver adds its own bandpass dome, and local interference (RFI) pokes through as sharp spikes."
+        },
+        {
+          "title": "Real signals hide in it",
+          "body": "Out on the sky, a faint feature like the 21 cm hydrogen line rides on top of that exact same shape - so weak it's nearly lost in the bandpass curve."
+        },
+        {
+          "title": "Divide out the shape",
+          "body": "Baseline correction stores a reference trace of the receiver's shape, then divides it out of the live data. The bandpass and the RFI spikes show up in both traces, so they cancel."
+        },
+        {
+          "title": "The line stands out",
+          "body": "What's left is the real sky: the hydrogen line standing on its own, instead of getting buried in the receiver's curve. Next we'll capture a baseline by pointing somewhere quiet and freezing the trace."
+        }
+      ],
       "buttons": {
+        "back": "Back",
+        "continue": "Continue",
         "capture": "Walk me through capturing one",
         "cancel": "Not right now"
       }

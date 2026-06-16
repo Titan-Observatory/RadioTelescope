@@ -124,10 +124,9 @@ class SDRConfig(BaseModel):
     gain_db: float | None = None
     lna_bias_tee_enabled: bool = False
     publish_rate_hz: float = Field(default=5.0, gt=0)
-    # EMA time constant for the displayed spectrum. The Python consumer
-    # blends each averaged spectrum from the GNU Radio flowgraph into a
-    # rolling exponential window of this length. Display responsiveness
-    # (settling time) ≈ this value; per-bin σ ≈ 1/√(integration_seconds × B).
+    # Rolling average length for the displayed spectrum. The GNU Radio
+    # flowgraph keeps this much wall-clock history while still publishing at
+    # the live chart cadence. Per-bin σ ≈ 1/√(integration_seconds × B).
     integration_seconds: float = Field(default=15.0, gt=0)
     # Path to the IPC socket the GNU Radio subprocess publishes spectra on.
     # Defaults to the per-process tmp socket; override in containerised
@@ -164,13 +163,28 @@ class SDRConfig(BaseModel):
     display_half_width_mhz: float = Field(default=0.75, gt=0)
 
     @property
+    def raw_fft_rate_hz(self) -> float:
+        """Rate of raw FFT vectors before publish-rate decimation."""
+        return float(self.sample_rate_hz) / float(self.fft_size)
+
+    @property
+    def pipeline_integrate_k(self) -> int:
+        """Raw FFT vectors averaged into each published spectrum."""
+        return max(1, round(self.raw_fft_rate_hz / float(self.publish_rate_hz)))
+
+    @property
+    def effective_publish_rate_hz(self) -> float:
+        """Actual spectrum output rate after integer FFT decimation."""
+        return self.raw_fft_rate_hz / float(self.pipeline_integrate_k)
+
+    @property
     def integration_frames(self) -> int:
-        """Number of published spectra (at publish_rate_hz) inside one EMA window.
+        """Number of published spectra inside one rolling integration window.
 
         Preserved as a derived field so the existing JSON frame shape and
         `/api/spectrum/status` payload continue to carry the same key.
         """
-        return max(1, round(self.integration_seconds * self.publish_rate_hz))
+        return max(1, round(self.integration_seconds * self.effective_publish_rate_hz))
 
     @property
     def device_string(self) -> str:
