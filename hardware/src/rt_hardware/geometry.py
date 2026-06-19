@@ -2,9 +2,10 @@
 
 These live above the API layer so other backends (scripts, planners, tests)
 can use them without importing FastAPI. The matching TypeScript copies in
-``frontend/src/lib/altaz.ts`` are kept manually in sync — there is no
+``platform/frontend/src/lib/astro.ts`` are kept manually in sync — there is no
 client-side route to invoke this code, and inlined feedback during the user's
-click on the sky map needs synchronous local execution.
+click on the sky map needs synchronous local execution. The TS side is pinned
+by a golden-vector test (``astro.golden.test.ts``) to catch drift.
 """
 from __future__ import annotations
 

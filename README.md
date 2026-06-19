@@ -51,16 +51,72 @@ For development without connected telescope hardware:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
-## Local Development
+## Hardware Service Setup
 
-Run the hardware service:
+The hardware service usually runs on the machine attached to the telescope,
+such as a Raspberry Pi or small Linux host. It controls the mount, receiver,
+and camera, then exposes a local API for the platform service.
+
+Install the OS packages needed by the SDR pipeline:
+
+```bash
+sudo apt update
+sudo apt install \
+  gnuradio gr-soapy python3-soapysdr python3-zmq \
+  soapysdr-tools soapysdr-module-airspy soapysdr-module-rtlsdr \
+  airspy rtl-sdr
+```
+
+Install and configure the service:
 
 ```bash
 cd hardware
+python -m venv .venv --system-site-packages
+source .venv/bin/activate
 pip install -e ".[dev]"
 cp config.example.toml config.toml
+```
+
+Edit `config.toml` for your hardware:
+
+- Set the RoboClaw serial port, usually `/dev/ttyACM0` or `/dev/ttyUSB0`.
+- Set mount encoder scale and zero offsets before relying on goto commands.
+- Set observer location and dish parameters.
+- Choose the SDR driver, gain, sample rate, and bias tee setting.
+- Choose the camera device if a finder camera is connected.
+
+Give the runtime user access to the serial port:
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+Log out and back in after changing groups.
+
+Set a writable state directory. The service persists the spectrum baseline and
+the GOES product index there. It defaults to the current directory, so baseline
+capture and product indexing fail with read-only-filesystem errors if you run
+from a read-only checkout:
+
+```bash
+export RT_STATE_DIR=/var/lib/radiotelescope   # any writable path
+mkdir -p "$RT_STATE_DIR"
+```
+
+Then start the service:
+
+```bash
 rt-hardware -c config.toml
 ```
+
+By default it listens on port `8001`. Keep that port private to the telescope
+network and point the platform's `hardware_url` at it.
+
+For a production install, run it under systemd — see
+`infra/systemd/rt-hardware.service`, which sets `RT_STATE_DIR` and the required
+serial/USB groups for you.
+
+## Local Development
 
 Run the platform service:
 
@@ -71,7 +127,7 @@ cp config.example.toml config.toml
 rt-platform -c config.toml
 ```
 
-Run the frontend dev server:
+In another terminal, run the frontend dev server:
 
 ```bash
 cd platform/frontend

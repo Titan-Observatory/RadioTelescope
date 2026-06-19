@@ -103,46 +103,14 @@ async def _forward(
     )
 
 
-# ─── Read-only endpoints (no queue gate) ──────────────────────────────────
-
-
-@router.get("/api/health", dependencies=[Depends(require_active_queue_session)])
-async def health(request: Request) -> JSONResponse:
-    return await _forward("GET", request, "/api/health", timeout_s=3.0)
-
-
-@router.get("/api/roboclaw/status", dependencies=[Depends(require_active_queue_session)])
-async def status(request: Request) -> JSONResponse:
-    return await _forward("GET", request, "/api/roboclaw/status", timeout_s=3.0)
-
-
-@router.get("/api/roboclaw/commands", dependencies=[Depends(require_active_queue_session)])
-async def commands(request: Request) -> JSONResponse:
-    return await _forward("GET", request, "/api/roboclaw/commands", timeout_s=3.0)
-
-
-@router.get("/api/telescope/goto", dependencies=[Depends(require_active_queue_session)])
-async def goto_info(request: Request) -> JSONResponse:
-    return await _forward("GET", request, "/api/telescope/goto", timeout_s=3.0)
-
-
-@router.get("/api/telescope/config", dependencies=[Depends(require_active_queue_session)])
-async def telescope_config(request: Request) -> JSONResponse:
-    return await _forward("GET", request, "/api/telescope/config", timeout_s=3.0)
-
-
-# ─── Control-gated endpoints ──────────────────────────────────────────────
+# ─── Control-gated endpoints (audited / param'd — see table below for the
+#     pure pass-throughs) ──────────────────────────────────────────────────
 
 
 @router.post("/api/roboclaw/commands/{command_id}", dependencies=[Depends(require_control)])
 async def execute_command(command_id: str, request: Request) -> JSONResponse:
     body = await _safe_json(request)
     return await _forward("POST", request, f"/api/roboclaw/commands/{command_id}", json_body=body)
-
-
-@router.post("/api/roboclaw/stop", dependencies=[Depends(require_control)])
-async def stop(request: Request) -> JSONResponse:
-    return await _forward("POST", request, "/api/roboclaw/stop")
 
 
 @router.post("/api/telescope/jog", dependencies=[Depends(require_control)])
@@ -163,12 +131,6 @@ async def jog(request: Request) -> JSONResponse:
             reason=_reason_from(payload, resp.status_code, accepted and resp.status_code < 400),
         )
     return resp
-
-
-@router.post("/api/telescope/jog/stop", dependencies=[Depends(require_control)])
-async def stop_jog(request: Request) -> JSONResponse:
-    body = await _safe_json(request)
-    return await _forward("POST", request, "/api/telescope/jog/stop", json_body=body)
 
 
 @router.post("/api/telescope/goto", dependencies=[Depends(require_control)])
@@ -201,34 +163,7 @@ async def goto_radec(request: Request) -> JSONResponse:
     return resp
 
 
-@router.post("/api/telescope/sync", dependencies=[Depends(require_lan_admin)])
-async def sync_alt_az(request: Request) -> JSONResponse:
-    body = await _safe_json(request)
-    return await _forward("POST", request, "/api/telescope/sync", json_body=body)
-
-
-@router.post("/api/telescope/home/elevation", dependencies=[Depends(require_lan_admin)])
-async def home_elevation(request: Request) -> JSONResponse:
-    body = await _safe_json(request)
-    return await _forward("POST", request, "/api/telescope/home/elevation", json_body=body, timeout_s=120.0)
-
-
-@router.post("/api/telescope/home/azimuth", dependencies=[Depends(require_lan_admin)])
-async def home_azimuth(request: Request) -> JSONResponse:
-    return await _forward("POST", request, "/api/telescope/home/azimuth")
-
-
-@router.post("/api/telescope/home/altitude", dependencies=[Depends(require_lan_admin)])
-async def home_altitude(request: Request) -> JSONResponse:
-    return await _forward("POST", request, "/api/telescope/home/altitude")
-
-
 # ─── PID admin proxy (LAN-only) ───────────────────────────────────────────
-
-
-@router.get("/api/admin/pid", dependencies=[Depends(require_lan_admin)])
-async def read_pid(request: Request) -> JSONResponse:
-    return await _forward("GET", request, "/api/admin/pid", timeout_s=5.0)
 
 
 @router.post("/api/admin/pid", dependencies=[Depends(require_lan_admin)])
@@ -253,6 +188,28 @@ async def save_pid_to_nvm(request: Request) -> JSONResponse:
         reason=_reason_from(_payload(resp), resp.status_code, resp.status_code < 400),
     )
     return resp
+
+
+# ─── Straight pass-throughs ───────────────────────────────────────────────
+# No audit, no body inspection — just forward, so they live in a table rather
+# than a function each. Reads use a tight 3 s timeout; control/admin writes
+# keep this proxy's generous 10 s default (the hardware-side jog watchdog is
+# latency-sensitive), except homing which physically sweeps the axis. Rows that
+# forward the request body mirror the old `_safe_json` ({} when absent/!JSON).
+_proxy.register_proxy_routes(router, [
+    _proxy.ProxyRoute("GET", "/api/health", require_active_queue_session, timeout_s=3.0),
+    _proxy.ProxyRoute("GET", "/api/roboclaw/status", require_active_queue_session, timeout_s=3.0),
+    _proxy.ProxyRoute("GET", "/api/roboclaw/commands", require_active_queue_session, timeout_s=3.0),
+    _proxy.ProxyRoute("GET", "/api/telescope/goto", require_active_queue_session, timeout_s=3.0),
+    _proxy.ProxyRoute("GET", "/api/telescope/config", require_active_queue_session, timeout_s=3.0),
+    _proxy.ProxyRoute("POST", "/api/roboclaw/stop", require_control, timeout_s=10.0),
+    _proxy.ProxyRoute("POST", "/api/telescope/jog/stop", require_control, timeout_s=10.0, forward_body=True),
+    _proxy.ProxyRoute("POST", "/api/telescope/sync", require_lan_admin, timeout_s=10.0, forward_body=True),
+    _proxy.ProxyRoute("POST", "/api/telescope/home/elevation", require_lan_admin, timeout_s=120.0, forward_body=True),
+    _proxy.ProxyRoute("POST", "/api/telescope/home/azimuth", require_lan_admin, timeout_s=10.0),
+    _proxy.ProxyRoute("POST", "/api/telescope/home/altitude", require_lan_admin, timeout_s=10.0),
+    _proxy.ProxyRoute("GET", "/api/admin/pid", require_lan_admin, timeout_s=5.0),
+])
 
 
 # ─── WebSocket bridge ─────────────────────────────────────────────────────

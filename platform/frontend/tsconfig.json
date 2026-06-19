@@ -20,5 +20,7 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "_comment": "Test files run via Node's native TS type-stripping (node --test) and import node: builtins; @types/node is not a frontend dependency, so keep *.test.ts out of the app typecheck/build.",
+  "exclude": ["src/**/*.test.ts"]
 }

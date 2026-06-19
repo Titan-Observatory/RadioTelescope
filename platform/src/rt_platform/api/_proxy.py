@@ -13,9 +13,12 @@ All four proxy routers (``routes_motor``, ``routes_spectrum``, ``routes_goes``,
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+from dataclasses import dataclass
+from typing import Callable
 
-from fastapi import HTTPException, Request, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 
 from rt_platform.api.dependencies import (
@@ -63,6 +66,66 @@ async def proxy_json(
     return JSONResponse(body, status_code=r.status_code)
 
 
+@dataclass(frozen=True)
+class ProxyRoute:
+    """One straight pass-through endpoint, declared instead of hand-written.
+
+    Captures everything a boilerplate forward needs — HTTP method, the upstream
+    path (identical on both sides), the auth dependency, the timeout, whether to
+    forward the request's JSON body, and the error label. Endpoints with real
+    logic (audit logging, status fallback, path/query params, binary or
+    streaming bodies) stay as explicit functions; only the pure forwards belong
+    in a table.
+    """
+
+    method: str
+    path: str
+    auth: Callable
+    timeout_s: float = 5.0
+    forward_body: bool = False
+    label: str = "Hardware"
+
+
+def _proxy_endpoint_name(route: ProxyRoute) -> str:
+    slug = "".join(c if c.isalnum() else "_" for c in route.path).strip("_")
+    return f"proxy_{route.method.lower()}_{slug}"
+
+
+def _make_proxy_endpoint(route: ProxyRoute):
+    async def endpoint(request: Request) -> JSONResponse:
+        body = None
+        if route.forward_body:
+            # Match the hand-written forwards: a missing/!JSON body becomes {}.
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+        return await proxy_json(
+            route.method, request, route.path,
+            json_body=body, timeout_s=route.timeout_s, label=route.label,
+        )
+
+    endpoint.__name__ = _proxy_endpoint_name(route)
+    return endpoint
+
+
+def register_proxy_routes(router: APIRouter, routes: "list[ProxyRoute]") -> None:
+    """Register every :class:`ProxyRoute` as a pass-through endpoint on ``router``.
+
+    Adding a forwarded endpoint is then a one-line table entry rather than a
+    new function — and the method/path/auth/timeout are visible at a glance in
+    one place instead of scattered across decorators.
+    """
+    for route in routes:
+        router.add_api_route(
+            route.path,
+            _make_proxy_endpoint(route),
+            methods=[route.method],
+            dependencies=[Depends(route.auth)],
+            name=_proxy_endpoint_name(route),
+        )
+
+
 async def status_with_fallback(
     request: Request,
     path: str,
@@ -108,6 +171,61 @@ async def binary_passthrough(
     )
 
 
+async def _drain_until_disconnect(ws: WebSocket) -> None:
+    """Block until the browser closes a send-only websocket.
+
+    These bridge sockets only flow server→browser, so the browser never sends.
+    The only thing a read yields is the disconnect (raised as an exception); a
+    stray text/ping frame just loops. Racing this against frame delivery lets us
+    notice a closed tab promptly instead of on the next publish — which, for a
+    quiet stream, could be many seconds away.
+    """
+    while True:
+        await ws.receive_text()
+
+
+async def pump_bridge_to_websocket(ws: WebSocket, bridge, *, frame_name: str = "bridge-ws") -> None:
+    """Fan a bridge's frames out to one browser WS until either side closes.
+
+    Subscribes to ``bridge``, relays every published frame as JSON, and always
+    unsubscribes on exit. Each frame wait is raced against a background read of
+    the socket (:func:`_drain_until_disconnect`) so a browser disconnect is
+    detected immediately rather than only when the next frame arrives. This is
+    the single implementation shared by every ``/ws/*`` bridge route.
+    """
+    q = bridge.subscribe()
+    disconnect_task = asyncio.create_task(
+        _drain_until_disconnect(ws), name=f"{frame_name}-disconnect",
+    )
+    frame_task: asyncio.Task | None = None
+    try:
+        while True:
+            frame_task = asyncio.create_task(q.get(), name=f"{frame_name}-frame")
+            done, pending = await asyncio.wait(
+                {frame_task, disconnect_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if disconnect_task in done:
+                try:
+                    disconnect_task.result()
+                except (WebSocketDisconnect, RuntimeError):
+                    pass
+                for task in pending:
+                    task.cancel()
+                break
+            frame = frame_task.result()
+            frame_task = None
+            await ws.send_json(frame)
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+    finally:
+        if frame_task is not None and not frame_task.done():
+            frame_task.cancel()
+        if not disconnect_task.done():
+            disconnect_task.cancel()
+        bridge.unsubscribe(q)
+
+
 async def reject_unauthorized_ws(ws: WebSocket) -> bool:
     """Close a browser WS that lacks an active queue session. Returns True if closed.
 
@@ -126,7 +244,10 @@ __all__ = (
     "hardware",
     "ws_base_url",
     "proxy_json",
+    "ProxyRoute",
+    "register_proxy_routes",
     "status_with_fallback",
     "binary_passthrough",
+    "pump_bridge_to_websocket",
     "reject_unauthorized_ws",
 )

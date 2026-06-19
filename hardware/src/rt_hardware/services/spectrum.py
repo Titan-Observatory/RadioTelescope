@@ -26,6 +26,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Iterable
@@ -57,6 +58,30 @@ POWER_FLOOR = 1e-12
 HYDROGEN_LINE_MHZ = 1420.4058
 
 logger = logging.getLogger(__name__)
+
+
+def _pipeline_env() -> dict[str, str]:
+    """Environment for the GNU Radio subprocess.
+
+    On startup GNU Radio touches its per-user prefs at ``$HOME/.gnuradio/
+    config.conf`` and aborts hard (``std::filesystem_error`` → ``terminate``)
+    when that path isn't writable — which it isn't when rt-hardware runs from a
+    read-only checkout. Those prefs (VOLK overrides, control-port/log settings)
+    are throwaway: the pipeline runs fine on defaults, GNU Radio just insists on
+    a writable user-config dir. Point ``GR_PREFS_PATH`` at an ephemeral temp dir
+    so this works with zero config — ``/tmp`` is writable even when ``$HOME`` and
+    the checkout are read-only (and per-service + auto-cleaned under systemd's
+    ``PrivateTmp``). Deliberately not ``RT_STATE_DIR``: that's for persisted
+    state (baseline, GOES index), and this data is disposable.
+    """
+    env = dict(os.environ)
+    prefs_dir = Path(tempfile.gettempdir()) / "rt-hardware-gnuradio"
+    try:
+        prefs_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        logger.warning("Could not create GNU Radio prefs dir %s", prefs_dir)
+    env["GR_PREFS_PATH"] = str(prefs_dir)
+    return env
 
 
 class SpectrumFrame(dict):
@@ -705,6 +730,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
+                env=_pipeline_env(),
                 # Put the child in its own process group so a SIGTERM to the
                 # parent doesn't propagate before we have a chance to drain
                 # the ZMQ socket cleanly.
@@ -902,6 +928,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
                     cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
+                    env=_pipeline_env(),
                     start_new_session=True,
                 )
             except FileNotFoundError as exc:
