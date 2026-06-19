@@ -63,24 +63,27 @@ logger = logging.getLogger(__name__)
 def _pipeline_env() -> dict[str, str]:
     """Environment for the GNU Radio subprocess.
 
-    On startup GNU Radio touches its per-user prefs at ``$HOME/.gnuradio/
-    config.conf`` and aborts hard (``std::filesystem_error`` → ``terminate``)
-    when that path isn't writable — which it isn't when rt-hardware runs from a
-    read-only checkout. Those prefs (VOLK overrides, control-port/log settings)
-    are throwaway: the pipeline runs fine on defaults, GNU Radio just insists on
-    a writable user-config dir. Point ``GR_PREFS_PATH`` at an ephemeral temp dir
-    so this works with zero config — ``/tmp`` is writable even when ``$HOME`` and
+    On startup GNU Radio scatters per-user scratch under ``$HOME`` — prefs
+    (``.gnuradio/config.conf``), the FFTW wisdom cache and its lockfile
+    (``.gr_fftw_wisdom``), VOLK's profile (``.volk``) — and aborts hard
+    (``std::filesystem_error`` / ``RuntimeError`` → ``terminate``) when ``$HOME``
+    isn't writable, which it isn't when rt-hardware runs from a read-only checkout
+    or a locked-down home. Per-feature overrides (``GR_PREFS_PATH``) only move one
+    of these; the FFTW wisdom path has no env override and is hardcoded to
+    ``$HOME``. None of it is worth persisting — the pipeline regenerates it each
+    boot — so redirect ``$HOME`` itself at an ephemeral temp dir, covering the
+    whole class with zero config. ``/tmp`` is writable even when the real home and
     the checkout are read-only (and per-service + auto-cleaned under systemd's
-    ``PrivateTmp``). Deliberately not ``RT_STATE_DIR``: that's for persisted
-    state (baseline, GOES index), and this data is disposable.
+    ``PrivateTmp``). Deliberately not ``RT_STATE_DIR``: that's for persisted state
+    (baseline, GOES index), and this is all disposable.
     """
     env = dict(os.environ)
-    prefs_dir = Path(tempfile.gettempdir()) / "rt-hardware-gnuradio"
+    home = Path(tempfile.gettempdir()) / "rt-hardware-home"
     try:
-        prefs_dir.mkdir(parents=True, exist_ok=True)
+        home.mkdir(parents=True, exist_ok=True)
     except Exception:
-        logger.warning("Could not create GNU Radio prefs dir %s", prefs_dir)
-    env["GR_PREFS_PATH"] = str(prefs_dir)
+        logger.warning("Could not create GNU Radio scratch home %s", home)
+    env["HOME"] = str(home)
     return env
 
 

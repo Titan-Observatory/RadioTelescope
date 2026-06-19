@@ -91,19 +91,7 @@ Give the runtime user access to the serial port:
 sudo usermod -aG dialout $USER
 ```
 
-Log out and back in after changing groups.
-
-Set a writable state directory. The service persists the spectrum baseline and
-the GOES product index there. It defaults to the current directory, so baseline
-capture and product indexing fail with read-only-filesystem errors if you run
-from a read-only checkout:
-
-```bash
-export RT_STATE_DIR=/var/lib/radiotelescope   # any writable path
-mkdir -p "$RT_STATE_DIR"
-```
-
-Then start the service:
+Log out and back in after changing groups. Then start the service:
 
 ```bash
 rt-hardware -c config.toml
