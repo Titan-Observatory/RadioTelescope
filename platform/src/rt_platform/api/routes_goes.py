@@ -14,9 +14,7 @@ Shared forwarding plumbing lives in ``_proxy`` — see that module.
 """
 from __future__ import annotations
 
-import asyncio
-
-from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Request, WebSocket
 from fastapi.responses import JSONResponse, Response
 
 from rt_platform.api import _proxy
@@ -51,12 +49,6 @@ async def goes_status(request: Request) -> JSONResponse:
     )
 
 
-@router.post("/api/goes/reconnect", dependencies=[Depends(require_control)])
-async def goes_reconnect(request: Request) -> JSONResponse:
-    # Bouncing the demod pipeline takes a few seconds; allow for it.
-    return await _proxy.proxy_json("POST", request, "/api/goes/reconnect", timeout_s=15.0, label="GOES")
-
-
 @router.get("/api/goes/products", dependencies=[Depends(require_active_queue_session)])
 async def list_products(request: Request) -> JSONResponse:
     limit = request.query_params.get("limit", "60")
@@ -81,9 +73,12 @@ async def product_file(product_id: str, request: Request) -> Response:
     )
 
 
-@router.delete("/api/goes/products", dependencies=[Depends(require_control)])
-async def clear_products(request: Request) -> JSONResponse:
-    return await _proxy.proxy_json("DELETE", request, "/api/goes/products", label="GOES")
+# Straight pass-throughs — no params, no audit, no fallback. See _proxy.ProxyRoute.
+_proxy.register_proxy_routes(router, [
+    # Bouncing the demod pipeline takes a few seconds; allow for it.
+    _proxy.ProxyRoute("POST", "/api/goes/reconnect", require_control, timeout_s=15.0, label="GOES"),
+    _proxy.ProxyRoute("DELETE", "/api/goes/products", require_control, label="GOES"),
+])
 
 
 @router.websocket("/ws/goes")
@@ -96,12 +91,4 @@ async def goes_ws(ws: WebSocket):
     if bridge is None:
         await ws.close(code=1011)
         return
-    q = bridge.subscribe()
-    try:
-        while True:
-            frame = await q.get()
-            await ws.send_json(frame)
-    except (WebSocketDisconnect, asyncio.CancelledError):
-        pass
-    finally:
-        bridge.unsubscribe(q)
+    await _proxy.pump_bridge_to_websocket(ws, bridge, frame_name="goes-ws")

@@ -1,0 +1,59 @@
+{
+  "julian_day_t0": 2461209.6458333335,
+  "gmst_j2000": 280.46061837,
+  "gmst_t0": 318.89333017682657,
+  "lst_t0": 244.39333017682657,
+  "normalize_deg": [
+    350,
+    10,
+    0.5
+  ],
+  "unwrap_deg": [
+    -10,
+    365
+  ],
+  "radec_to_altaz_crab": {
+    "altitude_deg": -25.441060925730724,
+    "azimuth_deg": 340.22652797352106
+  },
+  "altaz_to_radec": {
+    "ra_deg": 274.4782415192012,
+    "dec_deg": 4.0999891881109605
+  },
+  "galactic_forward_crab": {
+    "l_deg": 184.5574601021567,
+    "b_deg": -5.784346448276215
+  },
+  "galactic_inverse": {
+    "ra_deg": 83.63277417464792,
+    "dec_deg": 22.023095849144088
+  },
+  "sun": {
+    "ra_deg": 87.03552827972635,
+    "dec_deg": 23.407149638351516
+  },
+  "moon": {
+    "ra_deg": 135.97986548037375,
+    "dec_deg": 19.030199936695134
+  },
+  "position_angle": 41.80326588307696,
+  "angular_separation": 6.805610075160859,
+  "moon_illumination": {
+    "fraction": 0.8496667546589991,
+    "waxing": true
+  },
+  "inside_polygon_true": true,
+  "inside_polygon_false": false,
+  "validate_clean": {
+    "valid": true,
+    "reason": null
+  },
+  "validate_too_high": {
+    "valid": false,
+    "reason": "Pointing is outside the available sky region."
+  },
+  "validate_outside_polygon": {
+    "valid": false,
+    "reason": "Pointing is outside the configured pointing limits."
+  }
+}

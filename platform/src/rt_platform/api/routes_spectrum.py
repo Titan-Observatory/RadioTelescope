@@ -11,10 +11,9 @@ network layer (Docker internal network, firewall).
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.responses import JSONResponse
 from rt_platform.api import _proxy
 from rt_platform.api.dependencies import (
@@ -25,12 +24,6 @@ from rt_platform.api.dependencies import (
 
 logger = logging.getLogger("radiotelescope.spectrum_proxy")
 router = APIRouter(tags=["spectrum-proxy"])
-
-
-async def _wait_for_ws_disconnect(ws: WebSocket) -> None:
-    """Block until the browser closes a send-only websocket."""
-    while True:
-        await ws.receive_text()
 
 
 def _bridge(request: Request):
@@ -57,34 +50,18 @@ async def spectrum_status(request: Request) -> JSONResponse:
     )
 
 
-@router.post("/api/spectrum/baseline", dependencies=[Depends(require_control)])
-async def capture_baseline(request: Request) -> JSONResponse:
-    # Capture integrates a full window (integration_seconds) of the live stream
-    # then bounces the flowgraph to apply the baseline, so give the upstream
-    # generous headroom before declaring a 502.
-    return await _proxy.proxy_json("POST", request, "/api/spectrum/baseline", timeout_s=90.0, label="Spectrum")
-
-
-@router.delete("/api/spectrum/baseline", dependencies=[Depends(require_control)])
-async def clear_baseline(request: Request) -> JSONResponse:
-    # Clearing respawns the flowgraph without the baseline; allow for the bounce.
-    return await _proxy.proxy_json("DELETE", request, "/api/spectrum/baseline", timeout_s=15.0, label="Spectrum")
-
-
-@router.post("/api/spectrum/reset", dependencies=[Depends(require_control)])
-async def reset_integration(request: Request) -> JSONResponse:
-    # Reset bounces the flowgraph to flush the rolling integration.
-    return await _proxy.proxy_json("POST", request, "/api/spectrum/reset", timeout_s=15.0, label="Spectrum")
-
-
-@router.post("/api/spectrum/reconnect", dependencies=[Depends(require_control)])
-async def reconnect_sdr(request: Request) -> JSONResponse:
-    return await _proxy.proxy_json("POST", request, "/api/spectrum/reconnect", label="Spectrum")
-
-
-@router.get("/api/admin/spectrum/processing", dependencies=[Depends(require_lan_admin)])
-async def get_spectrum_processing(request: Request) -> JSONResponse:
-    return await _proxy.proxy_json("GET", request, "/api/admin/spectrum/processing", timeout_s=3.0, label="Spectrum")
+# Straight pass-throughs — no params, no audit, no fallback. See _proxy.ProxyRoute.
+# Mutations that bounce the GNU Radio flowgraph carry generous timeouts so the
+# client doesn't see a 502 while the subprocess restarts.
+_proxy.register_proxy_routes(router, [
+    # Capture integrates a full window then bounces the flowgraph to apply it.
+    _proxy.ProxyRoute("POST", "/api/spectrum/baseline", require_control, timeout_s=90.0, label="Spectrum"),
+    # Clearing / resetting both respawn the flowgraph; allow for the bounce.
+    _proxy.ProxyRoute("DELETE", "/api/spectrum/baseline", require_control, timeout_s=15.0, label="Spectrum"),
+    _proxy.ProxyRoute("POST", "/api/spectrum/reset", require_control, timeout_s=15.0, label="Spectrum"),
+    _proxy.ProxyRoute("POST", "/api/spectrum/reconnect", require_control, label="Spectrum"),
+    _proxy.ProxyRoute("GET", "/api/admin/spectrum/processing", require_lan_admin, timeout_s=3.0, label="Spectrum"),
+])
 
 
 @router.post("/api/admin/spectrum/processing", dependencies=[Depends(require_lan_admin)])
@@ -124,34 +101,4 @@ async def spectrum_ws(ws: WebSocket):
             await ws.close(code=1011, reason="Spectrum reset failed")
             return
         bridge.clear_latest()
-    q = bridge.subscribe()
-    disconnect_task = asyncio.create_task(
-        _wait_for_ws_disconnect(ws), name="spectrum-ws-disconnect",
-    )
-    frame_task: asyncio.Task | None = None
-    try:
-        while True:
-            frame_task = asyncio.create_task(q.get(), name="spectrum-ws-frame")
-            done, pending = await asyncio.wait(
-                {frame_task, disconnect_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if disconnect_task in done:
-                try:
-                    disconnect_task.result()
-                except (WebSocketDisconnect, RuntimeError):
-                    pass
-                for task in pending:
-                    task.cancel()
-                break
-            frame = frame_task.result()
-            frame_task = None
-            await ws.send_json(frame)
-    except (WebSocketDisconnect, asyncio.CancelledError):
-        pass
-    finally:
-        if frame_task is not None and not frame_task.done():
-            frame_task.cancel()
-        if not disconnect_task.done():
-            disconnect_task.cancel()
-        bridge.unsubscribe(q)
+    await _proxy.pump_bridge_to_websocket(ws, bridge, frame_name="spectrum-ws")

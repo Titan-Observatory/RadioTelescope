@@ -7,6 +7,14 @@ each subscriber's queue bounded, drop the *oldest* entry when the queue
 is full so slow consumers can't stall fast producers — so it lives here
 once instead of being copy-pasted into every service.
 """
+# ── VENDORED MIRROR ───────────────────────────────────────────────────────
+# This module is intentionally duplicated byte-for-byte in both service
+# packages (rt_hardware.services._pubsub and rt_platform.services._pubsub).
+# The two services deploy to different machines with separate Docker build
+# contexts, so neither can import from a shared third package. A drift guard
+# keeps the copies identical: platform/tests/test_shared_sources.py fails if
+# they diverge. Edit one, then copy it verbatim to the other.
+# ──────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
 import asyncio

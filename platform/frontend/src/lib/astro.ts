@@ -1,8 +1,11 @@
 // Shared astronomy + coordinate helpers used by the sky map and spectrum
 // panels. The Python backend has its own (higher-precision) versions in
-// `radiotelescope.pointing` / `radiotelescope.geometry`; the implementations
+// `rt_hardware.pointing` / `rt_hardware.geometry`; the implementations
 // here are deliberately the low-precision ones (~1° accuracy) appropriate
 // for synchronous client-side feedback while the user drags the map.
+//
+// These functions are frozen by a golden-vector regression test
+// (astro.golden.test.ts) so a hand-edit can't silently change their output.
 
 import type { AltAzPoint, RaDecTarget, TelescopeConfig } from '../types';
 

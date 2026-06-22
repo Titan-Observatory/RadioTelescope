@@ -26,6 +26,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Iterable
@@ -57,6 +58,33 @@ POWER_FLOOR = 1e-12
 HYDROGEN_LINE_MHZ = 1420.4058
 
 logger = logging.getLogger(__name__)
+
+
+def _pipeline_env() -> dict[str, str]:
+    """Environment for the GNU Radio subprocess.
+
+    On startup GNU Radio scatters per-user scratch under ``$HOME`` — prefs
+    (``.gnuradio/config.conf``), the FFTW wisdom cache and its lockfile
+    (``.gr_fftw_wisdom``), VOLK's profile (``.volk``) — and aborts hard
+    (``std::filesystem_error`` / ``RuntimeError`` → ``terminate``) when ``$HOME``
+    isn't writable, which it isn't when rt-hardware runs from a read-only checkout
+    or a locked-down home. Per-feature overrides (``GR_PREFS_PATH``) only move one
+    of these; the FFTW wisdom path has no env override and is hardcoded to
+    ``$HOME``. None of it is worth persisting — the pipeline regenerates it each
+    boot — so redirect ``$HOME`` itself at an ephemeral temp dir, covering the
+    whole class with zero config. ``/tmp`` is writable even when the real home and
+    the checkout are read-only (and per-service + auto-cleaned under systemd's
+    ``PrivateTmp``). Deliberately not ``RT_STATE_DIR``: that's for persisted state
+    (baseline, GOES index), and this is all disposable.
+    """
+    env = dict(os.environ)
+    home = Path(tempfile.gettempdir()) / "rt-hardware-home"
+    try:
+        home.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        logger.warning("Could not create GNU Radio scratch home %s", home)
+    env["HOME"] = str(home)
+    return env
 
 
 class SpectrumFrame(dict):
@@ -705,6 +733,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
+                env=_pipeline_env(),
                 # Put the child in its own process group so a SIGTERM to the
                 # parent doesn't propagate before we have a chance to drain
                 # the ZMQ socket cleanly.
@@ -902,6 +931,7 @@ class SpectrumService(Broadcaster[SpectrumFrame]):
                     cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
+                    env=_pipeline_env(),
                     start_new_session=True,
                 )
             except FileNotFoundError as exc:
