@@ -429,7 +429,7 @@ export function SkyMap({ telemetry, config, onNotice, onTarget, onClearTarget, p
       {galacticRestrict && (
         <div className="skymap-galactic-hint" role="dialog" aria-label={tourCopy.baselineWizard.pick.title}>
           <p className="skymap-galactic-hint-text">
-            Slew the dish onto an empty patch — <strong>clear of the shaded Milky Way band, the Sun, and the pointing limits</strong>. Click the map to set a target, then Slew there.
+            Point the dish at an empty patch of sky, <strong>avoiding the Milky Way and the Sun</strong> so that the baseline is clean.
           </p>
           <div className="skymap-galactic-hint-actions">
             <button

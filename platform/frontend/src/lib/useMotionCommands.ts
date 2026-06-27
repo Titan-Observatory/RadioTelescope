@@ -103,8 +103,8 @@ export function useMotionCommands(
   }, []);
 
   const startObservationGuide = useCallback(() => {
-    startGuidedObservation(gotoRaDec);
-  }, [gotoRaDec]);
+    startGuidedObservation();
+  }, []);
 
   return { runCommand, jog, stopJog, gotoAltAz, gotoRaDec, homeElevation, stopMotion, startObservationGuide };
 }

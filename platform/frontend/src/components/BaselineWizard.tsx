@@ -1,20 +1,38 @@
 import * as Dialog from '@radix-ui/react-dialog';
+import * as echarts from 'echarts/core';
+import { LineChart } from 'echarts/charts';
+import { GridComponent } from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
 import { Camera, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { track } from '../analytics';
 import tourCopy from '../data/tourCopy.json';
-import { HYDROGEN_LINE_MHZ } from '../lib/astro';
 import {
+  DEFAULT_Y_RANGE,
   TRACE_BOXCAR_BINS,
-  bottomHalfYRange,
   boxcarSmooth,
   displayWindow,
   zeroBaselineSpectrum,
   zeroBaselineYRange,
 } from '../lib/spectrum';
+import {
+  NORMAL_TRACE_COLOR,
+  baseOption,
+  round2,
+  traceStyle,
+} from '../lib/spectrumChartOptions';
+
+// The capture-step preview reuses the main SpectrumPanel's ECharts config, so
+// only register the pieces that chart needs (no MarkArea/Tooltip here). These
+// registrations are global and idempotent; the panel registers a superset.
+echarts.use([LineChart, GridComponent, CanvasRenderer]);
 
 const FORCE_HYDROGEN_SURVEY_EVENT = 'rt-force-hydrogen-survey';
+// Fired whenever the wizard closes, carrying whether a baseline was actually
+// captured in this session. The guided observation hands the capture flow off
+// to this wizard and listens for this to resume — see guidedObservation.ts.
+const BASELINE_WIZARD_CLOSED_EVENT = 'rt-baseline-wizard-closed';
 // The "pick a spot" Cancel / confirm buttons live on the sky map's in-map hint
 // banner now (see SkyMap/index.tsx). They reach this component via these window
 // events rather than a shared callback.
@@ -74,83 +92,83 @@ type Step = 'intro' | 'pick' | 'capture' | 'done';
 
 // A compact live trace of the spectrum being integrated into the baseline,
 // shown on the capture step. The trace only appears once capture is `active`
-// (the user has triggered it) — before that the box stays empty so they watch
+// (the user has triggered it) — before that the chart stays empty so they watch
 // the integration build from scratch rather than seeing the pre-capture live
-// stream. The x-window and y-fit reuse the main SpectrumPanel helpers so the
-// shape matches the chart the baseline will be applied to. Self-contained SVG —
-// no axes or interaction, just the shape, with a dashed 21 cm reference line.
-// Sized to match the main SpectrumPanel chart (.spectrum-chart is 215px tall):
-// the preview fills the same-shaped box so the bandpass the user sees building
-// here reads as the same chart the baseline will be applied to. The viewBox is
-// stretched to the CSS box (preserveAspectRatio="none"), so these are just the
-// internal drawing resolution and proportion.
-const SPARK_W = 720;
-const SPARK_H = 215;
-const SPARK_PAD = 12;
-
+// stream.
+//
+// Rather than a bespoke axis-less sparkline, this renders the *same* ECharts
+// chart the main SpectrumPanel uses (via the shared `baseOption`), so the
+// preview carries labelled Frequency (MHz) / dB axes, gridlines and the
+// highlighted 1420.4 MHz tick — the user sees the bandpass building in exactly
+// the chart the baseline will be applied to. We mirror the panel's per-frame
+// pipeline: median-subtract, boxcar-smooth, EMA-fit the y-range, crop to the
+// display window.
 function LiveSpectrum({ frame, active }: { frame: SpectrumFrame | null; active: boolean }) {
-  const geom = useMemo(() => {
-    const freqs = frame?.freqs_mhz;
-    const raw = frame?.power_db;
-    if (!frame || !freqs || !raw || raw.length < 2 || freqs.length !== raw.length) return null;
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const chartInstance = useRef<echarts.ECharts | null>(null);
+  // EMA-smoothed y-range, same as the panel: tracks the noise floor each frame
+  // without jitter. Snapped (not slid) on the first frame of a fresh capture.
+  const yRangeRef = useRef<[number, number]>(DEFAULT_Y_RANGE);
+  const yRangeInitRef = useRef(false);
 
-    const win = displayWindow(frame);
-    if (!win) return null;
-    const { xMin, xMax } = win;
-    const xSpan = xMax - xMin;
-    if (xSpan <= 0) return null;
-
-    // Match the main chart: zero against the robust median when baseline-
-    // corrected, boxcar-smooth, then fit the y-axis the same way.
-    const corrected = frame.baseline_corrected === true;
-    const values = corrected ? zeroBaselineSpectrum(raw) : raw;
-    const smoothed = boxcarSmooth(values, TRACE_BOXCAR_BINS);
-    const [yMin, yMax] = corrected ? zeroBaselineYRange(smoothed) : bottomHalfYRange(smoothed);
-    const ySpan = yMax - yMin || 1;
-
-    const innerW = SPARK_W - 2 * SPARK_PAD;
-    const innerH = SPARK_H - 2 * SPARK_PAD;
-    const px = (mhz: number) => SPARK_PAD + ((mhz - xMin) / xSpan) * innerW;
-    const py = (v: number) => {
-      const t = Math.max(0, Math.min(1, (v - yMin) / ySpan));
-      return SPARK_PAD + (1 - t) * innerH;
+  // Initialise the chart once and keep it sized to the dialog column.
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const chart = echarts.init(chartRef.current, undefined, { renderer: 'canvas' });
+    chartInstance.current = chart;
+    chart.setOption(baseOption(DEFAULT_Y_RANGE));
+    const ro = new ResizeObserver(() => chart.resize());
+    ro.observe(chartRef.current);
+    return () => {
+      ro.disconnect();
+      chart.dispose();
+      chartInstance.current = null;
     };
+  }, []);
 
-    // Only the bins inside the displayed window, so the trace fills the box the
-    // same way the main chart's x-crop does.
-    let points = '';
-    for (let i = 0; i < freqs.length; i++) {
-      if (freqs[i] < xMin || freqs[i] > xMax) continue;
-      points += (points ? ' ' : '') + `${px(freqs[i]).toFixed(1)},${py(smoothed[i]).toFixed(1)}`;
-    }
+  // Clear the trace whenever capture isn't active (before the user triggers, or
+  // between attempts) so they always watch the integration rebuild from empty.
+  useEffect(() => {
+    if (active) return;
+    yRangeInitRef.current = false;
+    chartInstance.current?.setOption({ series: [{ data: [] }] });
+  }, [active]);
 
-    const hLineX = HYDROGEN_LINE_MHZ >= xMin && HYDROGEN_LINE_MHZ <= xMax ? px(HYDROGEN_LINE_MHZ) : null;
-    return { points, hLineX };
-  }, [frame]);
+  // Push each new integrated frame onto the chart while capture is active.
+  useEffect(() => {
+    const chart = chartInstance.current;
+    if (!chart || !active || !frame) return;
+    const freqs = frame.freqs_mhz;
+    const raw = frame.power_db;
+    if (!freqs || !raw || raw.length < 2 || freqs.length !== raw.length) return;
+
+    // Match the panel exactly: median-subtract then boxcar-smooth, fit the
+    // y-axis with the symmetric zero-baseline range, and EMA toward it.
+    const displayed = boxcarSmooth(zeroBaselineSpectrum(raw), TRACE_BOXCAR_BINS);
+    const data = freqs.map((f, i) => [f, displayed[i]] as [number, number]);
+    const target = zeroBaselineYRange(displayed);
+    const k = 0.15;
+    const cur = yRangeRef.current;
+    yRangeRef.current = yRangeInitRef.current
+      ? [cur[0] + (target[0] - cur[0]) * k, cur[1] + (target[1] - cur[1]) * k]
+      : target;
+    yRangeInitRef.current = true;
+    const [yMin, yMax] = yRangeRef.current;
+    const win = displayWindow(frame);
+    chart.setOption({
+      xAxis: win ? { min: win.xMin, max: win.xMax } : {},
+      yAxis: { min: round2(yMin), max: round2(yMax) },
+      series: [{ data, ...traceStyle(NORMAL_TRACE_COLOR) }],
+    });
+  }, [frame, active]);
 
   return (
-    <svg
+    <div
       className="baseline-live-spectrum"
-      viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
-      preserveAspectRatio="none"
+      ref={chartRef}
       role="img"
       aria-label={active ? 'Baseline integration building' : 'Spectrum preview (empty until capture starts)'}
-    >
-      {geom?.hLineX != null && (
-        <line
-          className="baseline-live-hline"
-          x1={geom.hLineX} y1={SPARK_PAD} x2={geom.hLineX} y2={SPARK_H - SPARK_PAD}
-        />
-      )}
-      {active && geom?.points && (
-        <polyline
-          className="baseline-live-trace"
-          points={geom.points}
-          fill="none"
-          vectorEffect="non-scaling-stroke"
-        />
-      )}
-    </svg>
+    />
   );
 }
 
@@ -253,7 +271,7 @@ function expEaseInOut(p: number): number {
 }
 const EXP_PANEL_LX = 14; // left panel x-origin in SVG coords
 const EXP_PANEL_RX = 270; // right panel x-origin
-const EXP_PANEL_Y = 44;
+const EXP_PANEL_Y = 38;
 
 // The lesson is a carousel of four keyframes from the baseline-subtraction
 // story. Each slide pairs one schematic panel (or two, on the subtract beat)
@@ -265,12 +283,11 @@ const EXP_PANEL_Y = 44;
 
 
 const EXP_PHASES = [
-  { key: 'baseline', dur: 2.4 },
-  { key: 'signal', dur: 2.6 },
-  { key: 'overlay', dur: 1.1 },
-  { key: 'overlap', dur: 2.2 },
-  { key: 'subtract', dur: 2.8 },
-  { key: 'reveal', dur: 3.8 },
+  { key: 'hold', dur: 2.0 },
+  { key: 'overlay', dur: 1.2 },
+  { key: 'overlap', dur: 3.5 },
+  { key: 'subtract', dur: 2.0 },
+  { key: 'reveal', dur: 3.0 },
 ] as const;
 type ExpPhase = (typeof EXP_PHASES)[number]['key'];
 const EXP_TOTAL = EXP_PHASES.reduce((s, p) => s + p.dur, 0);
@@ -291,7 +308,7 @@ function BaselineExplainer() {
   const flyGroupRef = useRef<SVGGElement | null>(null);
   const overlapRef = useRef<SVGPathElement | null>(null);
   const [phase, setPhase] = useState<ExpPhase>(
-    reduce ? 'reveal' : 'baseline',
+    reduce ? 'reveal' : 'hold',
   );
 
   useEffect(() => {
@@ -327,14 +344,13 @@ function BaselineExplainer() {
         t -= ph.dur;
       }
       if (key !== prevKey) {
-        if (key === 'baseline') {
+        if (key === 'hold') {
+          // Reset right buffer to signal shape while the panel is faded out so
+          // the fade-in shows the correct shape with no visual jump.
+          rightBuf.set(EXP_SIGNAL);
           leftBuf.set(EXP_BASELINE);
-          rightBuf.set(EXP_SIGNAL);
-        } else if (key === 'signal') {
-          rightBuf.set(EXP_SIGNAL);
         } else if (key === 'reveal') {
-          // The subtract morph ends exactly on EXP_RESULT; seed the EMA buffer
-          // there so reveal doesn't re-animate from the old signal shape.
+          // Seed from EXP_RESULT so reveal starts exactly where subtract ended.
           rightBuf.set(EXP_RESULT);
         }
         prevKey = key;
@@ -364,7 +380,7 @@ function BaselineExplainer() {
         rightFillRef.current?.setAttribute('d', rp.fill);
       } else {
         rightTarget.set(key === 'reveal' ? EXP_RESULT : EXP_SIGNAL);
-        const rNoise = key === 'reveal' ? noiseAmp * 0.6 : noiseAmp;
+        const rNoise = key === 'reveal' ? noiseAmp * 0.15 : noiseAmp;
         for (let i = 0; i < EXP_N; i++) {
           rightBuf[i] += (rightTarget[i] + expNoise() * rNoise - rightBuf[i]) * alpha;
         }
@@ -373,10 +389,6 @@ function BaselineExplainer() {
         rightFillRef.current?.setAttribute('d', rp.fill);
       }
 
-      let rightOpacity = 1;
-      if (key === 'baseline') rightOpacity = 0;
-      else if (key === 'signal') rightOpacity = expEaseInOut(Math.min(1, local * 1.6));
-      rightGroupRef.current?.setAttribute('opacity', rightOpacity.toFixed(3));
 
       let flyOpacity = 0;
       let overlapOpacity = 0;
@@ -399,12 +411,17 @@ function BaselineExplainer() {
       flyGroupRef.current?.setAttribute('transform', `translate(${flyX.toFixed(1)},${EXP_PANEL_Y})`);
       flyGroupRef.current?.setAttribute('opacity', flyOpacity.toFixed(3));
       overlapRef.current?.setAttribute('opacity', overlapOpacity.toFixed(3));
+
+      let rightOpacity = 1;
+      if (key === 'reveal') rightOpacity = 1 - expSmoothstep(0.73, 1.0, local);
+      else if (key === 'hold') rightOpacity = expSmoothstep(0.0, 0.28, local);
+      rightGroupRef.current?.setAttribute('opacity', rightOpacity.toFixed(3));
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [reduce]);
 
-  const rightLabel = phase === 'subtract' || phase === 'reveal' ? 'CORRECTED' : 'SIGNAL';
+  const rightLabel = phase === 'subtract' || phase === 'reveal' ? 'BASELINE SUBTRACTED' : 'RAW SIGNAL';
 
   return (
     <svg
@@ -431,13 +448,11 @@ function BaselineExplainer() {
       <text className="bx-panel-label" x={EXP_PANEL_RX + EXP_PANEL_W / 2} y={EXP_PANEL_Y - 12}>
         {rightLabel}
       </text>
-      <g ref={rightGroupRef} opacity={reduce ? 1 : 0}>
-        <g transform={`translate(${EXP_PANEL_RX},${EXP_PANEL_Y})`}>
-          <rect className="bx-panel" x="0" y="0" width={EXP_PANEL_W} height={EXP_PANEL_H} rx="3" />
-          <path ref={rightFillRef} className="bx-fill" d={(reduce ? EXP_RESULT_PATH : EXP_SIGNAL_PATH).fill} />
-          <path ref={overlapRef} className="bx-overlap" d={EXP_BASELINE_PATH.fill} opacity="0" />
-          <path ref={rightLineRef} className="bx-trace" d={(reduce ? EXP_RESULT_PATH : EXP_SIGNAL_PATH).line} />
-        </g>
+      <g ref={rightGroupRef} transform={`translate(${EXP_PANEL_RX},${EXP_PANEL_Y})`}>
+        <rect className="bx-panel" x="0" y="0" width={EXP_PANEL_W} height={EXP_PANEL_H} rx="3" />
+        <path ref={rightFillRef} className="bx-fill" d={(reduce ? EXP_RESULT_PATH : EXP_SIGNAL_PATH).fill} />
+        <path ref={overlapRef} className="bx-overlap" d={EXP_BASELINE_PATH.fill} opacity="0" />
+        <path ref={rightLineRef} className="bx-trace" d={(reduce ? EXP_RESULT_PATH : EXP_SIGNAL_PATH).line} />
       </g>
 
       <g ref={flyGroupRef} transform={`translate(${EXP_PANEL_LX},${EXP_PANEL_Y})`} opacity="0">
@@ -459,7 +474,10 @@ function BaselineLesson({ onContinue, onCancel }: { onContinue: () => void; onCa
         <figcaption className="baseline-lesson-text">
           <span className="baseline-lesson-step-title">Baseline correction</span>
           <span className="baseline-explainer-caption">
-            A cold-sky baseline records the receiver's bandpass shape and local RFI, then divides that shape out of the live spectrum so real sky features like the hydrogen line stand out.
+            When a radio telescope observes the sky, the measurement includes more than just the signal we are interested in. It also contains background patterns caused by local interference, receiver electronics, the atmosphere, temperature, and other sources of radio emission. These broad patterns form what astronomers call the baseline.
+            <br />
+            <br />
+            For hydrogen line observations, the signal we care about is usually a small feature sitting on top of this larger background. Baseline subtraction is a way of estimating the background shape and removing it from the data, isolating the hydrogen signal so it's easier to see.
           </span>
         </figcaption>
       </figure>
@@ -492,6 +510,11 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
   // reset flushes the rolling average, `frames_seen` restarts near zero; the
   // first frame below this marker is our cue that the rebuild has begun.
   const captureFramesMarkerRef = useRef<number | null>(null);
+  // Whether a baseline was captured during this open session, and whether the
+  // wizard has been opened at least once. Together they let us emit a single
+  // accurate close event (with `captured`) without a spurious one on mount.
+  const capturedRef = useRef(false);
+  const everOpenedRef = useRef(false);
 
   // Reset to intro every time the wizard re-opens so we never resume mid-flow
   // from a stale prior session. We also reset on *close*: otherwise `step`
@@ -504,8 +527,18 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
       setBusy(false);
       setError(null);
       setBuilding(false);
+      capturedRef.current = false;
+      everOpenedRef.current = true;
       track('baseline_wizard_opened');
     } else {
+      // Tell any listener (the guided observation) that the wizard closed and
+      // whether a baseline was saved. Guard on everOpenedRef so the initial
+      // mount (open=false) doesn't fire a spurious close.
+      if (everOpenedRef.current) {
+        window.dispatchEvent(new CustomEvent(BASELINE_WIZARD_CLOSED_EVENT, {
+          detail: { captured: capturedRef.current },
+        }));
+      }
       setStep('intro');
     }
   }, [open]);
@@ -595,6 +628,7 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
         return;
       }
       const baseline = await r.json() as Baseline;
+      capturedRef.current = true;
       onBaselineReady?.(baseline);
       track('baseline_captured', {
         capture_duration_s: Math.round((Date.now() - startedAt) / 1000),
@@ -637,17 +671,9 @@ export function BaselineWizard({ open, onOpenChange, frame, onBaselineReady }: P
 
             {step === 'capture' && (
               <div id="baseline-desc" className="baseline-body">
-                <p className="baseline-step-label">{tourCopy.baselineWizard.capture.stepLabel}</p>
                 <p>{tourCopy.baselineWizard.capture.body}</p>
                 <figure className={`baseline-live${busy ? ' baseline-live-active' : ''}`}>
                   <LiveSpectrum frame={frame} active={building} />
-                  <figcaption className="baseline-live-caption">
-                    {busy
-                      ? (building
-                        ? tourCopy.baselineWizard.capture.liveCaptionActive
-                        : 'Restarting the integration…')
-                      : tourCopy.baselineWizard.capture.liveCaption}
-                  </figcaption>
                 </figure>
                 {busy && expectedWaitSeconds != null && (
                   <div className="baseline-countdown" role="status" aria-live="polite">

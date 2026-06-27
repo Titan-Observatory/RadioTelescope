@@ -85,45 +85,41 @@
   },
   "guidedObservation": {
     "buttons": {
-      "next": "Next",
+      "next": "Continue",
       "back": "Back",
-      "done": "Done",
-      "slewing": "Slewing...",
-      "slewReference": "Slew to reference",
-      "slewGalacticPlane": "Slew to galactic plane"
+      "done": "Done"
     },
-    "progressText": "Step {{current}} of {{total}}",
     "steps": {
       "intro": {
-        "title": "Observe hydrogen",
-        "description": "We'll point the dish at two patches of sky and look for the faint radio glow given off by hydrogen gas at 1420 MHz - the most common element in the galaxy. The whole thing takes about three minutes."
+        "title": "Observe the Milky Way",
+        "description": "In a few minutes we'll detect the faint 1420 MHz radio glow of hydrogen gas in our own galaxy. First we'll teach the receiver what empty sky looks like, then swing onto the Milky Way and watch the signal rise."
       },
       "liveSignal": {
-        "title": "Live radio signal",
-        "description": "This yellow trace shows the radio energy the dish is hearing right now. The vertical green marker at 1420.4 MHz is where pure hydrogen emits. We're looking for a small bump that lines up with - or shifts slightly off - that marker."
+        "title": "The live radio signal",
+        "description": "This trace is the raw radio energy the dish hears right now. It's red and lumpy because it's swamped by the receiver's own bandpass shape and local interference - not the sky. The vertical green marker sits at 1420.4 MHz, exactly where hydrogen emits."
       },
-      "emptySky": {
-        "title": "Aim at empty sky",
-        "description": "First we point somewhere with very little hydrogen, to learn what the receiver sounds like on its own. We picked the sky near the North Galactic Pole - looking \"up\" out of our galaxy, where almost no hydrogen gas lies in the way."
+      "baseline": {
+        "title": "First, capture a baseline",
+        "description": "To uncover the faint hydrogen line we have to subtract the receiver's own fingerprint. Click <strong>Capture baseline &rarr;</strong> below to point at empty sky and record it. I'll wait right here - the guide picks back up on its own the moment your baseline is saved."
       },
-      "saveBaseline": {
-        "title": "Save what 'empty' looks like",
-        "description": "Click \"Set up baseline\" below. This stores the current trace as a reference, so when we slew somewhere with real hydrogen the signal pops out clearly against this flat background. Then press Next."
+      "corrected": {
+        "title": "Baseline applied",
+        "description": "Your spectrum is baseline-corrected now: the trace is flat and green, so anything left poking up is real sky rather than the receiver's shape. The readouts above will lock onto a hydrogen line the instant we find one."
       },
       "milkyWay": {
-        "title": "Aim at the Milky Way",
-        "description": "Now we'll swing to a thick part of our galaxy's disk, in Cygnus. There's a huge column of hydrogen gas between us and the far side of the galaxy, all emitting at 1420 MHz. Watch the yellow trace once the dish settles - a bump should grow near the green marker."
+        "title": "Now aim at the Milky Way",
+        "description": "This is the live sky over the telescope. The shaded band running across it is the Milky Way - our galaxy's disk, dense with hydrogen. Click anywhere along that band to set a target, then hit the <strong>Slew</strong> button that appears to drive the dish there. Once it settles, watch the spectrum for a bump near the green marker. Take your time, then click Continue."
       },
       "done": {
-        "title": "You did it",
-        "description": "The bump you see is hydrogen gas tens of thousands of light-years away. If it sits slightly off the green marker, that gas is moving toward or away from us - the Doppler effect - and the velocity readout under the chart tells you how fast. Slew elsewhere any time to compare."
+        "title": "You found hydrogen",
+        "description": "That bump is hydrogen gas tens of thousands of light-years away. If it sits slightly off the green marker, that gas is moving toward or away from us - the Doppler velocity under the chart says how fast. Slew to other points along the shaded Milky Way band on the sky map to compare how the gas moves across the galaxy."
       }
     }
   },
   "baselineWizard": {
     "dialog": {
       "readyTitle": "Baseline ready",
-      "setupTitle": "Set up baseline"
+      "setupTitle": "Set up a baseline"
     },
     "intro": {
       "lesson": [
@@ -147,8 +143,8 @@
       "buttons": {
         "back": "Back",
         "continue": "Continue",
-        "capture": "Walk me through capturing one",
-        "cancel": "Not right now"
+        "capture": "Capture a Baseline",
+        "cancel": "Cancel"
       }
     },
     "pick": {
@@ -160,10 +156,7 @@
       }
     },
     "capture": {
-      "stepLabel": "Step 2 of 2 - Trigger the capture",
-      "body": "Once the dish has finished slewing onto your empty patch, trigger the capture. The telescope keeps observing the whole time - it averages a full integration window of this live spectrum into your baseline, then applies it. No need to time it yourself.",
-      "liveCaption": "Trigger the capture and the baseline integration will build here. The dashed line marks 1420.4 MHz.",
-      "liveCaptionActive": "Integrating... averaging the live spectrum into your baseline. Watch it settle as the noise averages down.",
+      "body": "Capture a baseline from this empty patch. The telescope averages one full integration window, then applies it automatically.",
       "countdownPrefix": "Capturing... averaging the live spectrum over",
       "countdownSuffix": "of samples.",
       "buttons": {

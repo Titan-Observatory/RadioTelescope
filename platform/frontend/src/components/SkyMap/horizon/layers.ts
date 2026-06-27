@@ -801,9 +801,9 @@ export const drawGalacticExclusion: Layer = ({ ctx, aladin, w, h, config, date, 
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.strokeText('Milky Way — too noisy', best.p[0], best.p[1]);
+    ctx.strokeText('Milky Way', best.p[0], best.p[1]);
     ctx.fillStyle = 'rgba(255, 168, 150, 0.95)';
-    ctx.fillText('Milky Way — too noisy', best.p[0], best.p[1]);
+    ctx.fillText('Milky Way', best.p[0], best.p[1]);
     ctx.restore();
   }
   ctx.restore();
