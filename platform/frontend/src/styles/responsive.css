@@ -1,0 +1,139 @@
+/* =========================================================================
+   Responsive
+   ========================================================================= */
+
+@media (max-width: 980px) {
+  .topbar {
+    gap: 12px;
+  }
+  .topbar-status { gap: 6px; }
+
+  .dashboard {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "skymap"
+      "rightcol"
+      "controls";
+    padding: 14px;
+    gap: 0;
+  }
+  .controls-panel { min-height: 500px; }
+  /* Aladin gets a shorter fixed height on mobile; the spectrum below it sizes
+     naturally to its content and the page scrolls for the rest. */
+  .skymap-panel {
+    min-height: 0;
+    height: 46svh;
+    border-top-right-radius: var(--r-lg);
+    border-right: 1px solid var(--hairline);
+    border-bottom: 0;
+  }
+  /* Restore auto-height right column: the spectrum panel should own the full
+     height of its content before the status panel starts below it. */
+  .dashboard-rightcol { height: auto; min-height: 0; }
+  .dashboard-rightcol .spectrum-panel-host {
+    display: block;
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  .dashboard-rightcol .spectrum-panel-host .spectrum-section {
+    display: block;
+    min-height: 0;
+    flex: none;
+  }
+  .dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap {
+    height: 340px;
+    flex: none;
+  }
+  .dashboard-rightcol > .panel:first-child {
+    border-top-right-radius: 0;
+  }
+  .dashboard-rightcol > .panel {
+    border-top: 0;
+  }
+  .skymap-bottom-dock {
+    flex-wrap: wrap;
+  }
+  .skymap-overlay-controls {
+    flex-basis: min(280px, calc(100% - 28px));
+  }
+}
+
+@media (max-width: 640px) {
+  body { font-size: 15px; }
+  .dashboard { padding: 10px; gap: 0; }
+  .topbar    { height: 44px; padding: 0 12px; gap: 8px; }
+  .topbar-brand { padding-left: 12px; margin-left: -12px; }
+  .topbar .brand-logo { height: 24px; }
+  .topbar-lease-label { display: none; }
+  .topbar-time { display: none; }
+  .panel     { padding: 14px 14px; }
+  .skymap-panel { padding: 0; }
+  .skymap-aladin { border-radius: 0; }
+  .skymap-toolbar {
+    right: 10px;
+    flex-wrap: wrap;
+  }
+  .skymap-layer-control {
+    flex-wrap: wrap;
+  }
+  .skymap-spectrum-selector {
+    display: none;
+  }
+  .skymap-surveys-mobile {
+    display: inline-flex;
+    position: absolute;
+    top: 46px;
+    left: 10px;
+    right: 10px;
+    z-index: 42;
+    pointer-events: auto;
+    justify-content: flex-start;
+  }
+  .skymap-surveys-mobile .skymap-survey-btn {
+    pointer-events: auto;
+    touch-action: manipulation;
+  }
+  .pad-btn { min-height: 52px; }
+  .target-form { grid-template-columns: 1fr 1fr; }
+  .target-form button[type="submit"] { grid-column: 1 / -1; }
+  .baseline-prompt {
+    flex-wrap: wrap;
+    gap: 10px 12px;
+  }
+  .baseline-prompt-text {
+    flex-basis: 100%;
+  }
+  .baseline-prompt-go {
+    margin-left: auto;
+  }
+  .spectrum-readouts { gap: 6px 18px; }
+  .dashboard-rightcol .spectrum-panel-host .spectrum-chart-wrap,
+  .spectrum-chart-wrap {
+    height: auto;
+  }
+  .spectrum-chart {
+    height: 195px;
+  }
+  .banner, .error-log summary, .error-log-body { padding-left: 14px; padding-right: 14px; }
+
+  /* Hide manual slew controls on mobile — tapping on Aladin is the
+     intended interaction. The "Slew" confirm button after a map tap
+     stays visible (it lives outside .skymap-overlay-controls). */
+  .skymap-overlay-controls { display: none; }
+  .skymap-panel:fullscreen .skymap-bottom-dock {
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .skymap-panel:fullscreen .skymap-overlay-controls {
+    display: block;
+    width: min(260px, calc(100vw - 20px));
+    flex-basis: min(260px, calc(100vw - 20px));
+    padding: 10px;
+  }
+
+  /* Slightly smaller aladin on narrow phones to leave more room for the spectrum. */
+  .skymap-panel { height: 40svh; }
+}
+

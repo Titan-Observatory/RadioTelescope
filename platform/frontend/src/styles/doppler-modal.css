@@ -1,0 +1,58 @@
+/* =========================================================================
+   Doppler "learn more" modal — launched from the spectrum subtitle term.
+   Reuses the queue page's DopplerExplainer (animation + copy).
+   ========================================================================= */
+.doppler-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: rgba(5, 6, 12, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.doppler-modal-body {
+  position: relative;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-lg);
+  width: min(980px, 96vw);
+  max-height: 92svh;
+  overflow: auto;
+}
+.doppler-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline);
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.doppler-modal-close:hover {
+  border-color: var(--hairline-strong);
+  color: var(--fg);
+}
+.doppler-modal-content {
+  display: grid;
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
+  gap: clamp(24px, 4vw, 48px);
+  align-items: center;
+  padding: clamp(28px, 4vw, 48px);
+}
+.doppler-modal-content .h1-section-heading { margin-bottom: 16px; }
+@media (max-width: 760px) {
+  .doppler-modal-content {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}

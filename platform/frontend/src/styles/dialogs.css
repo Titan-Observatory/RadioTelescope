@@ -1,0 +1,296 @@
+/* ── Feedback dialog (@radix-ui/react-dialog) ────────────────────────── */
+.feedback-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  z-index: 200; animation: feedback-fade-in 120ms ease;
+}
+.feedback-dialog {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 201; width: min(440px, calc(100vw - 32px));
+  background: var(--surface-2); border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-lg); padding: 24px;
+  display: flex; flex-direction: column; gap: 16px;
+  animation: feedback-slide-in 150ms ease;
+}
+@keyframes feedback-fade-in { from{opacity:0} to{opacity:1} }
+@keyframes feedback-slide-in {
+  from { opacity:0; transform:translate(-50%,calc(-50% + 8px)) }
+  to   { opacity:1; transform:translate(-50%,-50%) }
+}
+.feedback-header { display:flex; align-items:center; justify-content:space-between; }
+.feedback-title  { font-size:15px; font-weight:600; color:var(--fg); margin:0; }
+.feedback-close  {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:28px; padding:0; min-height:unset;
+  background:transparent; border:1px solid transparent; border-radius:var(--r-sm);
+  color:var(--fg-muted); transition:background var(--t-fast),color var(--t-fast);
+}
+.feedback-close:hover { background:var(--surface-3); color:var(--fg); }
+.feedback-prompt { margin:0; font-size:14px; color:var(--fg-muted); }
+.feedback-stars  { display:flex; gap:4px; }
+.feedback-star   {
+  background:transparent; border:none; padding:2px; min-height:unset;
+  color:var(--fg-subtle); transition:color var(--t-fast),transform var(--t-fast);
+}
+.feedback-star:hover, .feedback-star.filled { color:var(--accent); }
+.feedback-star:hover { transform:scale(1.15); }
+.feedback-star svg { display:block; }
+.feedback-rating-label {
+  margin:-4px 0 0; font-size:12px; color:var(--fg-muted); min-height:1em;
+}
+.feedback-followup {
+  display:flex; flex-direction:column; gap:8px;
+  animation: feedback-fade-in 160ms ease;
+}
+.feedback-label    { display:block; font-size:13px; font-weight:500; color:var(--fg); }
+.feedback-optional { color:var(--fg-muted); font-weight:400; }
+.feedback-textarea {
+  width:100%; resize:vertical; min-height:88px; padding:8px 10px; box-sizing:border-box;
+  background:var(--surface-1); border:1px solid var(--hairline-strong);
+  border-radius:var(--r-md); color:var(--fg); font-size:14px; line-height:1.5;
+  transition:border-color var(--t-fast),box-shadow var(--t-fast);
+}
+.feedback-textarea:focus-visible {
+  outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);
+}
+.feedback-error   { margin:0; font-size:13px; color:var(--crit); }
+.feedback-actions { display:flex; justify-content:flex-end; gap:8px; }
+.feedback-btn-secondary {
+  background:transparent; border:1px solid var(--hairline-strong); color:var(--fg-muted);
+}
+.feedback-btn-secondary:hover { color:var(--fg); border-color:var(--fg-subtle); }
+.feedback-btn-primary {
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--accent); border:1px solid var(--accent); color:var(--on-accent); font-weight:600;
+}
+.feedback-btn-primary:hover:not(:disabled) {
+  background:var(--accent-strong); border-color:var(--accent-strong);
+}
+.feedback-success {
+  display:flex; flex-direction:column; align-items:center; gap:16px;
+  padding:8px 0; font-size:14px; color:var(--ok); text-align:center;
+}
+.topbar-feedback {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 10px; font-size:12px; min-height:30px;
+  background:rgba(230,160,30,0.12); border:1px solid rgba(230,160,30,0.4); border-radius:var(--r-sm);
+  color:#e8a020; cursor:pointer; transition:color var(--t-fast),border-color var(--t-fast),background var(--t-fast);
+}
+.topbar-feedback:hover { background:rgba(230,160,30,0.22); border-color:rgba(230,160,30,0.7); color:#f0b840; }
+
+/* ── Feedback toast (bottom-right nudge) ──────────────────────────────── */
+.feedback-toast {
+  position: fixed; right: 20px; bottom: 20px; z-index: 190;
+  width: min(300px, calc(100vw - 32px));
+  padding: 14px 16px 12px;
+  background: var(--surface-2); border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  display: flex; flex-direction: column; gap: 6px;
+  animation: feedback-slide-up 180ms ease;
+}
+@keyframes feedback-slide-up {
+  from { opacity:0; transform:translateY(8px) }
+  to   { opacity:1; transform:translateY(0) }
+}
+.feedback-toast-close {
+  position:absolute; top:6px; right:6px;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:24px; height:24px; padding:0; min-height:unset;
+  background:transparent; border:1px solid transparent; border-radius:var(--r-sm);
+  color:var(--fg-muted); transition:background var(--t-fast),color var(--t-fast);
+}
+.feedback-toast-close:hover { background:var(--surface-3); color:var(--fg); }
+.feedback-toast-title { margin:0; font-size:14px; font-weight:600; color:var(--fg); padding-right:20px; }
+.feedback-toast-sub   { margin:0; font-size:12px; color:var(--fg-muted); }
+.feedback-toast-stars { margin-top:2px; }
+
+/* ── Baseline "pick a spot" step ─────────────────────────────────────────
+   Spotlight effect: we add a giant box-shadow to .skymap-panel that visually
+   darkens everything outside it, without any DOM overlay. Because nothing
+   actually sits on top of Aladin (the dim is just shadow rendering), every
+   pointer event reaches the map normally — click-to-select, click-and-drag-
+   to-pan, and hover tooltips all work. Earlier attempts using driver.js's
+   SVG overlay broke document-level mouse handlers; this approach has none
+   of that. */
+body.rt-baseline-pick { overflow: hidden; }
+body.rt-baseline-pick .skymap-panel {
+  z-index: 1000;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.65);
+}
+
+/* ── Baseline wizard (@radix-ui/react-dialog) ─────────────────────────── */
+.baseline-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  z-index: 200; animation: feedback-fade-in 120ms ease;
+}
+.baseline-dialog {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 201; width: min(920px, calc(100vw - 40px));
+  max-height: min(820px, calc(100vh - 40px));
+  overflow-y: auto;
+  background: var(--surface-2); border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-lg); padding: 28px;
+  display: flex; flex-direction: column; gap: 18px;
+  animation: feedback-slide-in 150ms ease;
+}
+.baseline-header { display:flex; align-items:center; justify-content:space-between; }
+.baseline-title  { font-size:18px; font-weight:650; color:var(--fg); margin:0; }
+.baseline-close  {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:28px; padding:0; min-height:unset;
+  background:transparent; border:1px solid transparent; border-radius:var(--r-sm);
+  color:var(--fg-muted); transition:background var(--t-fast),color var(--t-fast);
+}
+.baseline-close:hover { background:var(--surface-3); color:var(--fg); }
+.baseline-body { display:flex; flex-direction:column; gap:16px; }
+.baseline-body p { margin:0; font-size:14px; color:var(--fg-muted); line-height:1.5; }
+.baseline-body p strong { color:var(--fg); font-weight:600; }
+.baseline-step-label {
+  font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--accent); font-weight:600;
+}
+.baseline-prompt { color:var(--fg) !important; }
+.baseline-warn {
+  padding:8px 12px; background:var(--surface-1);
+  border:1px solid var(--warn); border-radius:var(--r-md);
+  color:var(--warn) !important; font-size:13px;
+}
+.baseline-countdown {
+  padding:10px 12px; background:var(--surface-1);
+  border:1px solid var(--hairline); border-radius:var(--r-md);
+  font-size:13px; color:var(--fg); text-align:center;
+}
+.baseline-countdown strong { color:var(--accent); }
+.baseline-meta { font-size:12px; color:var(--fg-subtle) !important; }
+
+/* Live spectrum preview on the capture step — the bandpass shape being measured,
+   updating frame-by-frame while the baseline integrates. */
+.baseline-live { margin:0; display:flex; flex-direction:column; gap:6px; }
+.baseline-live-spectrum {
+  width:100%; height:215px; display:block;
+  background:var(--surface-1);
+  border:1px solid var(--hairline); border-radius:var(--r-md);
+  color:var(--accent);
+}
+.baseline-live-spectrum-empty {
+  display:flex; align-items:center; justify-content:center; text-align:center;
+  padding:0 12px; font-size:12px; color:var(--fg-subtle);
+}
+.baseline-live-trace { stroke:currentColor; stroke-width:1.5; stroke-linejoin:round; }
+.baseline-live-hline { stroke:var(--fg-subtle); stroke-width:1; stroke-dasharray:3 3; opacity:.6; }
+.baseline-live-caption { font-size:12px; color:var(--fg-subtle); line-height:1.45; }
+/* While integrating, pulse the trace so it reads as "live". */
+.baseline-live-active .baseline-live-spectrum { animation:baseline-live-pulse 1.6s ease-in-out infinite; }
+@keyframes baseline-live-pulse {
+  0%, 100% { border-color:var(--hairline); }
+  50% { border-color:var(--accent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .baseline-live-active .baseline-live-spectrum { animation:none; }
+}
+
+/* Intro-step explainer: a looping schematic of baseline subtraction. Borrows
+   the breathing-trace look of the queue page's hero spectrum. */
+.baseline-explainer { margin:0; display:flex; flex-direction:column; gap:12px; }
+.baseline-explainer-svg {
+  width:100%; height:auto; display:block;
+  background:var(--surface-1);
+  border:1px solid var(--hairline); border-radius:var(--r-md);
+}
+.bx-panel { fill:rgba(0,0,0,.22); stroke:var(--hairline); stroke-width:1; }
+.bx-trace {
+  fill:none; stroke:var(--accent); stroke-width:2;
+  stroke-linejoin:round; stroke-linecap:round;
+}
+.bx-fill { fill:var(--accent-soft); }
+.bx-overlap {
+  fill:rgba(239,68,68,.22);
+  stroke:rgba(239,68,68,.75);
+  stroke-width:1;
+  stroke-linejoin:round;
+  stroke-linecap:round;
+}
+.bx-fly {
+  fill:none; stroke:var(--accent-strong); stroke-width:1.6;
+  stroke-dasharray:4 3; stroke-linejoin:round; stroke-linecap:round;
+}
+.bx-panel-label {
+  fill:var(--fg-subtle); font-size:11px; font-weight:600; letter-spacing:.08em;
+  text-anchor:middle; font-family:ui-monospace,monospace;
+}
+.bx-rfi-label {
+  fill:var(--crit); font-size:7.5px; font-weight:700;
+  text-anchor:middle; font-family:ui-monospace,monospace;
+}
+.baseline-explainer-caption {
+  font-size:14px; color:var(--fg-muted); line-height:1.5;
+}
+
+/* "÷" symbol between the baseline and signal panels on the subtract slide. */
+.bx-divide {
+  fill:var(--fg-muted); font-size:26px; font-weight:600;
+  text-anchor:middle; dominant-baseline:central; font-family:ui-monospace,monospace;
+}
+
+/* Intro mini-lesson: paged carousel of explainer keyframes. */
+.baseline-lesson { gap:14px; }
+.baseline-lesson-text {
+  display:flex; flex-direction:column; gap:6px;
+  min-height:4.8em; max-width:720px; align-self:center; text-align:center;
+}
+.baseline-lesson-step-title { font-size:18px; font-weight:650; color:var(--fg); }
+.baseline-lesson-dots {
+  display:flex; justify-content:center; gap:8px; padding:0 0 2px;
+}
+.baseline-lesson-dot {
+  position:relative;
+  width:28px; height:24px; padding:0; min-height:unset;
+  border:none; border-radius:999px; background:transparent; cursor:pointer;
+}
+.baseline-lesson-dot::before {
+  content:'';
+  position:absolute; left:50%; top:50%;
+  width:9px; height:9px; border-radius:50%;
+  background:var(--surface-3);
+  transform:translate(-50%,-50%);
+  transition:background var(--t-fast),transform var(--t-fast);
+}
+.baseline-lesson-dot:hover::before { background:var(--fg-subtle); transform:translate(-50%,-50%) scale(1.15); }
+.baseline-lesson-dot:focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px;
+}
+.baseline-lesson-dot.is-active::before { background:var(--accent); transform:translate(-50%,-50%) scale(1.35); }
+.baseline-lesson-actions { justify-content:space-between; align-items:center; margin-top:2px; }
+.baseline-lesson-actions-right { display:flex; gap:8px; align-items:center; }
+
+.baseline-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+.baseline-actions-stack { flex-direction:column; align-items:stretch; }
+.baseline-actions-stack > button { justify-content:center; }
+.baseline-btn-primary {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:8px 14px;
+  background:var(--accent); border:1px solid var(--accent); color:var(--on-accent); font-weight:600;
+  border-radius:var(--r-sm); cursor:pointer;
+  transition:background var(--t-fast),border-color var(--t-fast);
+}
+.baseline-btn-primary:hover:not(:disabled) {
+  background:var(--accent-strong); border-color:var(--accent-strong);
+}
+.baseline-btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+.baseline-btn-secondary {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:8px 14px;
+  background:transparent; border:1px solid var(--hairline-strong); color:var(--fg);
+  border-radius:var(--r-sm); cursor:pointer;
+  transition:color var(--t-fast),border-color var(--t-fast);
+}
+.baseline-btn-secondary:hover:not(:disabled) { border-color:var(--fg-subtle); }
+.baseline-btn-secondary:disabled { opacity:.5; cursor:not-allowed; }
+.baseline-btn-ghost {
+  padding:8px 14px;
+  background:transparent; border:1px solid transparent; color:var(--fg-muted);
+  border-radius:var(--r-sm); cursor:pointer;
+  transition:color var(--t-fast);
+}
+.baseline-btn-ghost:hover { color:var(--fg); }
+

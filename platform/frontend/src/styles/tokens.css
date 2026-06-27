@@ -1,0 +1,122 @@
+/* =========================================================================
+   Radio Telescope — control surface
+   Palette derived from: #3C415C (slate navy), #9B9ECE (periwinkle),
+   #F5F6FF (lavender white), #FFBC42 (golden yellow), #D81159 (crimson),
+   #77CBB9 (seafoam).
+   ========================================================================= */
+
+:root {
+  color-scheme: dark;
+
+  /* Type */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+
+  /* Surfaces — deep navy, close to Titan Observatory depth */
+  --bg:              #0b0d16;
+  --surface-1:       #10121e;
+  --surface-2:       #161928;
+  --surface-3:       #1d2032;
+  --hairline:        #232640;
+  --hairline-strong: #2e3150;
+
+  /* Text — cool lavender-white from #F5F6FF */
+  --fg:        #eaebf5;
+  --fg-muted:  #9b9ece;   /* periwinkle from palette */
+  --fg-subtle: #626489;
+  --fg-faint:  #474a6a;
+
+  /* Accent — golden yellow #FFBC42 */
+  --accent:        #ffbc42;
+  --accent-strong: #ffc958;
+  --accent-press:  #e6a830;             /* :active state of accent buttons */
+  --accent-edge:   #8a6720;             /* dim amber hairline */
+  --accent-soft:   rgba(255, 188, 66, 0.12);
+  --accent-line:   rgba(255, 188, 66, 0.30);
+  --on-accent:     #0b0d16;             /* text colour on amber buttons */
+
+  /* Section accents — used by the panel-header icon chip to give each
+     domain (spectrum, pointing, etc.) a visual signature so the eye can
+     navigate the page without re-reading the titles. */
+  --sect-amber:      #ffbc42;
+  --sect-amber-soft: rgba(255, 188, 66, 0.14);
+  --sect-teal:       #77cbb9;
+  --sect-teal-soft:  rgba(119, 203, 185, 0.14);
+  --sect-peri:       #9b9ece;
+  --sect-peri-soft:  rgba(155, 158, 206, 0.14);
+  --sect-crit:       #d81159;
+  --sect-crit-soft:  rgba(216, 17, 89, 0.14);
+
+  /* Status */
+  --ok:    #77cbb9;   /* seafoam #77CBB9 */
+  --warn:  #ffbc42;   /* golden, same hue as accent */
+  --crit:  #d81159;   /* crimson #D81159 */
+
+  /* Radii & motion */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --t-fast: 120ms ease;
+
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--fg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  accent-color: var(--accent);
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100vh; background: var(--bg); }
+body { min-width: 320px; font-size: 16px; line-height: 1.5; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* =========================================================================
+   Base controls
+   ========================================================================= */
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+button:hover         { background: var(--surface-3); border-color: var(--hairline-strong); }
+button:active        { background: var(--surface-1); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled      { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+input {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  color: var(--fg);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+

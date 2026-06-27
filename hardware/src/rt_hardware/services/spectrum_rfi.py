@@ -17,7 +17,7 @@ import numpy as np
 # Broad-excess pass tuning. A second, shallower detector that catches wide bumps
 # (e.g. a hydrogen-line-shaped feature) the narrow sigma-clip pass skips, so they
 # still travel through ``rfi_bands`` for the frontend label path.
-BROAD_RFI_MIN_DB = 0.08
+BROAD_RFI_MIN_DB = 0.5
 BROAD_RFI_SIGNAL_WIDTH_KHZ = 120.0
 BROAD_RFI_TREND_WIDTH_KHZ = 600.0
 

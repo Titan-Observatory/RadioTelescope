@@ -262,6 +262,18 @@ def test_flag_rfi_flags_broad_hydrogen_line_shape():
     assert (hi - lo) * 1e3 > 50.0
 
 
+def test_flag_rfi_ignores_small_broad_bump():
+    from rt_hardware.services.spectrum_rfi import flag_rfi
+
+    x = np.arange(1024)
+    spectrum = (0.5 * np.exp(-0.5 * ((x - 512) / 70.0) ** 2)).astype(np.float32)
+    freqs = _freqs_for(1024)
+
+    bands = flag_rfi(spectrum, freqs, _BIN_HZ, sigma=6.0, max_width_khz=50.0)
+
+    assert bands == []
+
+
 def test_flag_rfi_does_not_mutate_input():
     from rt_hardware.services.spectrum_rfi import flag_rfi
 
